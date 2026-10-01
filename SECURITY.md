@@ -14,14 +14,23 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
 
 - It never lists, reads, creates or writes anything inside the agent's Hermes home (settings, API keys,
   sessions), even when that folder sits inside a folder the plugin shows.
-  - The one exception is explicit: if an operator sets the `roots` setting to a folder *inside* a Hermes home
-    (for example a sub-folder kept for sharing), that chosen folder is shown. The Hermes home itself is never
-    shown as a root.
+  - The one exception: a folder *inside* a Hermes home that the agent is set up to work in is shown as the root,
+    with everything else in that home still refused. That folder is any of:
+    - one set in `roots`;
+    - the agent's `terminal.cwd`;
+    - the `workspace/` folder used when the working folder would otherwise be the Hermes home itself (the usual
+      Docker layout).
+
+    The Hermes home itself is never shown as a root.
 - It never touches paths outside the configured folders, and never follows a symlink that leads outside them.
   - A symlink that stays inside the shown folders works like the folder it points to.
   - The file an upload finally writes is never a symlink, and a name taken by a symlink is refused rather than
     written through.
-- Uploads never overwrite, rename or delete an existing file.
+- Uploads never overwrite, rename or delete an existing file. The one reserved name pattern,
+  `.cfm-<32 lowercase hex>.part`, is the plugin's own temporary-file name:
+  - an upload is never stored under it;
+  - regular files with exactly that name that are older than 24 hours are removed from a folder when a new
+    upload starts there.
 - It adds no authentication of its own: access is exactly the gateway's existing dashboard authentication.
 
 A way to break any of these is a vulnerability we want to hear about.
