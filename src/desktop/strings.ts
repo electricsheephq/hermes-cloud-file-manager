@@ -81,7 +81,34 @@ export const S = {
   importFailed: (name: string, reason: string) => `${name}: ${reason}`,
   importAndInsert: 'Import and insert',
   show: 'Show',
-  close: 'Close'
+  close: 'Close',
+  // Editor
+  open: 'Open',
+  edit: 'Edit',
+  editing: 'Editing',
+  unsaved: 'Unsaved changes',
+  changes: 'Changes',
+  reviewSave: 'Review & save',
+  save: 'Save',
+  backToEditing: 'Back to editing',
+  saved: 'Saved',
+  loadingFile: 'Opening…',
+  noChanges: 'No changes',
+  diffSummary: (added: number, removed: number) => `+${added} −${removed} lines`,
+  unchangedLines: (n: number) => `⋯ ${n} unchanged ${n === 1 ? 'line' : 'lines'}`,
+  diffTooLarge: 'Too large to show changes',
+  mixedEndings: 'This file mixes line endings; saving converts them all to CRLF.',
+  reviewTitle: (name: string) => `Save changes to ${name}?`,
+  discardTitle: (name: string) => `Discard unsaved changes to ${name}?`,
+  keepEditing: 'Keep editing',
+  discard: 'Discard',
+  conflictTitle: (name: string, profile: string) => `${name} changed on ${machineOf(profile)} since you opened it.`,
+  compare: 'Compare with their version',
+  copyMine: 'Copy my text',
+  textCopied: 'Your text is on the clipboard',
+  discardReload: 'Discard mine and reload',
+  goneTitle: (name: string, profile: string) => `${name} was moved or deleted on ${machineOf(profile)}.`,
+  otherAgent: (profile: string) => `This file is on ${profile}. Switch back to edit or save.`
 }
 
 /** Server error codes → short human text. */
@@ -105,6 +132,23 @@ export const CODE_TEXT: Record<string, string> = {
   drive_error: "Google Drive couldn't finish that. Try again.",
   timeout: 'Google Drive took too long. Try again.'
 }
+
+/** /file and /file/save codes → plain sentences (the upload wording in CODE_TEXT doesn't fit an open file). */
+const FILE_CODE_TEXT: Record<string, string> = {
+  not_editable: 'Only .md, .markdown and .txt files can be opened here.',
+  is_link: 'This file is a link, so it can’t be opened here.',
+  not_a_file: 'This isn’t a regular file.',
+  hard_link: 'This file has other hard links, so it can’t be opened here.',
+  not_text: 'This file isn’t plain UTF-8 text.',
+  changed: 'The file changed while it was being read. Try again.',
+  outside_root: 'This file is outside the agent’s folders.',
+  protected: 'This file is in a protected location.',
+  not_found: 'This file no longer exists.',
+  bad_path: 'That path isn’t allowed.'
+}
+
+export const fileCodeText = (code: string, message?: string, maxBytes?: number) =>
+  code === 'too_large' ? `Too large to open here (over ${mb(maxBytes ?? 1024 * 1024)}).` : FILE_CODE_TEXT[code] ?? codeText(code, message)
 
 export const codeText = (code: string | undefined, message?: string) =>
   (code && CODE_TEXT[code]) || message || code || 'Something went wrong'

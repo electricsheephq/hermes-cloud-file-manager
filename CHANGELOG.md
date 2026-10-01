@@ -5,6 +5,10 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 ## Unreleased
 
 ### Added
+- **Open and edit** Markdown and text files from Cloud Files. A file opens read-only and rendered; **Edit** shows
+  the source, **Changes** shows your edits line by line, and only **Save** in the **Review & save** dialog writes
+  the file. No autosave: closing, leaving the page or switching agents never saves. If the file changed on the
+  agent's machine since you opened it, Save is refused and you can compare with their version first.
 - Gateway editor routes: `GET /file` reads confined Markdown and text files with their SHA-256;
   `POST /file/save` explicitly saves an existing file only when its base SHA-256 still matches.
 

@@ -139,4 +139,6 @@ declare module '@hermes/plugin-sdk' {
   export const SelectTrigger: ComponentType<any>
   export const SelectValue: ComponentType<any>
   export const Skeleton: ComponentType<any>
+  export const Streamdown: ComponentType<any>
+  export const Textarea: ComponentType<any>
 }

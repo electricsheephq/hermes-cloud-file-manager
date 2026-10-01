@@ -9,6 +9,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
   never overwrite — a name clash keeps both files.
+- **Open and edit** Markdown and text files: view first, edit on purpose, review the changes, then save.
+  Nothing is saved until you choose Save.
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
   message. Nothing is uploaded again and nothing is copied into the chat; the agent opens the files where they
   are with its own tools.
@@ -63,6 +65,22 @@ installing the desktop half is harmless for your other agents.
   you leave the page. Switching to another agent mid-upload pauses the batch until you switch back — files never
   land on the wrong machine.
 - **Find:** type in **Search files** (name contains, or a glob such as `*.pdf`).
+- **Read and edit Markdown:** double-click a `.md`, `.markdown` or `.txt` file (or select it and choose
+  **Open**). It opens read-only, rendered like chat. Choose **Edit** to change the source, **Changes** to see
+  your edits line by line, and **Review & save** to check the diff before **Save**. Nothing is written until you
+  press Save in that review:
+  - no autosave, and ⌘S only opens the review;
+  - closing or moving away with unsaved edits asks first;
+  - if you go to another page, your unsaved draft is kept in memory until you come back. It is lost if Hermes
+    quits.
+
+  If the file changed on the agent's machine after you opened it (for example, the agent edited it), Save is
+  refused. You can then compare with their version and save knowingly, or copy your text. An open file stays
+  tied to the agent you opened it on; switch back to that agent to save.
+
+![A report open in the rendered view](docs/media/screenshot-editor-view.png)
+
+![Reviewing the change before saving](docs/media/screenshot-editor-review.png)
 - **Share with the agent:** select files and **Copy path**, or in any chat press **+ → Cloud**, tick files in
   any folders, and **Insert locations**. The message gets a short list of absolute paths the agent can open.
   If you switch chats or agents while the picker is open, it offers **Copy locations** instead of inserting, so
@@ -140,6 +158,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
   changed since you opened it.
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.
+- The editor opens `.md`, `.markdown` and `.txt` files up to 1 MB, as UTF-8. A file that mixes line endings is
+  saved with CRLF throughout once edited; the review says so. Images in a rendered file load from their links,
+  as in Hermes's own file preview. Unsaved drafts live in memory only and are lost when Hermes quits.
 - A folder with more than 500 items shows the first 500; use **Search files** to find the rest.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
 - Google Drive is import-only: pick files, not folders, and nothing is ever written back to Drive.

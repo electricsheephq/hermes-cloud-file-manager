@@ -48,20 +48,34 @@ const driveItems = () => Object.values(DRIVE).flat()
 /** The Entry the fake gateway answers for an imported Drive file. */
 export const importedEntry = (id: string) => entry(`uploads/drive/${driveItems().find(item => item.id === id)?.name ?? id}`)
 
+// Editable files for GET /file and POST /file/save, by rel path. The sha is a stand-in for the server's sha256.
+export const TEXTS: Record<string, string> = {
+  'readme.md': '# Readme\n\nHello from the agent.\n',
+  'notes.txt': 'line one\nline two\n',
+  'other.md': '# Other\n'
+}
+export const fakeSha = (text: string) => {
+  let h = 0
+  for (const ch of text) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0
+  return `sha-${(h >>> 0).toString(16)}-${text.length}`
+}
+
 export interface Recorded {
   path: string
   params: Record<string, string>
   opts?: any
   /** The agent selected when the request was made (where ctx.rest routes it). */
+  connectionId: null | string
   profile: string
 }
 
-export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}) {
+export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}, texts: Record<string, string> = TEXTS) {
   const calls: Recorded[] = []
+  const files = new Map(Object.entries(texts))
   const rest = async (full: string, opts?: any) => {
     const [path, qs = ''] = full.split('?')
     const params = Object.fromEntries(new URLSearchParams(qs))
-    calls.push({ path, params, opts, profile: host.state.profile.get() })
+    calls.push({ path, params, opts, connectionId: host.state.connectionId.get(), profile: host.state.profile.get() })
     if (overrides[path]) return overrides[path](opts)
     if (path === '/available') return { ok: true, plugin: 'hermes-cloud-file-manager', version: '0.1.0' }
     if (path === '/roots') return ROOTS
@@ -81,8 +95,20 @@ export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {})
       return { ok: true, items, truncated: false }
     }
     if (path === '/drive/import') return { ok: true, entry: importedEntry(opts.body.id), renamed: false }
+    if (path === '/file') {
+      const text = files.get(params.path)
+      if (text === undefined) return { ok: false, code: 'not_editable', message: 'not editable' }
+      return { ok: true, text, sha256: fakeSha(text), size: text.length, mtime: 1767225600 }
+    }
+    if (path === '/file/save') {
+      const current = files.get(opts.body.path)
+      if (current === undefined) return { ok: false, code: 'gone' }
+      if (fakeSha(current) !== opts.body.base_sha256) return { ok: false, code: 'conflict', sha256: fakeSha(current), text: current }
+      files.set(opts.body.path, opts.body.text)
+      return { ok: true, sha256: fakeSha(opts.body.text), size: opts.body.text.length, mtime: 1767225601 }
+    }
     if (path === '/mkdir') return { ok: true, created: true, entry: entry(opts.body.path, true) }
     return { ok: false, code: 'unknown', message: `no fake for ${path}` }
   }
-  return { rest, calls }
+  return { rest, calls, files }
 }

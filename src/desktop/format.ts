@@ -73,6 +73,19 @@ export function baseName(rel: string): string {
   return parts[parts.length - 1] ?? ''
 }
 
+const EDITABLE = new Set(['md', 'markdown', 'txt'])
+
+function extension(name: string): string {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+}
+
+/** Files the editor opens: .md, .markdown and .txt (any case). Folders and links never qualify. */
+export const isEditable = (entry: { name: string; is_dir: boolean; link_outside?: boolean }) =>
+  !entry.is_dir && !entry.link_outside && EDITABLE.has(extension(entry.name))
+
+export const isMarkdown = (name: string) => extension(name) !== 'txt'
+
 const MEDIA = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif', 'bmp', 'svg', 'tif', 'tiff', 'mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'])
 
 export function entryIcon(entry: { name: string; is_dir: boolean; link_outside?: boolean }): string {
