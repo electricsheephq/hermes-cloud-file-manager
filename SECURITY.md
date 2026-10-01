@@ -22,7 +22,9 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
       Docker layout).
 
     The Hermes home itself is never shown as a root.
-- It never touches paths outside the configured folders, and never follows a symlink that leads outside them.
+- It never browses into, uploads through or writes through a symlink that leads outside the configured
+  folders, and never touches paths outside them otherwise.
+  - A listing may show such a link as not openable, with the size and date its target reports.
   - A symlink that stays inside the shown folders works like the folder it points to.
   - The file an upload finally writes is never a symlink, and a name taken by a symlink is refused rather than
     written through.
@@ -37,6 +39,7 @@ A way to break any of these is a vulnerability we want to hear about.
 
 ## Out of scope
 
-- Someone who already has a shell on the gateway machine racing the plugin by swapping folders for symlinks
-  mid-request. That person can already read the agent's files directly.
+- Someone who already has a shell on the gateway machine (including the agent itself) racing the plugin
+  mid-request: swapping folders for symlinks, or deleting and replacing a file name the plugin has just reserved
+  for an upload. That person can already read and write the agent's files directly.
 - Anyone who can use the agent seeing the agent's files. That is the intended access model.
