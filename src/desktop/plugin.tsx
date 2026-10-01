@@ -101,6 +101,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   ctx.onDispose(() => {
     disposed = true
     unsubscribers.forEach(stop => stop())
+    closePicker()
   })
 
   return { probe }

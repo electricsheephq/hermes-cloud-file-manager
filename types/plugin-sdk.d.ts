@@ -72,6 +72,7 @@ declare module '@hermes/plugin-sdk' {
       connectionId: ReadableAtom<null | string>
       profile: ReadableAtom<string>
       focusedSessionOwner: ReadableAtom<FocusedSessionOwner | null>
+      activeSessionId: ReadableAtom<null | string>
     }
     notify(note: { kind?: 'info' | 'success' | 'warning' | 'error'; title?: string; message: string }): void
     navigate(path: string): void

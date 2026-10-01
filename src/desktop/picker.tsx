@@ -23,7 +23,7 @@ import { formatInsertText } from './format'
 import { currentPin } from './page'
 import { S } from './strings'
 import type { AgentPin } from './upload'
-import { rest, type RootsResponse } from './api'
+import { pluginCtx, rest, type RootsResponse } from './api'
 
 export const $pickerOpen = atom(false)
 /** `insertText` of the composer whose "+" menu opened the picker. */
@@ -35,34 +35,51 @@ export const $pickerSource = atom<'cloud' | 'drive'>('cloud')
 /** The "+ → Google Drive" import in progress; outlives the dialog body, which remounts on an agent switch. */
 const $pickerJob = atom<null | DriveImport>(null)
 const NO_OWNER = atom<null | { connectionId: null | string; profile: string }>(null)
-/** A finished import whose locations are not inserted yet: the composer's agent or focused chat changed while
- *  it ran. Only a click on Insert inserts them (by then the composer shows the right draft); nothing inserts
- *  from a subscription. `consumed` makes the insert happen at most once. */
-interface Finished {
-  pin: AgentPin
-  text: string
-  failed: boolean
-  insertText: null | ((text: string) => void)
-  consumed: boolean
-}
-const $finished = atom<null | Finished>(null)
+/** A finished Drive import whose locations were not inserted (the chat changed while the picker was open):
+ *  the dialog says where the files went and offers Copy locations. */
+const $finished = atom<null | { pin: AgentPin; text: string }>(null)
 
 type Owner = null | { connectionId: null | string; profile: string }
+const NO_SESSION = atom<null | string>(null)
 const focusedOwner = (): Owner => (host.state.focusedSessionOwner ?? NO_OWNER).get()
 
 /** True when `pin`'s agent is selected and the focused chat (if any) belongs to it. */
-function pinMatches(pin: AgentPin, connectionId: null | string, profile: string, owner: Owner): boolean {
-  return profile === pin.profile && connectionId === pin.connectionId && !ownerMismatch(owner, pin.connectionId, pin.profile)
-}
-const pinReady = (pin: AgentPin) => pinMatches(pin, host.state.connectionId.get(), host.state.profile.get(), focusedOwner())
+const pinReady = (pin: AgentPin) =>
+  host.state.profile.get() === pin.profile && host.state.connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile)
 
-/** Insert the finished import's locations once, if its agent still matches; close unless something failed. */
-function insertFinished() {
-  const done = $finished.get()
-  if (!done || done.consumed || !pinReady(done.pin)) return
-  $finished.set({ ...done, consumed: true })
-  done.insertText?.(done.text)
-  if (!done.failed) closePicker()
+/** "Untouched since open": any change to the agent, connection, focused chat or active session while a picker is
+ *  open marks it touched until the next open, even if the values come back. The opening composer may now show
+ *  another draft, so its insertText is no longer trusted. The listeners only mark; they never insert or copy. */
+const $touched = atom(false)
+let openPin: null | AgentPin = null
+let stopWatching: () => void = () => undefined
+
+function watchOpen() {
+  unwatch()
+  const { connectionId, profile } = host.state
+  openPin = { connectionId: connectionId.get(), profile: profile.get() }
+  $touched.set(false)
+  const touch = () => $touched.set(true)
+  const atoms = [profile, connectionId, host.state.focusedSessionOwner ?? NO_OWNER, host.state.activeSessionId ?? NO_SESSION]
+  const stops = atoms.map(store => store.listen(touch))
+  stopWatching = () => stops.forEach(stop => stop())
+}
+
+function unwatch() {
+  stopWatching()
+  stopWatching = () => undefined
+  openPin = null
+}
+
+/** Insert through the opening composer only when nothing changed since open and `pin` still matches. */
+const canInsert = (pin: null | AgentPin): pin is AgentPin => Boolean(pin) && !$touched.get() && pinReady(pin!)
+
+/** The page's Copy path handling: success or failure is a notice, a rejected write counts as a failure. */
+function copyLocations(text: string) {
+  void pluginCtx()
+    .os.writeClipboard(text)
+    .then(ok => ok, () => false)
+    .then(ok => host.notify(ok ? { kind: 'success', message: S.locationsCopied } : { kind: 'error', message: S.copyFailed }))
 }
 
 /** The picker's import also waits while the focused chat belongs to another agent than the one it imports for. */
@@ -75,6 +92,7 @@ function openPicker(insertText: (text: string) => void, source: 'cloud' | 'drive
   stopImport()
   $insertText.set(insertText)
   $pickerSource.set(source)
+  watchOpen()
   $pickerOpen.set(true)
 }
 
@@ -117,6 +135,8 @@ export function PickerHost() {
     return () => {
       stop()
       if ($hostClaim.get() === me) $hostClaim.set(null)
+      // The last composer is gone, and its insertText with it: nothing may insert later.
+      if ($hostClaim.get() === null) closePicker()
     }
   }, [me])
 
@@ -134,6 +154,7 @@ function stopImport() {
 
 export function closePicker() {
   stopImport()
+  unwatch()
   $pickerOpen.set(false)
   $insertText.set(null)
 }
@@ -145,8 +166,8 @@ function PickerDialog() {
   const mismatch = ownerMismatch(owner, connectionId, profile)
   const source = useValue($pickerSource)
   const finished = useValue($finished)
-  const waiting = finished && !finished.consumed ? finished : null
-  const notice = waiting ? S.importedTo(waiting.pin.profile) : mismatch ? S.ownerMismatch(owner!.profile, profile) : null
+  const job = useImport(useValue($pickerJob))
+  const notice = finished ? S.importedTo(finished.pin.profile) : mismatch ? S.ownerMismatch(owner!.profile, profile) : null
 
   return (
     <Dialog onOpenChange={(next: boolean) => !next && closePicker()} open>
@@ -155,7 +176,10 @@ function PickerDialog() {
           <DialogTitle>{source === 'drive' ? S.drivePickerTitle : S.pickerTitle}</DialogTitle>
         </DialogHeader>
         {notice ? (
-          <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{notice}</p>
+          <>
+            <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{notice}</p>
+            {finished && job && <ImportFailures failures={job.failures} />}
+          </>
         ) : (
           <PickerBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} source={source} />
         )}
@@ -164,11 +188,7 @@ function PickerDialog() {
             <Button onClick={closePicker} variant="text">
               {S.cancel}
             </Button>
-            {waiting && (
-              <Button disabled={!pinMatches(waiting.pin, connectionId, profile, owner)} onClick={insertFinished}>
-                {S.insertButton}
-              </Button>
-            )}
+            {finished && <Button onClick={() => copyLocations(finished.text)}>{S.copyLocations}</Button>}
           </DialogFooter>
         )}
       </DialogContent>
@@ -189,9 +209,11 @@ function PickerBody({ profile, source }: { profile: string; source: 'cloud' | 'd
 
 function PickerBrowser({ profile, roots }: { profile: string; roots: RootsResponse }) {
   const b = useBrowser(roots, 'pick')
+  const touched = useValue($touched)
+  const text = () => formatInsertText(profile, [...b.selected.values()])
   const insert = () => {
-    const text = formatInsertText(profile, [...b.selected.values()])
-    $insertText.get()?.(text)
+    if (!canInsert(openPin)) return // touched: the footer offers Copy locations instead
+    $insertText.get()?.(text())
     closePicker()
   }
   return (
@@ -202,14 +224,21 @@ function PickerBrowser({ profile, roots }: { profile: string; roots: RootsRespon
         <RootSelect b={b} />
       </div>
       <EntryList b={b} height={360} />
+      {touched && <div style={{ fontSize: 12, color: 'var(--ui-text-secondary)' }}>{S.chatChanged}</div>}
       <DialogFooter style={{ alignItems: 'center' }}>
         <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{S.selected(b.selected.size)}</span>
         <Button onClick={closePicker} variant="text">
           {S.cancel}
         </Button>
-        <Button disabled={!b.selected.size} onClick={insert}>
-          {S.insert}
-        </Button>
+        {touched ? (
+          <Button disabled={!b.selected.size} onClick={() => copyLocations(text())}>
+            {S.copyLocations}
+          </Button>
+        ) : (
+          <Button disabled={!b.selected.size} onClick={insert}>
+            {S.insert}
+          </Button>
+        )}
       </DialogFooter>
     </div>
   )
@@ -227,9 +256,11 @@ function DrivePicker({ roots }: { roots: RootsResponse }) {
     $pickerJob.set(job)
     void job.start().then(done => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return
-      // Same tick as the completion: insert now if the agent and focused chat still match, else wait for Insert.
-      $finished.set({ pin, text: formatInsertText(pin.profile, done.imported), failed: done.failures.length > 0, insertText, consumed: false })
-      insertFinished()
+      const text = formatInsertText(pin.profile, done.imported)
+      // Insert only in this completion tick, and only if the chat is untouched since open; else offer Copy.
+      if (!canInsert(pin)) return $finished.set({ pin, text })
+      insertText?.(text)
+      if (!done.failures.length) closePicker()
     })
   }
   return (
