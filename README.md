@@ -29,10 +29,16 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 Cloud File Manager has two halves in one package: a small API that runs **on the agent's gateway** and the
 screens that run **in Hermes Desktop**.
 
-**From Hermes Desktop (recommended).** Open **Capabilities → Plugins → Install from Git**, enter
-`electricsheephq/hermes-cloud-file-manager`, review, and install. Desktop installs the agent half into the
-selected agent and keeps the desktop half on this computer. Then **restart the agent's gateway** once —
-Hermes mounts plugin APIs only at startup. The **Cloud Files** row appears within a minute of the restart.
+**From Hermes Desktop (recommended):**
+
+1. Open **Capabilities → Plugins → Install from Git**, enter
+   `https://github.com/electricsheephq/hermes-cloud-file-manager`, choose **Review repository**, then **Install**.
+   Desktop installs the agent half into the connected agent and the desktop half on this computer.
+2. **Restart the agent's gateway** once. Hermes mounts plugin APIs only at startup.
+3. In **Capabilities → Plugins**, open **Cloud File Manager** and switch on **Desktop**. Desktop plugins stay off
+   until you turn them on.
+
+The **Cloud Files** row appears in the sidebar, and **Cloud** appears in the chat **+** menu.
 
 **From the command line on the gateway machine:**
 
@@ -43,7 +49,7 @@ hermes plugins enable hermes-cloud-file-manager
 ```
 
 Then add the desktop half on each computer that uses it: **Capabilities → Plugins → Install from Git** with the
-same repository (or **Install here** on the plugin's row).
+same repository, and switch on **Desktop** on the plugin's card.
 
 The sidebar row and the **+ → Cloud** entry only appear for agents that have the gateway half enabled, so
 installing the desktop half is harmless for your other agents.
