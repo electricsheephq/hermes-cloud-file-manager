@@ -118,6 +118,14 @@ describe('editor: View and Edit', () => {
     expect(button('Edit').disabled).toBe(true)
   })
 
+  it('words a save refusal as a save, not an open', async () => {
+    setup({ '/file/save': () => ({ ok: false, code: 'too_large', max_bytes: 1024 * 1024 }) })
+    await editTo('readme.md', 'longer\n')
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    expect(await within(dialog()).findByText('Too large to save here (over 1 MB).')).toBeTruthy()
+  })
+
   it('maps bad_path to a sentence and an unknown code to the server message', async () => {
     const answers = [{ ok: false, code: 'bad_path' }, { ok: false, code: 'brand_new', message: 'Server says no' }]
     setup({ '/file': () => answers.shift() })
@@ -227,6 +235,23 @@ describe('editor: typing while a Save is in flight', () => {
     fireEvent.click(button('Edit'))
     expect(textarea()?.value).toBe('first\n') // the saved text, not the discarded pre-save one
     expect(button('Review & save').disabled).toBe(true)
+  })
+
+  it('ignores a conflict that arrives after the edits were discarded: no dialog, the file stays in View', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    await editTo('readme.md', 'first\n')
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await flush(2)
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Back to editing' }))
+    fireEvent.click(button('Cancel'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await act(async () => answer({ ok: false, code: 'conflict', sha256: 'sha-other', text: 'theirs\n' }))
+    await flush()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(textarea()).toBeNull()
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
   })
 })
 

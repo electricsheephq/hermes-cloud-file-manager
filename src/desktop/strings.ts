@@ -139,6 +139,7 @@ const FILE_CODE_TEXT: Record<string, string> = {
   is_link: 'This file is a link, so it can’t be opened here.',
   not_a_file: 'This isn’t a regular file.',
   hard_link: 'This file has other hard links, so it can’t be opened here.',
+  mount_point: 'This file is a mount point, so it can’t be opened here.',
   not_text: 'This file isn’t plain UTF-8 text.',
   changed: 'The file changed while it was being read. Try again.',
   outside_root: 'This file is outside the agent’s folders.',
@@ -147,8 +148,20 @@ const FILE_CODE_TEXT: Record<string, string> = {
   bad_path: 'That path isn’t allowed.'
 }
 
-export const fileCodeText = (code: string, message?: string, maxBytes?: number) =>
-  code === 'too_large' ? `Too large to open here (over ${mb(maxBytes ?? 1024 * 1024)}).` : FILE_CODE_TEXT[code] ?? codeText(code, message)
+/** Save refusals that would read wrong in the open wording. Nothing is written on any of them. */
+const SAVE_CODE_TEXT: Record<string, string> = {
+  changed: 'The file changed while saving, so nothing was written. Try again.',
+  is_link: 'The file has become a link, so nothing was written.',
+  not_a_file: 'The file is no longer a regular file, so nothing was written.',
+  hard_link: 'The file now has other hard links, so nothing was written.',
+  mount_point: 'The file is now a mount point, so nothing was written.',
+  not_text: 'This text can’t be saved as UTF-8.'
+}
+
+export const fileCodeText = (code: string, message?: string, maxBytes?: number, saving = false) =>
+  code === 'too_large'
+    ? `Too large to ${saving ? 'save' : 'open'} here (over ${mb(maxBytes ?? 1024 * 1024)}).`
+    : (saving && SAVE_CODE_TEXT[code]) || FILE_CODE_TEXT[code] || codeText(code, message)
 
 export const codeText = (code: string | undefined, message?: string) =>
   (code && CODE_TEXT[code]) || message || code || 'Something went wrong'

@@ -192,6 +192,8 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [saved, setSaved] = useState(false)
+  const latest = useRef(doc)
+  latest.current = doc
   const dirty = isDirty(doc)
   const editing = doc.mode === 'edit'
   const diff = useMemo(() => (popup === 'review' || changes ? lineDiff(doc.base, doc.draft) : null), [popup, changes, doc.base, doc.draft])
@@ -231,9 +233,11 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
       setChanges(false)
       setSaved(true)
     } catch (error) {
+      // Edits discarded while the save was pending: there is nothing left to save, so a late refusal is moot.
+      if (latest.current.id === doc.id && latest.current.mode === 'view') return
       if (error instanceof ApiError && error.code === 'conflict') setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } })
       else if (error instanceof ApiError && error.code === 'gone') setPopup('gone')
-      else setSaveError(error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes) : transportText(error))
+      else setSaveError(error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error))
     } finally {
       setBusy(false)
     }

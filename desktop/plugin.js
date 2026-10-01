@@ -140,6 +140,7 @@ var FILE_CODE_TEXT = {
   is_link: "This file is a link, so it can\u2019t be opened here.",
   not_a_file: "This isn\u2019t a regular file.",
   hard_link: "This file has other hard links, so it can\u2019t be opened here.",
+  mount_point: "This file is a mount point, so it can\u2019t be opened here.",
   not_text: "This file isn\u2019t plain UTF-8 text.",
   changed: "The file changed while it was being read. Try again.",
   outside_root: "This file is outside the agent\u2019s folders.",
@@ -147,7 +148,15 @@ var FILE_CODE_TEXT = {
   not_found: "This file no longer exists.",
   bad_path: "That path isn\u2019t allowed."
 };
-var fileCodeText = (code, message, maxBytes) => code === "too_large" ? `Too large to open here (over ${mb(maxBytes ?? 1024 * 1024)}).` : FILE_CODE_TEXT[code] ?? codeText(code, message);
+var SAVE_CODE_TEXT = {
+  changed: "The file changed while saving, so nothing was written. Try again.",
+  is_link: "The file has become a link, so nothing was written.",
+  not_a_file: "The file is no longer a regular file, so nothing was written.",
+  hard_link: "The file now has other hard links, so nothing was written.",
+  mount_point: "The file is now a mount point, so nothing was written.",
+  not_text: "This text can\u2019t be saved as UTF-8."
+};
+var fileCodeText = (code, message, maxBytes, saving = false) => code === "too_large" ? `Too large to ${saving ? "save" : "open"} here (over ${mb(maxBytes ?? 1024 * 1024)}).` : saving && SAVE_CODE_TEXT[code] || FILE_CODE_TEXT[code] || codeText(code, message);
 var codeText = (code, message) => code && CODE_TEXT[code] || message || code || "Something went wrong";
 
 // src/desktop/api.ts
@@ -1217,6 +1226,8 @@ function Editor({ doc, setDoc, onClose, leave }) {
   const [busy, setBusy] = useState3(false);
   const [saveError, setSaveError] = useState3("");
   const [saved, setSaved] = useState3(false);
+  const latest = useRef(doc);
+  latest.current = doc;
   const dirty = isDirty(doc);
   const editing = doc.mode === "edit";
   const diff = useMemo2(() => popup === "review" || changes ? lineDiff(doc.base, doc.draft) : null, [popup, changes, doc.base, doc.draft]);
@@ -1252,9 +1263,10 @@ function Editor({ doc, setDoc, onClose, leave }) {
       setChanges(false);
       setSaved(true);
     } catch (error) {
+      if (latest.current.id === doc.id && latest.current.mode === "view") return;
       if (error instanceof ApiError && error.code === "conflict") setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
       else if (error instanceof ApiError && error.code === "gone") setPopup("gone");
-      else setSaveError(error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes) : transportText(error));
+      else setSaveError(error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error));
     } finally {
       setBusy(false);
     }
