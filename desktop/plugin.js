@@ -73,10 +73,12 @@ var S = {
   driveEmpty: "This folder is empty",
   drivePickerTitle: "Insert from Google Drive",
   importToCloud: "Import to Cloud Files",
+  importCount: (n) => `Import ${n} to Cloud Files`,
   importHint: (rootLabel) => `Imports go to ${rootLabel}/uploads/drive`,
   importing: (n, total) => `Importing ${n} of ${total}\u2026`,
   imported: (n) => `Imported ${n} ${n === 1 ? "file" : "files"}`,
   importPaused: (profile) => `Switch back to ${profile} to finish importing`,
+  insertPaused: (profile) => `Switch back to ${profile} to insert these files`,
   importFailed: (name, reason) => `${name}: ${reason}`,
   importAndInsert: "Import and insert",
   show: "Show",
@@ -217,7 +219,7 @@ function humanSize(bytes) {
 function shortDate(mtime, now = /* @__PURE__ */ new Date()) {
   const date = new Date(mtime * 1e3);
   if (Number.isNaN(date.getTime())) return "";
-  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString(void 0, { hour: "2-digit", minute: "2-digit" });
   const sameYear = date.getFullYear() === now.getFullYear();
   return date.toLocaleDateString(void 0, { month: "short", day: "numeric", ...sameYear ? {} : { year: "numeric" } });
 }
@@ -771,7 +773,8 @@ var DriveImport = class {
   }
   async drain() {
     const { state, rest: rest2 } = this.deps;
-    const stops = [state.connectionId.subscribe(() => this.wake()), state.profile.subscribe(() => this.wake())];
+    const wake = () => this.wake();
+    const stops = [state.connectionId.subscribe(wake), state.profile.subscribe(wake), this.deps.hold?.subscribe(wake) ?? (() => void 0)];
     this.set({ running: true });
     try {
       for (const item of this.items) {
@@ -801,7 +804,8 @@ var DriveImport = class {
   }
   matches() {
     const { pin } = this.snapshot;
-    return this.deps.state.profile.get() === pin.profile && this.deps.state.connectionId.get() === pin.connectionId;
+    const { state, hold } = this.deps;
+    return state.profile.get() === pin.profile && state.connectionId.get() === pin.connectionId && !hold?.held();
   }
   set(patch) {
     this.snapshot = { ...this.snapshot, ...patch };
@@ -1174,7 +1178,15 @@ function DrivePane({ roots }) {
       /* @__PURE__ */ jsx3(DriveCrumbs, { d }),
       /* @__PURE__ */ jsx3(BrowserSearch, { b: d, label: S.searchDrive }),
       /* @__PURE__ */ jsx3("span", { style: { ...muted3, fontSize: 11 }, children: S.importHint(roots.roots[0].label) }),
-      /* @__PURE__ */ jsx3(ToolButton, { disabled: !d.selected.size || Boolean(job?.running), icon: "cloud-download", label: S.importToCloud, onClick: start })
+      /* @__PURE__ */ jsx3(
+        ToolButton,
+        {
+          disabled: !d.selected.size || Boolean(job?.running),
+          icon: "cloud-download",
+          label: d.selected.size ? S.importCount(d.selected.size) : S.importToCloud,
+          onClick: start
+        }
+      )
     ] }),
     /* @__PURE__ */ jsx3(DriveList, { d })
   ] });
@@ -1324,6 +1336,35 @@ var $hostClaim = atom4(null);
 var $pickerSource = atom4("cloud");
 var $pickerJob = atom4(null);
 var NO_OWNER = atom4(null);
+var $pendingInsert = atom4(null);
+var stopPending = () => void 0;
+var focusedOwner = () => (host3.state.focusedSessionOwner ?? NO_OWNER).get();
+function pinReady(pin) {
+  const { connectionId, profile } = host3.state;
+  return profile.get() === pin.profile && connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
+}
+function insertWhenReady(pin, text, insertText, closeAfter) {
+  const attempt = () => {
+    if (!pinReady(pin)) return;
+    clearPending();
+    insertText?.(text);
+    if (closeAfter) closePicker();
+  };
+  const { connectionId, profile } = host3.state;
+  const stops = [connectionId.subscribe(attempt), profile.subscribe(attempt), (host3.state.focusedSessionOwner ?? NO_OWNER).subscribe(attempt)];
+  stopPending = () => stops.forEach((stop) => stop());
+  $pendingInsert.set({ profile: pin.profile });
+  attempt();
+}
+function clearPending() {
+  stopPending();
+  stopPending = () => void 0;
+  $pendingInsert.set(null);
+}
+var ownerHold = (pin) => ({
+  held: () => ownerMismatch(focusedOwner(), pin.connectionId, pin.profile),
+  subscribe: (wake) => (host3.state.focusedSessionOwner ?? NO_OWNER).subscribe(wake)
+});
 function openPicker(insertText, source) {
   stopImport();
   $insertText.set(insertText);
@@ -1370,6 +1411,7 @@ function PickerHost() {
 function stopImport() {
   $pickerJob.get()?.cancel();
   $pickerJob.set(null);
+  clearPending();
 }
 function closePicker() {
   stopImport();
@@ -1382,10 +1424,12 @@ function PickerDialog() {
   const owner = useValue3(host3.state.focusedSessionOwner ?? NO_OWNER);
   const mismatch = ownerMismatch(owner, connectionId, profile);
   const source = useValue3($pickerSource);
+  const pending = useValue3($pendingInsert);
+  const notice = pending ? S.insertPaused(pending.profile) : mismatch ? S.ownerMismatch(owner.profile, profile) : null;
   return /* @__PURE__ */ jsx4(Dialog2, { onOpenChange: (next) => !next && closePicker(), open: true, children: /* @__PURE__ */ jsxs4(DialogContent2, { style: { maxWidth: 720, width: "92vw" }, children: [
     /* @__PURE__ */ jsx4(DialogHeader2, { children: /* @__PURE__ */ jsx4(DialogTitle2, { children: source === "drive" ? S.drivePickerTitle : S.pickerTitle }) }),
-    mismatch ? /* @__PURE__ */ jsx4("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: S.ownerMismatch(owner.profile, profile) }) : /* @__PURE__ */ jsx4(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
-    mismatch && /* @__PURE__ */ jsx4(DialogFooter2, { children: /* @__PURE__ */ jsx4(Button4, { onClick: closePicker, variant: "text", children: S.cancel }) })
+    notice ? /* @__PURE__ */ jsx4("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: notice }) : /* @__PURE__ */ jsx4(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
+    notice && /* @__PURE__ */ jsx4(DialogFooter2, { children: /* @__PURE__ */ jsx4(Button4, { onClick: closePicker, variant: "text", children: S.cancel }) })
   ] }) });
 }
 function PickerBody({ profile, source }) {
@@ -1424,12 +1468,12 @@ function DrivePicker({ roots }) {
   const snap = useImport(useValue3($pickerJob));
   const start = () => {
     const insertText = $insertText.get();
-    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host3.state });
+    const pin = currentPin();
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host3.state, hold: ownerHold(pin) });
     $pickerJob.set(job);
     void job.start().then((done) => {
-      if (done.canceled || $pickerJob.get() !== job) return;
-      if (done.imported.length) insertText?.(formatInsertText(done.pin.profile, done.imported));
-      if (!done.failures.length) closePicker();
+      if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return;
+      insertWhenReady(pin, formatInsertText(pin.profile, done.imported), insertText, !done.failures.length);
     });
   };
   return /* @__PURE__ */ jsxs4("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [

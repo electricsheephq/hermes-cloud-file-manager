@@ -273,7 +273,12 @@ function DrivePane({ roots }: { roots: RootsResponse }) {
         <DriveCrumbs d={d} />
         <BrowserSearch b={d} label={S.searchDrive} />
         <span style={{ ...muted, fontSize: 11 }}>{S.importHint(roots.roots[0].label)}</span>
-        <ToolButton disabled={!d.selected.size || Boolean(job?.running)} icon="cloud-download" label={S.importToCloud} onClick={start} />
+        <ToolButton
+          disabled={!d.selected.size || Boolean(job?.running)}
+          icon="cloud-download"
+          label={d.selected.size ? S.importCount(d.selected.size) : S.importToCloud}
+          onClick={start}
+        />
       </div>
       <DriveList d={d} />
     </>

@@ -50,7 +50,7 @@ export function humanSize(bytes: number): string {
 export function shortDate(mtime: number, now = new Date()): string {
   const date = new Date(mtime * 1000)
   if (Number.isNaN(date.getTime())) return ''
-  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
   const sameYear = date.getFullYear() === now.getFullYear()
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })
 }

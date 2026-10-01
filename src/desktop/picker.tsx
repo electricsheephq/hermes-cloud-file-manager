@@ -17,11 +17,12 @@ import {
 import { useEffect, useRef } from 'react'
 
 import { Breadcrumbs, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
-import { DriveImport } from './drive'
+import { DriveImport, type ImportHold } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { formatInsertText } from './format'
 import { currentPin } from './page'
 import { S } from './strings'
+import type { AgentPin } from './upload'
 import { rest, type RootsResponse } from './api'
 
 export const $pickerOpen = atom(false)
@@ -34,6 +35,45 @@ export const $pickerSource = atom<'cloud' | 'drive'>('cloud')
 /** The "+ → Google Drive" import in progress; outlives the dialog body, which remounts on an agent switch. */
 const $pickerJob = atom<null | DriveImport>(null)
 const NO_OWNER = atom<null | { connectionId: null | string; profile: string }>(null)
+/** Imported locations waiting until their agent is selected and owns the focused chat again. */
+const $pendingInsert = atom<null | { profile: string }>(null)
+let stopPending: () => void = () => undefined
+
+const focusedOwner = () => (host.state.focusedSessionOwner ?? NO_OWNER).get()
+
+/** True when `pin`'s agent is selected and the focused chat (if any) belongs to it. */
+function pinReady(pin: AgentPin): boolean {
+  const { connectionId, profile } = host.state
+  return profile.get() === pin.profile && connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile)
+}
+
+/** Insert once, and only into a draft of `pin`'s agent: if the composer moved to another agent meanwhile, the
+ *  dialog says to switch back and the text goes in when it does. */
+function insertWhenReady(pin: AgentPin, text: string, insertText: null | ((text: string) => void), closeAfter: boolean) {
+  const attempt = () => {
+    if (!pinReady(pin)) return
+    clearPending()
+    insertText?.(text)
+    if (closeAfter) closePicker()
+  }
+  const { connectionId, profile } = host.state
+  const stops = [connectionId.subscribe(attempt), profile.subscribe(attempt), (host.state.focusedSessionOwner ?? NO_OWNER).subscribe(attempt)]
+  stopPending = () => stops.forEach(stop => stop())
+  $pendingInsert.set({ profile: pin.profile })
+  attempt()
+}
+
+function clearPending() {
+  stopPending()
+  stopPending = () => undefined
+  $pendingInsert.set(null)
+}
+
+/** The picker's import also waits while the focused chat belongs to another agent than the one it imports for. */
+const ownerHold = (pin: AgentPin): ImportHold => ({
+  held: () => ownerMismatch(focusedOwner(), pin.connectionId, pin.profile),
+  subscribe: wake => (host.state.focusedSessionOwner ?? NO_OWNER).subscribe(wake)
+})
 
 function openPicker(insertText: (text: string) => void, source: 'cloud' | 'drive') {
   stopImport()
@@ -93,6 +133,7 @@ export function PickerHost() {
 function stopImport() {
   $pickerJob.get()?.cancel()
   $pickerJob.set(null)
+  clearPending()
 }
 
 export function closePicker() {
@@ -107,6 +148,8 @@ function PickerDialog() {
   const owner = useValue(host.state.focusedSessionOwner ?? NO_OWNER)
   const mismatch = ownerMismatch(owner, connectionId, profile)
   const source = useValue($pickerSource)
+  const pending = useValue($pendingInsert)
+  const notice = pending ? S.insertPaused(pending.profile) : mismatch ? S.ownerMismatch(owner!.profile, profile) : null
 
   return (
     <Dialog onOpenChange={(next: boolean) => !next && closePicker()} open>
@@ -114,12 +157,12 @@ function PickerDialog() {
         <DialogHeader>
           <DialogTitle>{source === 'drive' ? S.drivePickerTitle : S.pickerTitle}</DialogTitle>
         </DialogHeader>
-        {mismatch ? (
-          <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{S.ownerMismatch(owner!.profile, profile)}</p>
+        {notice ? (
+          <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{notice}</p>
         ) : (
           <PickerBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} source={source} />
         )}
-        {mismatch && (
+        {notice && (
           <DialogFooter>
             <Button onClick={closePicker} variant="text">
               {S.cancel}
@@ -177,12 +220,12 @@ function DrivePicker({ roots }: { roots: RootsResponse }) {
   const snap = useImport(useValue($pickerJob))
   const start = () => {
     const insertText = $insertText.get()
-    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host.state })
+    const pin = currentPin()
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host.state, hold: ownerHold(pin) })
     $pickerJob.set(job)
     void job.start().then(done => {
-      if (done.canceled || $pickerJob.get() !== job) return
-      if (done.imported.length) insertText?.(formatInsertText(done.pin.profile, done.imported))
-      if (!done.failures.length) closePicker()
+      if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return
+      insertWhenReady(pin, formatInsertText(pin.profile, done.imported), insertText, !done.failures.length)
     })
   }
   return (

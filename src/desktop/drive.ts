@@ -65,6 +65,12 @@ export interface ImportSnapshot {
   canceled: boolean
 }
 
+/** An extra reason to wait before the next request (the picker: the focused chat belongs to another agent). */
+export interface ImportHold {
+  held(): boolean
+  subscribe(wake: () => void): () => void
+}
+
 export class DriveImport {
   private snapshot: ImportSnapshot
   private readonly listeners = new Set<() => void>()
@@ -75,7 +81,7 @@ export class DriveImport {
     private readonly items: readonly DriveItem[],
     private readonly root: string,
     pin: AgentPin,
-    private readonly deps: Pick<UploadDeps, 'rest' | 'state'>
+    private readonly deps: Pick<UploadDeps, 'rest' | 'state'> & { hold?: ImportHold }
   ) {
     this.snapshot = { pin, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false }
   }
@@ -102,7 +108,8 @@ export class DriveImport {
 
   private async drain(): Promise<ImportSnapshot> {
     const { state, rest } = this.deps
-    const stops = [state.connectionId.subscribe(() => this.wake()), state.profile.subscribe(() => this.wake())]
+    const wake = () => this.wake()
+    const stops = [state.connectionId.subscribe(wake), state.profile.subscribe(wake), this.deps.hold?.subscribe(wake) ?? (() => undefined)]
     this.set({ running: true })
     try {
       for (const item of this.items) {
@@ -133,7 +140,8 @@ export class DriveImport {
 
   private matches(): boolean {
     const { pin } = this.snapshot
-    return this.deps.state.profile.get() === pin.profile && this.deps.state.connectionId.get() === pin.connectionId
+    const { state, hold } = this.deps
+    return state.profile.get() === pin.profile && state.connectionId.get() === pin.connectionId && !hold?.held()
   }
 
   private set(patch: Partial<ImportSnapshot>): void {
