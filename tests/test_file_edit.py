@@ -449,3 +449,18 @@ def test_save_new_inode_generation_still_serialised(client, api, fs, monkeypatch
     b.join(timeout=3)
     assert results["a"]["ok"] is True
     assert len([body for body in (results["b"], c) if body["ok"]]) == 1
+
+
+def test_read_opens_in_binary_mode(client, api, fs, monkeypatch):
+    # Windows text mode would translate CRLF and stop at Ctrl-Z; the read must ask for O_BINARY like the save.
+    (fs[0] / "note.md").write_bytes(b"a\r\nb")
+    fake, flags, real_open = 0x40000000, [], api.os.open
+    monkeypatch.setattr(api.os, "O_BINARY", fake, raising=False)
+
+    def record(path, mode, *args, **kwargs):
+        flags.append(mode)
+        return real_open(path, mode & ~fake, *args, **kwargs)
+
+    monkeypatch.setattr(api.os, "open", record)
+    assert get(client, "file", root="r0", path="note.md")["text"] == "a\r\nb"
+    assert flags and all(mode & fake for mode in flags)

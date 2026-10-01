@@ -426,7 +426,8 @@ def _edit_stat(target, *, expected=None):
 
 def _edit_read(target):
     before = _edit_stat(target)
-    fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+                 | getattr(os, "O_BINARY", 0))
     try:
         info = os.fstat(fd)
         if ((info.st_dev, info.st_ino) != (before.st_dev, before.st_ino)
