@@ -108,7 +108,7 @@ suite passes against the new builds.
 
 ## Uninstall
 
-Remove the plugin from **Capabilities → Plugins** (trash button), or run
+Open **Cloud File Manager** in **Capabilities → Plugins** and choose **Uninstall**, or run
 `hermes plugins remove hermes-cloud-file-manager` on the gateway machine, then restart the gateway. Uploaded
 files stay where they are.
 
