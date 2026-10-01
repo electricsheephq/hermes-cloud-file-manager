@@ -4,6 +4,13 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 
 ## Unreleased
 
+## [0.1.1] - 2026-10-01
+
+Presentation-only release: no behaviour changes.
+
+### Changed
+- New banner and social card in the Hermes announcement style.
+
 ## [0.1.0] - 2026-10-01
 
 First release.
