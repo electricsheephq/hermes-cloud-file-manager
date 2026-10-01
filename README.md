@@ -113,9 +113,11 @@ suite passes against the new builds.
 
 ## Uninstall
 
-Open **Cloud File Manager** in **Capabilities → Plugins** and choose **Uninstall**, or run
-`hermes plugins remove hermes-cloud-file-manager` on the gateway machine, then restart the gateway. Uploaded
-files stay where they are.
+Open **Cloud File Manager** in **Capabilities → Plugins** and choose **Uninstall**. Or run
+`hermes plugins remove hermes-cloud-file-manager` on the gateway machine, then restart the gateway.
+
+On every other computer where you added the desktop half, also remove it there with **Uninstall**. Uploaded files
+stay where they are.
 
 ## Development
 

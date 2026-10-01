@@ -22,6 +22,8 @@ First release.
 - The sidebar row and the **+ → Cloud** entry appear only for agents that have the gateway half enabled.
 
 ### Security
-- All paths are confined to the configured folders. The agent's Hermes home (settings and keys) is excluded by
-  file identity, so case variants and links cannot reach it. When the shown folder is the gateway user's home,
-  its hidden top-level entries are hidden and refused.
+- All paths are confined to the configured folders.
+- The agent's Hermes home (settings and keys) is excluded by file identity and by canonical path, so case
+  variants, Unicode spellings and links cannot reach it. The only exception is a working folder inside it that the
+  agent is set up to use (`roots`, `terminal.cwd` or the Docker `workspace/`); see SECURITY.md.
+- When the shown folder is the gateway user's home, its hidden top-level entries are hidden and refused.
