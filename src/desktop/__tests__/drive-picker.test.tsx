@@ -253,7 +253,7 @@ describe('+ → Cloud is unchanged', () => {
     setup()
     openDrive()
     await screen.findByText('Insert from Google Drive')
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const insertText = vi.fn()
     act(() => void cloudProvider.run({ insertText }))

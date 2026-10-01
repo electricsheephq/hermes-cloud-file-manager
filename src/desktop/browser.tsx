@@ -21,7 +21,7 @@ import {
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react'
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
-import { entryIcon, humanSize, parentPath, shortDate } from './format'
+import { entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
 import { S } from './strings'
 import { transportText } from './upload'
 
@@ -153,9 +153,16 @@ export function RootSelect({ b, drive }: { b: Browser; drive?: { active: boolean
   )
 }
 
-export function Breadcrumbs({ b }: { b: Browser }) {
-  const parts = b.path.split('/').filter(Boolean)
-  const crumbs = [{ label: b.root?.label ?? '', path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
+/** The folder path, or with `leaf` (an open file) the file's folder followed by its name, every folder clickable. */
+export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '', leaf, onNavigate = b.navigate }: {
+  b: Browser
+  folder?: string
+  rootLabel?: string
+  leaf?: string
+  onNavigate?: (path: string) => void
+}) {
+  const parts = folder.split('/').filter(Boolean)
+  const crumbs = [{ label: rootLabel, path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
   return (
     <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
       {crumbs.map((crumb, i) => {
@@ -163,16 +170,22 @@ export function Breadcrumbs({ b }: { b: Browser }) {
         return (
           <span key={crumb.path || '/'} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
             {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={muted} />}
-            {last && !b.query ? (
+            {last && !b.query && !leaf ? (
               <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.label}</span>
             ) : (
-              <Button onClick={() => b.navigate(crumb.path)} size="inline" variant="text">
+              <Button onClick={() => onNavigate(crumb.path)} size="inline" variant="text">
                 {crumb.label}
               </Button>
             )}
           </span>
         )
       })}
+      {leaf && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <Codicon name="chevron-right" size="0.75rem" style={muted} />
+          <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{leaf}</span>
+        </span>
+      )}
     </nav>
   )
 }
@@ -190,8 +203,9 @@ function sortEntries(entries: Entry[], highlights: string[], atRoot: boolean): E
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
 }
 
-/** The scrolling list: folder listing, or search results while a query is active. */
-export function EntryList({ b, height }: { b: Browser; height?: number }) {
+/** The scrolling list: folder listing, or search results while a query is active. With `onOpenFile`, opening
+ *  an editable file (double-click / Enter) hands it to the editor; other files stay inert. */
+export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: number; onOpenFile?: (entry: Entry) => void }) {
   const [connectionId, profile] = useScope()
   const rootId = b.root?.id ?? ''
   const searching = Boolean(b.query)
@@ -215,6 +229,7 @@ export function EntryList({ b, height }: { b: Browser; height?: number }) {
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
 
   const open = (entry: Entry) => {
+    if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
     if (!entry.is_dir || entry.link_outside) return
     b.navigate(entry.rel)
   }

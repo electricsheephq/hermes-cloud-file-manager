@@ -48,7 +48,9 @@ export interface SearchResponse {
 export class ApiError extends Error {
   constructor(
     readonly code: string,
-    message: string
+    message: string,
+    /** The whole in-band answer, for codes that carry data (a save conflict's sha256 and text). */
+    readonly body?: Record<string, any>
   ) {
     super(message)
   }
@@ -79,7 +81,7 @@ export function rest<T>(path: string, opts?: PluginRestOptions): Promise<T> {
 export async function call<T extends { ok: boolean }>(path: string, opts?: PluginRestOptions): Promise<T> {
   const res = await rest<T & { code?: string; message?: string }>(path, opts)
   const rootsUnsupported = path.split('?')[0] === '/roots' && res?.code === 'unsupported_backend'
-  if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? 'error', codeText(res.code, res.message))
+  if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? 'error', codeText(res.code, res.message), res)
   return res
 }
 

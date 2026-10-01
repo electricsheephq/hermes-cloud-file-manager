@@ -17,11 +17,12 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
-import { $available, $driveAvailable, ApiError, call, errorText, pluginCtx, rest, type RootsResponse } from './api'
+import { $available, $driveAvailable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse } from './api'
 import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
 import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
-import { baseName, humanSize, joinPath } from './format'
+import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
+import { baseName, humanSize, isEditable, joinPath, parentPath } from './format'
 import { codeText, S } from './strings'
 import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
 import { collectDropEntries, filesFromInput, walkEntries } from './walk'
@@ -60,6 +61,8 @@ export function CloudFilesPage() {
   const available = useValue($available)
   const profile = useValue(host.state.profile)
   const connectionId = useValue(host.state.connectionId)
+  // The open file lives above the per-agent key: switching agents keeps it on screen behind a banner.
+  const [doc, setDoc] = useOpenDoc()
   if (available === false) {
     return (
       <Frame profile={profile}>
@@ -68,10 +71,15 @@ export function CloudFilesPage() {
     )
   }
   // Keyed by agent: switching agents resets folder, search and selection.
-  return <PageBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} />
+  return <PageBody doc={doc} key={`${connectionId ?? 'local'}::${profile}`} profile={profile} setDoc={setDoc} />
 }
 
-function PageBody({ profile }: { profile: string }) {
+interface DocProps {
+  doc: Doc | null
+  setDoc: SetDoc
+}
+
+function PageBody({ profile, ...open }: { profile: string } & DocProps) {
   const roots = useRoots()
   if (roots.error) {
     return (
@@ -98,7 +106,7 @@ function PageBody({ profile }: { profile: string }) {
       </Frame>
     )
   }
-  return <Files profile={profile} roots={roots.data} />
+  return <Files profile={profile} roots={roots.data} {...open} />
 }
 
 /** Page chrome: full height, title + agent label, optional header controls, and a drop target. */
@@ -168,8 +176,9 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
   )
 }
 
-function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
+function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsResponse } & DocProps) {
   const b = useBrowser(roots, 'page')
+  const guard = useLeaveGuard(doc)
   const queryClient = useQueryClient()
   const [newFolder, setNewFolder] = useState(false)
   const filesInput = useRef<HTMLInputElement>(null)
@@ -186,11 +195,37 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
   useEffect(() => {
     if (!driveOn) setSource('cloud')
   }, [driveOn])
-  const showImports = () => {
-    setSource('cloud')
-    b.switchRoot(roots.roots[0].id)
-    b.navigate(DRIVE_DEST)
+  const only = b.selected.size === 1 ? [...b.selected.values()][0] : undefined
+  const openFile = (entry: Entry) => {
+    if (!b.root || (doc?.root === b.root.id && doc.path === entry.rel)) return
+    const root = b.root
+    guard.leave(() => openDoc(entry, root, currentPin(), setDoc))
   }
+  // Back to the file's folder when it belongs to this agent and the browser's current root; otherwise the
+  // list as it is (root ids like `home` repeat across agents).
+  const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile)
+  const closeDoc = () => {
+    const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null
+    setDoc(null)
+    if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder)
+  }
+  const crumbTo = (path: string) =>
+    guard.leave(() => {
+      const mine = docHere()
+      if (mine && doc && doc.root !== rootId) b.switchRoot(doc.root)
+      setDoc(null)
+      if (mine) b.navigate(path)
+    })
+  // A root or source change drops the open file, so it asks first.
+  const rootSelect: Browser = { ...b, switchRoot: id => guard.leave(() => (setDoc(null), b.switchRoot(id))) }
+  const chooseSource = (drive: boolean) => (drive ? guard.leave(() => (setDoc(null), setSource('drive'))) : setSource('cloud'))
+  const showImports = () =>
+    guard.leave(() => {
+      setDoc(null)
+      setSource('cloud')
+      b.switchRoot(roots.roots[0].id)
+      b.navigate(DRIVE_DEST)
+    })
 
   const fromInput = (input: HTMLInputElement | null) => {
     if (!input?.files) return
@@ -208,10 +243,11 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
 
   return (
     <Frame
-      controls={<RootSelect b={b} drive={driveOn ? { active: inDrive, choose: drive => setSource(drive ? 'drive' : 'cloud') } : undefined} />}
+      controls={<RootSelect b={rootSelect} drive={driveOn ? { active: inDrive, choose: chooseSource } : undefined} />}
       dropLabel={S.dropTo(here)}
       onDropInput={
-        inDrive
+        // No uploads while a file is open: the folder tools are hidden, and the shown folder is the file's.
+        inDrive || doc
           ? undefined
           : (pending, pin) =>
               void pending.then(
@@ -225,13 +261,21 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
         <DrivePane roots={roots} />
       ) : (
         <>
+          {/* While a file is open only the breadcrumbs stay; the folder tools come back when it closes. */}
           <div style={toolbar}>
-            <Breadcrumbs b={b} />
-            <BrowserSearch b={b} />
-            <ToolButton icon="new-folder" label={S.newFolder} onClick={() => setNewFolder(true)} />
-            <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
-            <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
-            <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
+            {doc ? (
+              <Breadcrumbs b={b} folder={parentPath(doc.path)} leaf={doc.name} onNavigate={crumbTo} rootLabel={doc.rootLabel} />
+            ) : (
+              <>
+                <Breadcrumbs b={b} />
+                <BrowserSearch b={b} />
+                <ToolButton icon="new-folder" label={S.newFolder} onClick={() => setNewFolder(true)} />
+                <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
+                <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
+                <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
+                {only && isEditable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
+              </>
+            )}
             <input hidden multiple onChange={event => fromInput(event.currentTarget)} ref={filesInput} type="file" />
             <input
               hidden
@@ -242,11 +286,12 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
               {...{ webkitdirectory: '' }}
             />
           </div>
-          <div style={{ ...muted, fontSize: 11, padding: '4px 20px', textAlign: 'right' }}>{S.maxPerFile(roots.max_file_bytes)}</div>
-          <EntryList b={b} />
+          {!doc && <div style={{ ...muted, fontSize: 11, padding: '4px 20px', textAlign: 'right' }}>{S.maxPerFile(roots.max_file_bytes)}</div>}
+          {doc ? <Editor doc={doc} leave={guard.leave} onClose={closeDoc} setDoc={setDoc} /> : <EntryList b={b} onOpenFile={openFile} />}
         </>
       )}
       <ImportStatus onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} onShow={showImports} />
+      {guard.dialog}
       <UploadDrawer onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} />
       <NewFolderDialog
         b={b}
