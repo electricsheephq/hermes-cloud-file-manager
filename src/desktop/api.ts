@@ -58,6 +58,8 @@ let bound: null | PluginContext = null
 
 /** Availability of the selected agent's backend: null until the first probe answers. */
 export const $available = atom<boolean | null>(null)
+/** Google Drive for the selected agent (probed only while the plugin is available): null until it answers. */
+export const $driveAvailable = atom<boolean | null>(null)
 
 export function bindContext(ctx: PluginContext) {
   bound = ctx

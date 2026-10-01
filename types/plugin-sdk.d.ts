@@ -6,7 +6,10 @@ declare module '@hermes/plugin-sdk' {
 
   export interface ReadableAtom<T> {
     get(): T
+    /** Calls the listener at once with the current value, then on every change (Nano Stores). */
     subscribe(listener: (value: T) => void): () => void
+    /** Change-only: no immediate call. */
+    listen(listener: (value: T) => void): () => void
   }
   export interface WritableAtom<T> extends ReadableAtom<T> {
     set(value: T): void
@@ -69,6 +72,7 @@ declare module '@hermes/plugin-sdk' {
       connectionId: ReadableAtom<null | string>
       profile: ReadableAtom<string>
       focusedSessionOwner: ReadableAtom<FocusedSessionOwner | null>
+      activeSessionId: ReadableAtom<null | string>
     }
     notify(note: { kind?: 'info' | 'success' | 'warning' | 'error'; title?: string; message: string }): void
     navigate(path: string): void

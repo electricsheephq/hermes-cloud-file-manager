@@ -17,8 +17,10 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
-import { $available, ApiError, call, errorText, pluginCtx, rest, type RootsResponse } from './api'
+import { $available, $driveAvailable, ApiError, call, errorText, pluginCtx, rest, type RootsResponse } from './api'
 import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
+import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
+import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { baseName, humanSize, joinPath } from './format'
 import { codeText, S } from './strings'
 import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
@@ -176,6 +178,19 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
   const limits: Limits = { max_file_bytes: roots.max_file_bytes, chunk_bytes: roots.chunk_bytes }
   const here = baseName(b.path) || b.root?.label || ''
   const dest = { root: rootId, folder: b.path }
+  // Google Drive is a second source next to the cloud roots, offered only while the agent reports it.
+  const driveOn = useValue($driveAvailable) === true
+  const [source, setSource] = useState<'cloud' | 'drive'>('cloud')
+  const inDrive = driveOn && source === 'drive'
+  // When Drive goes away, the page falls back to Cloud for good: Drive coming back later never pulls it away.
+  useEffect(() => {
+    if (!driveOn) setSource('cloud')
+  }, [driveOn])
+  const showImports = () => {
+    setSource('cloud')
+    b.switchRoot(roots.roots[0].id)
+    b.navigate(DRIVE_DEST)
+  }
 
   const fromInput = (input: HTMLInputElement | null) => {
     if (!input?.files) return
@@ -193,35 +208,45 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
 
   return (
     <Frame
-      controls={<RootSelect b={b} />}
+      controls={<RootSelect b={b} drive={driveOn ? { active: inDrive, choose: drive => setSource(drive ? 'drive' : 'cloud') } : undefined} />}
       dropLabel={S.dropTo(here)}
-      onDropInput={(pending, pin) =>
-        void pending.then(
-          input => enqueueUpload(input, dest, limits, pin),
-          error => host.notify({ kind: 'error', message: errorText(error) })
-        )
+      onDropInput={
+        inDrive
+          ? undefined
+          : (pending, pin) =>
+              void pending.then(
+                input => enqueueUpload(input, dest, limits, pin),
+                error => host.notify({ kind: 'error', message: errorText(error) })
+              )
       }
       profile={profile}
     >
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '0 20px 8px', borderBottom: '1px solid var(--ui-stroke-tertiary)' }}>
-        <Breadcrumbs b={b} />
-        <BrowserSearch b={b} />
-        <ToolButton icon="new-folder" label={S.newFolder} onClick={() => setNewFolder(true)} />
-        <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
-        <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
-        <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
-        <input hidden multiple onChange={event => fromInput(event.currentTarget)} ref={filesInput} type="file" />
-        <input
-          hidden
-          multiple
-          onChange={event => fromInput(event.currentTarget)}
-          ref={folderInput}
-          type="file"
-          {...{ webkitdirectory: '' }}
-        />
-      </div>
-      <div style={{ ...muted, fontSize: 11, padding: '4px 20px', textAlign: 'right' }}>{S.maxPerFile(roots.max_file_bytes)}</div>
-      <EntryList b={b} />
+      {inDrive ? (
+        <DrivePane roots={roots} />
+      ) : (
+        <>
+          <div style={toolbar}>
+            <Breadcrumbs b={b} />
+            <BrowserSearch b={b} />
+            <ToolButton icon="new-folder" label={S.newFolder} onClick={() => setNewFolder(true)} />
+            <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
+            <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
+            <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
+            <input hidden multiple onChange={event => fromInput(event.currentTarget)} ref={filesInput} type="file" />
+            <input
+              hidden
+              multiple
+              onChange={event => fromInput(event.currentTarget)}
+              ref={folderInput}
+              type="file"
+              {...{ webkitdirectory: '' }}
+            />
+          </div>
+          <div style={{ ...muted, fontSize: 11, padding: '4px 20px', textAlign: 'right' }}>{S.maxPerFile(roots.max_file_bytes)}</div>
+          <EntryList b={b} />
+        </>
+      )}
+      <ImportStatus onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} onShow={showImports} />
       <UploadDrawer onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} />
       <NewFolderDialog
         b={b}
@@ -230,6 +255,76 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
         open={newFolder}
       />
     </Frame>
+  )
+}
+
+const toolbar: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '0 20px 8px', borderBottom: '1px solid var(--ui-stroke-tertiary)' }
+
+/** Drive mode: browse or search the agent's Drive and import the selected files into <first root>/uploads/drive. */
+function DrivePane({ roots }: { roots: RootsResponse }) {
+  const d = useDriveBrowser()
+  const job = useImport(useValue($driveJob))
+  const start = () => {
+    // Pinned now: the requests go to this agent only, even if the user switches while it runs.
+    const next = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host.state })
+    $driveJob.set(next)
+    d.clear()
+    void next.start()
+  }
+  return (
+    <>
+      <div style={toolbar}>
+        <DriveCrumbs d={d} />
+        <BrowserSearch b={d} label={S.searchDrive} />
+        <span style={{ ...muted, fontSize: 11 }}>{S.importHint(roots.roots[0].label)}</span>
+        <ToolButton
+          disabled={!d.selected.size || Boolean(job?.running)}
+          icon="cloud-download"
+          label={d.selected.size ? S.importCount(d.selected.size) : S.importToCloud}
+          onClick={start}
+        />
+      </div>
+      <DriveList d={d} />
+    </>
+  )
+}
+
+/** The page's Drive import: progress, failures, and Show. Another agent's running import says to switch back. */
+function ImportStatus({ onShow, onSettled }: { onShow: () => void; onSettled: () => void }) {
+  const job = useValue($driveJob)
+  const snap = useImport(job)
+  const profile = useValue(host.state.profile)
+  const connectionId = useValue(host.state.connectionId)
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (wasRunning.current && !snap?.running) onSettled()
+    wasRunning.current = Boolean(snap?.running)
+  }, [snap?.running, onSettled])
+
+  if (!snap) return null
+  const here = snap.pin.profile === profile && snap.pin.connectionId === connectionId
+  if (!here && !snap.running) return null
+  return (
+    <div aria-label={S.importToCloud} role="region" style={{ borderTop: '1px solid var(--ui-stroke-tertiary)', padding: '8px 20px', display: 'grid', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+        <span style={{ flex: 1, minWidth: 0 }}>{importStatus(snap)}</span>
+        {!snap.running && snap.imported.length > 0 && (
+          <Button onClick={onShow} size="sm" variant="text">
+            {S.show}
+          </Button>
+        )}
+        {snap.running ? (
+          <Button disabled={snap.canceled} onClick={() => job?.cancel()} size="sm" variant="text">
+            {S.cancel}
+          </Button>
+        ) : (
+          <Button onClick={() => $driveJob.set(null)} size="sm" variant="text">
+            {S.clear}
+          </Button>
+        )}
+      </div>
+      <ImportFailures failures={snap.failures} />
+    </div>
   )
 }
 

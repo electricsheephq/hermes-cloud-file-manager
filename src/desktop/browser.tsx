@@ -27,7 +27,7 @@ import { transportText } from './upload'
 
 export const LIST_LIMIT = 500
 const SEARCH_LIMIT = 200
-const DEBOUNCE_MS = 300
+export const DEBOUNCE_MS = 300
 
 /** Query-key scope: (connectionId, profile) so switching agents never shows another agent's files. */
 export function useScope(): [string, string] {
@@ -41,7 +41,7 @@ export function useRoots() {
   return useQuery({ queryKey: ['hcfm', ...scope, 'roots'], queryFn: () => call<RootsResponse>('/roots'), retry: 1 })
 }
 
-function useDebounced<T>(value: T, ms: number): T {
+export function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value)
   useEffect(() => {
     const timer = setTimeout(() => setSettled(value), ms)
@@ -126,10 +126,18 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => v
   )
 }
 
-export function RootSelect({ b }: { b: Browser }) {
-  if (b.roots.roots.length < 2) return null
+/** The value of the Google Drive entry in the root selector (not a root id). */
+const DRIVE_VALUE = 'hcfm:google-drive'
+
+/** Root selector. With `drive`, Google Drive is offered after the cloud roots, even when there is one root. */
+export function RootSelect({ b, drive }: { b: Browser; drive?: { active: boolean; choose: (drive: boolean) => void } }) {
+  if (b.roots.roots.length < 2 && !drive) return null
+  const change = (value: string) => {
+    drive?.choose(value === DRIVE_VALUE)
+    if (value !== DRIVE_VALUE) b.switchRoot(value)
+  }
   return (
-    <Select onValueChange={b.switchRoot} value={b.root?.id}>
+    <Select onValueChange={change} value={drive?.active ? DRIVE_VALUE : b.root?.id}>
       <SelectTrigger aria-label={S.root} size="sm">
         <SelectValue />
       </SelectTrigger>
@@ -139,6 +147,7 @@ export function RootSelect({ b }: { b: Browser }) {
             {root.label}
           </SelectItem>
         ))}
+        {drive && <SelectItem value={DRIVE_VALUE}>{S.drive}</SelectItem>}
       </SelectContent>
     </Select>
   )
@@ -168,10 +177,10 @@ export function Breadcrumbs({ b }: { b: Browser }) {
   )
 }
 
-export function BrowserSearch({ b }: { b: Browser }) {
+export function BrowserSearch({ b, label = S.search }: { b: { search: string; setSearch: (text: string) => void }; label?: string }) {
   return (
     <span onKeyDown={event => event.key === 'Escape' && b.setSearch('')}>
-      <SearchField aria-label={S.search} onChange={b.setSearch} placeholder={S.search} value={b.search} />
+      <SearchField aria-label={label} onChange={b.setSearch} placeholder={label} value={b.search} />
     </span>
   )
 }

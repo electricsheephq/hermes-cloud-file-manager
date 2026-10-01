@@ -9,9 +9,9 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
-import { $available, bindContext, isNotFoundError } from './api'
+import { $available, $driveAvailable, bindContext, isNotFoundError } from './api'
 import { CloudFilesPage } from './page'
-import { $insertText, $pickerOpen, cloudProvider, PickerHost } from './picker'
+import { $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost } from './picker'
 import { S } from './strings'
 
 export const PLUGIN_ID = 'hermes-cloud-file-manager'
@@ -22,14 +22,30 @@ export { isNotFoundError }
 
 /** Sidebar row, "+ → Cloud" provider and the picker host only while the selected agent's backend answers
  *  /available; the route stays registered so a restored /cloud-files never falls through to the session
- *  route. Transport errors keep the last answer. */
+ *  route. Transport errors keep the last answer. While it is available, /drive/available (same triggers, same
+ *  newest-probe-wins rule) adds "+ → Google Drive" and the page's Drive source; a 404 there means an older
+ *  gateway half without Drive. */
 export function registerAvailabilityGate(ctx: PluginContext, onChange?: (available: boolean) => void) {
   let removers: Array<() => void> | null = null
   let known: boolean | null = null
   let disposed = false
+  let driveRemover: null | (() => void) = null
+
+  const setDrive = (available: boolean) => {
+    if (disposed) return
+    if ($driveAvailable.get() !== available) $driveAvailable.set(available)
+    if (available && !driveRemover) {
+      driveRemover = ctx.register({ id: 'attach-drive', area: COMPOSER_AREAS.attachments, data: driveProvider })
+    } else if (!available && driveRemover) {
+      if ($pickerSource.get() === 'drive') closePicker()
+      driveRemover()
+      driveRemover = null
+    }
+  }
 
   const set = (available: boolean) => {
     if (disposed) return
+    if (!available) setDrive(false)
     if (available !== known) {
       known = available
       onChange?.(available)
@@ -48,8 +64,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     } else if (!available && removers) {
       // Close the picker and forget the old composer's insertText first: otherwise the stale picker
       // would reopen on the next available flip and could insert into a composer that is gone.
-      $pickerOpen.set(false)
-      $insertText.set(null)
+      closePicker()
       removers.forEach(remove => remove())
       removers = null
     }
@@ -62,7 +77,16 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     const mine = ++generation
     return ctx.rest('/available').then(
       () => {
-        if (mine === generation) set(true)
+        if (mine !== generation) return
+        set(true)
+        return ctx.rest<{ available?: boolean }>('/drive/available').then(
+          res => {
+            if (mine === generation) setDrive(res?.available === true)
+          },
+          error => {
+            if (mine === generation && isNotFoundError(error)) setDrive(false)
+          }
+        )
       },
       error => {
         if (mine === generation && isNotFoundError(error)) set(false)
@@ -72,10 +96,23 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
 
   void probe()
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS)
-  const unsubscribers = [host.state.profile.subscribe(() => void probe()), host.state.connectionId.subscribe(() => void probe())]
+  // listen, not subscribe: Nano Stores' subscribe also fires at once, which would triple the first probe.
+  // A new agent starts without Drive until its own probe answers: one agent's Drive answer never carries over
+  // to another, even when the new probe is slow or fails in transport. An open Drive picker stays (pinned and
+  // paused) until the new answer says Drive is unavailable.
+  const onAgentChange = () => {
+    if (!disposed) {
+      if ($driveAvailable.get() === true) $driveAvailable.set(null)
+      driveRemover?.()
+      driveRemover = null
+    }
+    void probe()
+  }
+  const unsubscribers = [host.state.profile.listen(onAgentChange), host.state.connectionId.listen(onAgentChange)]
   ctx.onDispose(() => {
     disposed = true
     unsubscribers.forEach(stop => stop())
+    closePicker()
   })
 
   return { probe }

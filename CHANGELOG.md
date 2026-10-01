@@ -8,7 +8,18 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 - Gateway API for a read-only **Google Drive** source, using the agent's own Google sign-in through its
   `google-workspace` skill: check availability, list a folder or search by name, and import one file at a time
   into `uploads/drive/` (Google Docs and Slides as PDF, Sheets as CSV, Drawings as PNG). Imports keep both files
-  on a name clash, like uploads. The Desktop screens for it follow.
+  on a name clash, like uploads.
+- **Google Drive** in Hermes Desktop, for agents whose `google-workspace` skill is signed in with Drive access:
+  - a **Google Drive** source on the Cloud Files page, to browse or search the Drive and **Import to Cloud
+    Files**;
+  - **+ → Google Drive** in the chat, which imports the picked files and inserts their locations.
+
+  Imports are pinned to the agent they started on. If you switch chats or agents while the picker is open, it
+  offers **Copy locations** instead of inserting.
+
+### Changed
+- **+ → Cloud** inserts locations only if the chat and agent are unchanged since the picker opened; otherwise it
+  offers **Copy locations**, so locations don't land in a chat you switched to.
 
 ### Fixed
 - A retried upload whose first "finish" response was lost now gets the file it already created, instead of
