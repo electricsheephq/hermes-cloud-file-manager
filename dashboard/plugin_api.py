@@ -12,12 +12,17 @@ from dataclasses import dataclass, replace
 import errno
 import fnmatch
 from functools import wraps
+import importlib.util
+import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import stat
+import subprocess
 import sys
+import tempfile
 from threading import Lock
 import time
 from typing import Annotated
@@ -37,6 +42,10 @@ SCAN_LIMIT = 20000
 SEARCH_VISIT_LIMIT = 50000
 SEARCH_SECONDS = 5.0
 TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.part$")
+DRIVE_TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.dir$")
+DRIVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{10,200}$")
+_DRIVE_CACHE = {}
+_DRIVE_LOCK = Lock()
 UPLOAD_RE = re.compile(r"^[0-9a-f]{32}$")
 DEVICE_RE = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", re.I)
 SEARCH_SKIP = {".git", "node_modules", "__pycache__", ".venv", "venv", ".tox", ".mypy_cache", ".cache"}
@@ -308,7 +317,7 @@ def _rel(root, path):
 
 
 def _entry(root, path):
-    if not _encodable(str(path)) or TEMP_RE.fullmatch(path.name.lower()):
+    if not _encodable(str(path)) or TEMP_RE.fullmatch(path.name.lower()) or DRIVE_TEMP_RE.fullmatch(path.name):
         return None
     if _home_root(root) and (_rel(root, path).split("/")[0].startswith(".")
             or (path.name.startswith(".") and _identity(path.parent) == _identity(root.path))):
@@ -588,9 +597,13 @@ def upload_finish(body: Finish):
     root, _, target, temp, info = _temp(body)
     if info.st_size != body.size:
         raise GuardError("size_mismatch", "The uploaded size differs from the expected size.", size=info.st_size)
+    return _publish(root, target, temp)
+
+
+def _publish(root, target, temp):
     for number in range(1000):
         name = _final_name(target.name, number)
-        if TEMP_RE.fullmatch(name.lower()):
+        if TEMP_RE.fullmatch(name.lower()) or DRIVE_TEMP_RE.fullmatch(name):
             continue
         candidate = target.parent / name
         try:
@@ -627,3 +640,187 @@ def upload_abort(body: UploadTarget):
         except FileNotFoundError:
             pass
     return {"ok": True}
+
+
+def _drive_home():
+    from hermes_constants import get_hermes_home
+    return Path(get_hermes_home())
+
+
+def _drive_scripts():
+    skills = _drive_home() / "skills"
+    for directory, dirs, files in os.walk(skills):
+        path = Path(directory)
+        depth = len(path.relative_to(skills).parts)
+        if depth >= 3:
+            dirs[:] = []  # scripts at depth 3, files at depth 4
+        if (path.name == "scripts" and path.parent.name == "google-workspace"
+                and {"setup.py", "google_api.py"} <= set(files)):
+            return path / "setup.py", path / "google_api.py"
+    import hermes_constants
+    for parent in list(Path(hermes_constants.__file__).resolve().parents)[:3]:
+        path = parent / "skills/productivity/google-workspace/scripts"
+        if (path / "setup.py").is_file() and (path / "google_api.py").is_file():
+            return path / "setup.py", path / "google_api.py"
+    return None
+
+
+def _drive_run(args, timeout):
+    scripts = _drive_scripts()
+    script, *command = args
+    script = Path(script)
+    # Read-only toward Drive: only these commands may ever run (explicit, since `python -O` strips asserts).
+    if scripts is None or not ((script == scripts[0] and command == ["--check"])
+            or (script == scripts[1] and len(command) >= 2 and command[0] == "drive"
+                and command[1] in {"search", "get", "download"})):
+        raise GuardError("drive_error", "The Drive command is not allowed.")
+    env = os.environ.copy()
+    env["HERMES_HOME"] = str(_drive_home())
+    # File-backed capture keeps a noisy CLI from filling process memory.
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        result = subprocess.run([sys.executable, str(script), *command], shell=False, cwd=script.parent,
+                                env=env, stdout=out, stderr=err, timeout=timeout)
+        out.seek(0)
+        result.stdout = out.read(8 * 1024 * 1024 + 1)
+        if len(result.stdout) > 8 * 1024 * 1024:
+            raise GuardError("drive_error", "Drive output exceeds the response limit.")
+        result.stdout = result.stdout.decode("utf-8", errors="replace")
+        err.seek(0)
+        result.stderr = err.read(8 * 1024 * 1024).decode("utf-8", errors="replace")
+    return result
+
+
+@router.get("/drive/available")
+def drive_available():
+    home = str(_drive_home())
+    with _DRIVE_LOCK:
+        now = time.monotonic()
+        if home in _DRIVE_CACHE and now - _DRIVE_CACHE[home][0] < 60:
+            return dict(_DRIVE_CACHE[home][1])
+        reason = None
+        try:
+            scripts = _drive_scripts()
+            if scripts is None:
+                reason = "no_skill"
+            else:
+                try:
+                    libs = all(importlib.util.find_spec(lib) is not None for lib in
+                               ("google.oauth2", "googleapiclient"))
+                except (ImportError, ValueError):
+                    libs = False
+                if not libs:
+                    reason = "no_google_libs"
+                else:
+                    result = _drive_run([scripts[0], "--check"], 10)
+                    if result.returncode:
+                        reason = "not_signed_in" if "NOT_AUTHENTICATED" in result.stdout else "error"
+                    elif any(line.strip() == "- https://www.googleapis.com/auth/drive"
+                             for line in result.stdout.splitlines()):
+                        reason = "no_drive_scope"
+        except (OSError, GuardError, subprocess.TimeoutExpired):
+            reason = "error"
+        body = {"ok": True, "available": reason is None}
+        if reason:
+            body["reason"] = reason
+        _DRIVE_CACHE[home] = (time.monotonic(), body)
+        return dict(body)
+
+
+def _drive_command(command, timeout=30, *, json_output=True):
+    if not drive_available()["available"]:
+        raise GuardError("unavailable", "Google Drive is unavailable.")
+    scripts = _drive_scripts()
+    if scripts is None:
+        raise GuardError("unavailable", "Google Drive is unavailable.")
+    try:
+        result = _drive_run([scripts[1], "drive", *command], timeout)
+        if result.returncode:
+            raise ValueError("CLI failed")
+        return json.loads(result.stdout) if json_output else None
+    except subprocess.TimeoutExpired:
+        raise GuardError("timeout", "The Drive operation timed out.")
+    except (OSError, ValueError):
+        raise GuardError("drive_error", "The Drive operation failed.")
+
+
+def _drive_id(value, *, folder=False):
+    if not (folder and value == "root") and not DRIVE_ID_RE.fullmatch(value):
+        raise GuardError("bad_id", "The Drive identifier is invalid.")
+
+
+@router.get("/drive/list")
+@_protocol
+def drive_list(folder: str = "root", q: str = ""):
+    _drive_id(folder, folder=True)
+    if len(q) > 200 or any(unicodedata.category(c) == "Cc" for c in q):
+        raise GuardError("bad_query", "Use a query of at most 200 characters without controls.")
+    escaped = q.replace("\\", "\\\\").replace("'", "\\'")
+    query = f"name contains '{escaped}' and trashed = false" if q else f"'{folder}' in parents and trashed = false"
+    raw = _drive_command(["search", query, "--max", "200", "--raw-query"])
+    try:
+        if not isinstance(raw, list):
+            raise ValueError("Expected items")
+        items = [{"id": v["id"], "name": v["name"], "mime": v["mimeType"],
+                  "is_folder": v["mimeType"] == "application/vnd.google-apps.folder",
+                  "size": int(v["size"]) if v.get("size") is not None else None,
+                  "mtime": v.get("modifiedTime")} for v in raw]
+        items.sort(key=lambda v: (not v["is_folder"], v["name"].casefold()))
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise GuardError("drive_error", "Drive returned invalid file metadata.")
+    return {"ok": True, "items": items, "truncated": len(items) >= 200}
+
+
+class DriveImport(BaseModel):
+    id: str
+    root: str
+    dest: str = "uploads/drive"
+
+
+@router.post("/drive/import")
+@_protocol
+def drive_import(body: DriveImport):
+    _drive_id(body.id)
+    root, cfg = _request_root(body.root)
+    dest, _ = _mkdir(root, body.dest)
+    metadata = _drive_command(["get", body.id])
+    try:
+        name, mime = metadata["name"], metadata["mimeType"]
+        if not isinstance(name, str) or not isinstance(mime, str):
+            raise ValueError("Invalid metadata")
+        size = int(metadata["size"]) if metadata.get("size") is not None else None
+    except (KeyError, TypeError, ValueError):
+        raise GuardError("drive_error", "Drive returned invalid file metadata.")
+    if mime == "application/vnd.google-apps.folder":
+        raise GuardError("is_folder", "Choose one file, not a folder.")
+    cap = _max_bytes(cfg)
+    if size is not None and size > cap:
+        _too_large(cap)
+    name = "".join("_" if c in '/\\:*?"<>|' or unicodedata.category(c) == "Cc" else c for c in name)
+    name = name.rstrip(". ") or "drive-file"
+    if DEVICE_RE.fullmatch(name.split(".", 1)[0]):  # the same device rule as _portable, renamed not refused
+        name = "_" + name
+    name = name.encode("utf-8")[:255].decode("utf-8", errors="ignore").rstrip(". ") or "drive-file"
+    extension = {"document": ".pdf", "presentation": ".pdf", "spreadsheet": ".csv", "drawing": ".png"}.get(
+        mime.removeprefix("application/vnd.google-apps."), "") if mime.startswith("application/vnd.google-apps.") else ""
+    if extension and not name.casefold().endswith(extension):
+        name = name.encode("utf-8")[:255 - len(extension)].decode("utf-8", errors="ignore") + extension
+    tmp_rel = _rel(root, dest / f".cfm-{secrets.token_hex(16)}.dir")
+    live = replace(root, protection=None)
+    tempdir = _resolve(live, tmp_rel, for_write=True)
+    os.mkdir(tempdir)
+    try:
+        _resolve(live, tmp_rel, for_write=True)
+        _drive_command(["download", body.id, "--output", str(tempdir / "download")], 300, json_output=False)
+        _resolve(live, tmp_rel, for_write=True)
+        files = list(tempdir.iterdir())
+        if len(files) != 1 or not stat.S_ISREG(os.lstat(files[0]).st_mode):
+            raise GuardError("drive_error", "Drive must download exactly one regular file.")
+        if os.lstat(files[0]).st_size > cap:
+            _too_large(cap)
+        target = _resolve(live, _rel(root, dest / name), for_write=True)
+        return _publish(live, target, files[0])
+    finally:
+        try:
+            shutil.rmtree(tempdir)
+        except OSError:  # cleanup is incidental; never turn a published import into a failure
+            pass
