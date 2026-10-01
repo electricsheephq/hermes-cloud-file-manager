@@ -336,3 +336,21 @@ def test_import_cleanup_failure_still_reports_published_file(client, api, drive,
     monkeypatch.setattr(api.shutil, "rmtree", broken_rmtree)
     body = imported(client)
     assert body["ok"] and (drive.root / body["entry"]["rel"]).read_bytes() == b"hello drive"
+
+
+@pytest.mark.parametrize("name,mime,expected", [("CON.txt", "text/plain", "_CON.txt"), ("aux", "text/plain", "_aux"),
+    ("com1", "application/vnd.google-apps.document", "_com1.pdf"), ("console.txt", "text/plain", "console.txt")])
+def test_import_device_names_are_prefixed_not_refused(client, drive, name, mime, expected):
+    drive.state["get"]["output"] = {"id": FILE_ID, "name": name, "mimeType": mime}
+    drive.save()
+    body = imported(client)
+    assert body["ok"] and body["entry"]["rel"] == "uploads/drive/" + expected
+
+
+def test_available_missing_google_package_raises_never_spawns(client, drive, monkeypatch):
+    # Without the `google` package, find_spec("google.oauth2") RAISES ModuleNotFoundError rather than returning None.
+    def missing(name):
+        raise ModuleNotFoundError(f"No module named {name.split('.')[0]!r}")
+    monkeypatch.setattr(importlib.util, "find_spec", missing)
+    assert get(client, "drive/available")["reason"] == "no_google_libs"
+    assert drive.calls() == []

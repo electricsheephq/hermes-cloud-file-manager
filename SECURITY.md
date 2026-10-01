@@ -34,7 +34,8 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
   - a file is never stored under either name;
   - regular files with exactly the `.part` name that are older than 24 hours are removed from a folder when a new
     upload starts there;
-  - a `.dir` folder is removed when its import finishes or fails.
+  - a `.dir` folder is removed when its import finishes or fails. One left behind by a gateway crash or a failed
+    cleanup stays hidden and is not removed automatically yet.
 - Google Drive access is read-only and goes through the agent's own `google-workspace` skill. The plugin never
   reads the agent's Google token. It runs only that skill's sign-in check (and only when the Google libraries are
   already installed, so the check never installs anything) and its Drive search, get and download commands.

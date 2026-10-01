@@ -797,6 +797,8 @@ def drive_import(body: DriveImport):
         _too_large(cap)
     name = "".join("_" if c in '/\\:*?"<>|' or unicodedata.category(c) == "Cc" else c for c in name)
     name = name.rstrip(". ") or "drive-file"
+    if DEVICE_RE.fullmatch(name.split(".", 1)[0]):  # the same device rule as _portable, renamed not refused
+        name = "_" + name
     name = name.encode("utf-8")[:255].decode("utf-8", errors="ignore").rstrip(". ") or "drive-file"
     extension = {"document": ".pdf", "presentation": ".pdf", "spreadsheet": ".csv", "drawing": ".png"}.get(
         mime.removeprefix("application/vnd.google-apps."), "") if mime.startswith("application/vnd.google-apps.") else ""
