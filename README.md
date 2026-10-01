@@ -86,6 +86,8 @@ All optional, under `plugins.entries.hermes-cloud-file-manager.settings` in the 
   - Names are checked for traversal and non-portable characters.
   - Symlinks that point outside the shown folders are not followed. An upload never writes its final file
     through a link.
+  - A listing may show such a link as not openable, with the link's own size and date. The plugin never opens
+    its target or shows the target's size or date; it only checks where the link points.
   - **The agent's Hermes home (its settings and API keys) can never be listed or written**, even when it sits
     inside a shown folder. The exception is a folder inside it that the agent is set up to work in (`roots`,
     `terminal.cwd`, or the Docker `workspace/` folder); see [SECURITY.md](SECURITY.md).

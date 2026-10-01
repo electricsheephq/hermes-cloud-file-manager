@@ -51,6 +51,9 @@ DEVICE_RE = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", re.I)
 SEARCH_SKIP = {".git", "node_modules", "__pycache__", ".venv", "venv", ".tox", ".mypy_cache", ".cache"}
 _LAST_SWEEP = {}
 _SWEEP_LOCK = Lock()
+_FINISHED: dict = {}
+_FINISHED_LOCK = Lock()
+_FINISH_LOCKS = {}  # upload_id -> [Lock, holders]: a retry racing its in-flight original waits, then replays
 
 
 class GuardError(Exception):
@@ -325,16 +328,14 @@ def _entry(root, path):
     try:
         link_info = os.lstat(path)
         link = stat.S_ISLNK(link_info.st_mode)
-        info = path.stat()
-        is_dir = stat.S_ISDIR(info.st_mode)
         realpath = Path(os.path.realpath(path))
         realroot = Path(os.path.realpath(root.path))
+        outside = link and not _inside(realpath, realroot)
         _check_protected(realpath, realroot, root.protection)
         if _home_dot(root, realpath, realroot):
             return None
-        outside = link and not _inside(realpath, realroot)
-        if outside:
-            info = link_info
+        info = path.stat() if link and not outside else link_info
+        is_dir = stat.S_ISDIR(info.st_mode)
         return {"name": path.name, "rel": _rel(root, path), "abs": str(path),
                 "is_dir": is_dir and not outside, "size": None if is_dir and not outside else info.st_size,
                 "mtime": info.st_mtime, "link_outside": outside}
@@ -594,10 +595,60 @@ def _final_name(name, number):
 @router.post("/uploads/finish")
 @_protocol
 def upload_finish(body: Finish):
+    with _FINISHED_LOCK:
+        slot = _FINISH_LOCKS.setdefault(body.upload_id, [Lock(), 0])
+        slot[1] += 1
+    try:
+        with slot[0]:
+            return _finish(body)
+    finally:
+        with _FINISHED_LOCK:
+            slot[1] -= 1
+            if not slot[1]:
+                _FINISH_LOCKS.pop(body.upload_id, None)
+
+
+def _finish(body):
+    root, _ = _request_root(body.root)
+    with _FINISHED_LOCK:
+        record = _FINISHED.get(body.upload_id)
+    if record and (record["root"], record["path"], record["size"]) == (str(root.path), body.path, body.size):
+        # Check the temp independently of the final name: a replaced final symlink must return gone.
+        temp = (root.path / body.path).parent / f".cfm-{body.upload_id}.part"
+        try:
+            _resolve(root, _rel(root, temp), for_write=False)
+            os.lstat(temp)
+        except (FileNotFoundError, GuardError):
+            candidate = record["candidate"]
+            try:
+                if record["expires"] > time.monotonic():
+                    _resolve(root, _rel(root, candidate), for_write=False)
+                    info = os.lstat(candidate)
+                    if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) == record["identity"]:
+                        return {"ok": True, "entry": _entry(root, candidate), "renamed": record["renamed"]}
+            except (OSError, GuardError):
+                pass
+            raise GuardError("gone", "The upload is no longer available.")
     root, _, target, temp, info = _temp(body)
     if info.st_size != body.size:
         raise GuardError("size_mismatch", "The uploaded size differs from the expected size.", size=info.st_size)
-    return _publish(root, target, temp)
+    result = _publish(root, target, temp)
+    try:  # the replay record is best-effort: never turn a published upload into an error
+        candidate = root.path / result["entry"]["rel"]
+        info = os.lstat(candidate)
+    except (OSError, TypeError):
+        return result
+    with _FINISHED_LOCK:
+        now = time.monotonic()
+        for upload_id in list(_FINISHED):
+            if _FINISHED[upload_id]["expires"] <= now:
+                del _FINISHED[upload_id]
+        _FINISHED[body.upload_id] = {"root": str(root.path), "path": body.path, "size": body.size,
+                                     "candidate": candidate, "renamed": result["renamed"],
+                                     "identity": (info.st_dev, info.st_ino), "expires": now + 3600}
+        while len(_FINISHED) > 10000:
+            del _FINISHED[next(iter(_FINISHED))]
+    return result
 
 
 def _publish(root, target, temp):

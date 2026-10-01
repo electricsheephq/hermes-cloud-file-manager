@@ -34,7 +34,8 @@ def test_symlinks(client, api, fs, tmp_path):
     (root / "inside/x").write_text("safe")
     (root / "internal").symlink_to(root / "inside", target_is_directory=True)
     entries = {e["name"]: e for e in get(client, "list", root="r0")["entries"]}
-    assert "dangling" not in entries
+    # A link leaving the root is never stat'ed through, so a dangling one is listed like any outside link (#19).
+    assert entries["dangling"]["link_outside"] is True and entries["dangling"]["is_dir"] is False
     assert entries["external"]["link_outside"] is True
     assert entries["external"]["is_dir"] is False
     assert entries["external"]["size"] == (root / "external").lstat().st_size
