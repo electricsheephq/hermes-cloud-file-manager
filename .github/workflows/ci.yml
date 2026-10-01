@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Hermes builds the plugin is checked against. Bump deliberately (see README "Compatibility").
+  HERMES_UPSTREAM_REPO: NousResearch/hermes-agent
+  HERMES_UPSTREAM_SHA: af92ea8e5b852518c523c3e8b2cbd95f0f3d79dc
+  HERMES_FORK_REPO: electricsheephq/evaOS-hermes-desktop-app-adapter
+  HERMES_FORK_SHA: 6d7e7ac322db7c71f61b7b1e32e4c39a9cc947ff
+
+jobs:
+  desktop:
+    name: Desktop half (types, tests, bundle, SDK surface)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Committed bundle matches source
+        run: npm run check:bundle
+      - name: Fetch pinned Hermes Desktop SDKs
+        run: |
+          for pair in "upstream $HERMES_UPSTREAM_REPO $HERMES_UPSTREAM_SHA" "fork $HERMES_FORK_REPO $HERMES_FORK_SHA"; do
+            set -- $pair
+            mkdir -p "pinned/$1"
+            git -C "pinned/$1" init -q
+            git -C "pinned/$1" remote add origin "https://github.com/$2.git"
+            git -C "pinned/$1" sparse-checkout set apps/desktop/src/sdk apps/desktop/src/contrib
+            git -C "pinned/$1" fetch -q --depth 1 origin "$3"
+            git -C "pinned/$1" checkout -q FETCH_HEAD
+          done
+      - name: Every imported SDK name exists in both pinned SDKs
+        run: node scripts/check-sdk-exports.mjs pinned/upstream/apps/desktop/src/sdk/index.ts pinned/fork/apps/desktop/src/sdk/index.ts
+      - name: No self-updater (catalog rule 3)
+        run: |
+          # Same shape as the upstream catalog CI: a JS/TS file that both names a release/raw URL and writes files.
+          bad=$(grep -rlE "releases/latest|raw\.githubusercontent\.com" --include='*.js' --include='*.ts' --include='*.tsx' desktop src | xargs -r grep -lE "writeTextFile|renamePath|writeFile\(" || true)
+          if [ -n "$bad" ]; then echo "self-updater pattern in: $bad"; exit 1; fi
+
+  backend:
+    name: Backend tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS matters: its default filesystem is case-insensitive, which the path guard must handle.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "fastapi==0.133.1" "starlette==1.3.1" httpx pytest
+      - run: python -m pytest
+
+  hermes:
+    name: Against pinned Hermes (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [upstream, fork]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+      - name: Resolve pinned Hermes
+        id: pin
+        run: |
+          if [ "${{ matrix.target }}" = upstream ]; then
+            echo "repo=$HERMES_UPSTREAM_REPO" >> "$GITHUB_OUTPUT"; echo "sha=$HERMES_UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "repo=$HERMES_FORK_REPO" >> "$GITHUB_OUTPUT"; echo "sha=$HERMES_FORK_SHA" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pin.outputs.repo }}
+          ref: ${{ steps.pin.outputs.sha }}
+          path: hermes
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Hermes from its own lockfile
+        run: |
+          cd hermes
+          uv sync --frozen --no-dev
+          uv pip install --python .venv/bin/python pytest httpx
+      - name: hermes plugins validate (catalog admission checks)
+        if: matrix.target == 'upstream'
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-home
+        run: hermes/.venv/bin/hermes plugins validate plugin
+      - name: Backend tests inside a real Hermes install
+        env:
+          HERMES_HOME: ${{ runner.temp }}/hermes-home
+        run: cd plugin && ../hermes/.venv/bin/python -m pytest
