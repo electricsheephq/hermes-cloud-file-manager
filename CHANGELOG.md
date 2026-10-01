@@ -2,7 +2,9 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## Unreleased
+## [0.2.0] - 2026-10-01
+
+Google Drive, read-only, through the agent's own Google sign-in.
 
 ### Added
 - Gateway API for a read-only **Google Drive** source, using the agent's own Google sign-in through its
