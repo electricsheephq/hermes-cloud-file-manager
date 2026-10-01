@@ -110,3 +110,20 @@ def test_b4_mkdir_recheck_sees_a_home_created_mid_request(client, api, fs, monke
     monkeypatch.setattr(api, "_canonical", lambda path: os.path.realpath(path))  # simulate a canonical-path gap
     error(post(client, "mkdir", root="r0", path="HH/x"), "protected")
     assert not (home / "x").exists()
+
+
+def test_b6_sweep_failure_does_not_fail_the_upload(client, api, fs, monkeypatch):
+    """Stale-temp cleanup is incidental: a temp we cannot delete (sticky dir, immutable, locked) must not block uploads."""
+    import time
+    root, _ = fs
+    stale = root / (".cfm-" + "d" * 32 + ".part")
+    stale.write_bytes(b"x")
+    os.utime(stale, (time.time() - 90000,) * 2)
+    api._LAST_SWEEP.clear()
+    real_unlink = api.os.unlink
+    def refuse(path, *a, **k):
+        if os.path.basename(str(path)) == stale.name:
+            raise PermissionError(1, "Operation not permitted", str(path))
+        return real_unlink(path, *a, **k)
+    monkeypatch.setattr(api.os, "unlink", refuse)
+    assert post(client, "uploads/start", root="r0", path="visible", size=0)["ok"]

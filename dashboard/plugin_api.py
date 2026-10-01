@@ -514,7 +514,7 @@ def _sweep(parent):
                     info = os.lstat(item.path)
                     if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
                         os.unlink(item.path)
-                except FileNotFoundError:
+                except OSError:  # cleanup is incidental: gone, locked or not ours to delete never blocks an upload
                     pass
 
 
