@@ -78,7 +78,8 @@ var S = {
   importing: (n, total) => `Importing ${n} of ${total}\u2026`,
   imported: (n) => `Imported ${n} ${n === 1 ? "file" : "files"}`,
   importPaused: (profile) => `Switch back to ${profile} to finish importing`,
-  insertPaused: (profile) => `Switch back to ${profile} to insert these files`,
+  importedTo: (profile) => `These files were imported to ${profile}'s uploads/drive.`,
+  insertButton: "Insert",
   importFailed: (name, reason) => `${name}: ${reason}`,
   importAndInsert: "Import and insert",
   show: "Show",
@@ -1336,30 +1337,18 @@ var $hostClaim = atom4(null);
 var $pickerSource = atom4("cloud");
 var $pickerJob = atom4(null);
 var NO_OWNER = atom4(null);
-var $pendingInsert = atom4(null);
-var stopPending = () => void 0;
+var $finished = atom4(null);
 var focusedOwner = () => (host3.state.focusedSessionOwner ?? NO_OWNER).get();
-function pinReady(pin) {
-  const { connectionId, profile } = host3.state;
-  return profile.get() === pin.profile && connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
+function pinMatches(pin, connectionId, profile, owner) {
+  return profile === pin.profile && connectionId === pin.connectionId && !ownerMismatch(owner, pin.connectionId, pin.profile);
 }
-function insertWhenReady(pin, text, insertText, closeAfter) {
-  const attempt = () => {
-    if (!pinReady(pin)) return;
-    clearPending();
-    insertText?.(text);
-    if (closeAfter) closePicker();
-  };
-  const { connectionId, profile } = host3.state;
-  const stops = [connectionId.subscribe(attempt), profile.subscribe(attempt), (host3.state.focusedSessionOwner ?? NO_OWNER).subscribe(attempt)];
-  stopPending = () => stops.forEach((stop) => stop());
-  $pendingInsert.set({ profile: pin.profile });
-  attempt();
-}
-function clearPending() {
-  stopPending();
-  stopPending = () => void 0;
-  $pendingInsert.set(null);
+var pinReady = (pin) => pinMatches(pin, host3.state.connectionId.get(), host3.state.profile.get(), focusedOwner());
+function insertFinished() {
+  const done = $finished.get();
+  if (!done || done.consumed || !pinReady(done.pin)) return;
+  $finished.set({ ...done, consumed: true });
+  done.insertText?.(done.text);
+  if (!done.failed) closePicker();
 }
 var ownerHold = (pin) => ({
   held: () => ownerMismatch(focusedOwner(), pin.connectionId, pin.profile),
@@ -1411,7 +1400,7 @@ function PickerHost() {
 function stopImport() {
   $pickerJob.get()?.cancel();
   $pickerJob.set(null);
-  clearPending();
+  $finished.set(null);
 }
 function closePicker() {
   stopImport();
@@ -1424,12 +1413,16 @@ function PickerDialog() {
   const owner = useValue3(host3.state.focusedSessionOwner ?? NO_OWNER);
   const mismatch = ownerMismatch(owner, connectionId, profile);
   const source = useValue3($pickerSource);
-  const pending = useValue3($pendingInsert);
-  const notice = pending ? S.insertPaused(pending.profile) : mismatch ? S.ownerMismatch(owner.profile, profile) : null;
+  const finished = useValue3($finished);
+  const waiting = finished && !finished.consumed ? finished : null;
+  const notice = waiting ? S.importedTo(waiting.pin.profile) : mismatch ? S.ownerMismatch(owner.profile, profile) : null;
   return /* @__PURE__ */ jsx4(Dialog2, { onOpenChange: (next) => !next && closePicker(), open: true, children: /* @__PURE__ */ jsxs4(DialogContent2, { style: { maxWidth: 720, width: "92vw" }, children: [
     /* @__PURE__ */ jsx4(DialogHeader2, { children: /* @__PURE__ */ jsx4(DialogTitle2, { children: source === "drive" ? S.drivePickerTitle : S.pickerTitle }) }),
     notice ? /* @__PURE__ */ jsx4("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: notice }) : /* @__PURE__ */ jsx4(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
-    notice && /* @__PURE__ */ jsx4(DialogFooter2, { children: /* @__PURE__ */ jsx4(Button4, { onClick: closePicker, variant: "text", children: S.cancel }) })
+    notice && /* @__PURE__ */ jsxs4(DialogFooter2, { children: [
+      /* @__PURE__ */ jsx4(Button4, { onClick: closePicker, variant: "text", children: S.cancel }),
+      waiting && /* @__PURE__ */ jsx4(Button4, { disabled: !pinMatches(waiting.pin, connectionId, profile, owner), onClick: insertFinished, children: S.insertButton })
+    ] })
   ] }) });
 }
 function PickerBody({ profile, source }) {
@@ -1473,7 +1466,8 @@ function DrivePicker({ roots }) {
     $pickerJob.set(job);
     void job.start().then((done) => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return;
-      insertWhenReady(pin, formatInsertText(pin.profile, done.imported), insertText, !done.failures.length);
+      $finished.set({ pin, text: formatInsertText(pin.profile, done.imported), failed: done.failures.length > 0, insertText, consumed: false });
+      insertFinished();
     });
   };
   return /* @__PURE__ */ jsxs4("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [
@@ -1561,7 +1555,7 @@ function registerAvailabilityGate(ctx, onChange) {
   };
   void probe();
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS);
-  const unsubscribers = [host4.state.profile.subscribe(() => void probe()), host4.state.connectionId.subscribe(() => void probe())];
+  const unsubscribers = [host4.state.profile.listen(() => void probe()), host4.state.connectionId.listen(() => void probe())];
   ctx.onDispose(() => {
     disposed = true;
     unsubscribers.forEach((stop) => stop());

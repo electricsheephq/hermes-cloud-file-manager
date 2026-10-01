@@ -185,7 +185,6 @@ describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
     await finish()
     switchTo('default')
     fireEvent.click(insertButton())
-    fireEvent.click(insertButton())
     expect(insertText).toHaveBeenCalledTimes(1)
     expect(insertText).toHaveBeenCalledWith(BOTH())
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

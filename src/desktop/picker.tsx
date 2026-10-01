@@ -35,38 +35,34 @@ export const $pickerSource = atom<'cloud' | 'drive'>('cloud')
 /** The "+ → Google Drive" import in progress; outlives the dialog body, which remounts on an agent switch. */
 const $pickerJob = atom<null | DriveImport>(null)
 const NO_OWNER = atom<null | { connectionId: null | string; profile: string }>(null)
-/** Imported locations waiting until their agent is selected and owns the focused chat again. */
-const $pendingInsert = atom<null | { profile: string }>(null)
-let stopPending: () => void = () => undefined
+/** A finished import whose locations are not inserted yet: the composer's agent or focused chat changed while
+ *  it ran. Only a click on Insert inserts them (by then the composer shows the right draft); nothing inserts
+ *  from a subscription. `consumed` makes the insert happen at most once. */
+interface Finished {
+  pin: AgentPin
+  text: string
+  failed: boolean
+  insertText: null | ((text: string) => void)
+  consumed: boolean
+}
+const $finished = atom<null | Finished>(null)
 
-const focusedOwner = () => (host.state.focusedSessionOwner ?? NO_OWNER).get()
+type Owner = null | { connectionId: null | string; profile: string }
+const focusedOwner = (): Owner => (host.state.focusedSessionOwner ?? NO_OWNER).get()
 
 /** True when `pin`'s agent is selected and the focused chat (if any) belongs to it. */
-function pinReady(pin: AgentPin): boolean {
-  const { connectionId, profile } = host.state
-  return profile.get() === pin.profile && connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile)
+function pinMatches(pin: AgentPin, connectionId: null | string, profile: string, owner: Owner): boolean {
+  return profile === pin.profile && connectionId === pin.connectionId && !ownerMismatch(owner, pin.connectionId, pin.profile)
 }
+const pinReady = (pin: AgentPin) => pinMatches(pin, host.state.connectionId.get(), host.state.profile.get(), focusedOwner())
 
-/** Insert once, and only into a draft of `pin`'s agent: if the composer moved to another agent meanwhile, the
- *  dialog says to switch back and the text goes in when it does. */
-function insertWhenReady(pin: AgentPin, text: string, insertText: null | ((text: string) => void), closeAfter: boolean) {
-  const attempt = () => {
-    if (!pinReady(pin)) return
-    clearPending()
-    insertText?.(text)
-    if (closeAfter) closePicker()
-  }
-  const { connectionId, profile } = host.state
-  const stops = [connectionId.subscribe(attempt), profile.subscribe(attempt), (host.state.focusedSessionOwner ?? NO_OWNER).subscribe(attempt)]
-  stopPending = () => stops.forEach(stop => stop())
-  $pendingInsert.set({ profile: pin.profile })
-  attempt()
-}
-
-function clearPending() {
-  stopPending()
-  stopPending = () => undefined
-  $pendingInsert.set(null)
+/** Insert the finished import's locations once, if its agent still matches; close unless something failed. */
+function insertFinished() {
+  const done = $finished.get()
+  if (!done || done.consumed || !pinReady(done.pin)) return
+  $finished.set({ ...done, consumed: true })
+  done.insertText?.(done.text)
+  if (!done.failed) closePicker()
 }
 
 /** The picker's import also waits while the focused chat belongs to another agent than the one it imports for. */
@@ -133,7 +129,7 @@ export function PickerHost() {
 function stopImport() {
   $pickerJob.get()?.cancel()
   $pickerJob.set(null)
-  clearPending()
+  $finished.set(null)
 }
 
 export function closePicker() {
@@ -148,8 +144,9 @@ function PickerDialog() {
   const owner = useValue(host.state.focusedSessionOwner ?? NO_OWNER)
   const mismatch = ownerMismatch(owner, connectionId, profile)
   const source = useValue($pickerSource)
-  const pending = useValue($pendingInsert)
-  const notice = pending ? S.insertPaused(pending.profile) : mismatch ? S.ownerMismatch(owner!.profile, profile) : null
+  const finished = useValue($finished)
+  const waiting = finished && !finished.consumed ? finished : null
+  const notice = waiting ? S.importedTo(waiting.pin.profile) : mismatch ? S.ownerMismatch(owner!.profile, profile) : null
 
   return (
     <Dialog onOpenChange={(next: boolean) => !next && closePicker()} open>
@@ -167,6 +164,11 @@ function PickerDialog() {
             <Button onClick={closePicker} variant="text">
               {S.cancel}
             </Button>
+            {waiting && (
+              <Button disabled={!pinMatches(waiting.pin, connectionId, profile, owner)} onClick={insertFinished}>
+                {S.insertButton}
+              </Button>
+            )}
           </DialogFooter>
         )}
       </DialogContent>
@@ -225,7 +227,9 @@ function DrivePicker({ roots }: { roots: RootsResponse }) {
     $pickerJob.set(job)
     void job.start().then(done => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return
-      insertWhenReady(pin, formatInsertText(pin.profile, done.imported), insertText, !done.failures.length)
+      // Same tick as the completion: insert now if the agent and focused chat still match, else wait for Insert.
+      $finished.set({ pin, text: formatInsertText(pin.profile, done.imported), failed: done.failures.length > 0, insertText, consumed: false })
+      insertFinished()
     })
   }
   return (

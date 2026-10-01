@@ -96,7 +96,8 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
 
   void probe()
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS)
-  const unsubscribers = [host.state.profile.subscribe(() => void probe()), host.state.connectionId.subscribe(() => void probe())]
+  // listen, not subscribe: Nano Stores' subscribe also fires at once, which would triple the first probe.
+  const unsubscribers = [host.state.profile.listen(() => void probe()), host.state.connectionId.listen(() => void probe())]
   ctx.onDispose(() => {
     disposed = true
     unsubscribers.forEach(stop => stop())
