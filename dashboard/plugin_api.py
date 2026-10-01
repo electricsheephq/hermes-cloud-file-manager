@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 import errno
 import fnmatch
 from functools import wraps
+import hashlib
 import importlib.util
 import json
 import os
@@ -38,6 +39,8 @@ router = APIRouter()
 
 CHUNK_BYTES = 4 * 1024 * 1024
 MAX_CHUNK_BYTES = 8 * 1024 * 1024
+EDIT_MAX_BYTES = 1024 * 1024
+EDIT_EXTS = {".md", ".markdown", ".txt"}
 SCAN_LIMIT = 20000
 SEARCH_VISIT_LIMIT = 50000
 SEARCH_SECONDS = 5.0
@@ -54,6 +57,8 @@ _SWEEP_LOCK = Lock()
 _FINISHED: dict = {}
 _FINISHED_LOCK = Lock()
 _FINISH_LOCKS = {}  # upload_id -> [Lock, holders]: a retry racing its in-flight original waits, then replays
+_EDIT_LOCKS = {}  # str(target) -> [Lock, holders]
+_EDIT_LOCKS_LOCK = Lock()
 
 
 class GuardError(Exception):
@@ -386,6 +391,149 @@ class Chunk(UploadTarget):
 
 class Finish(UploadTarget):
     size: Annotated[StrictInt, Field(ge=0)]
+
+
+class FileSave(Target):
+    base_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    text: str
+
+
+def _edit_suffix(target):
+    if target.suffix.lower() not in EDIT_EXTS:
+        raise GuardError("not_editable", "Only Markdown and text files can be edited.")
+
+
+def _edit_size(size):
+    if size > EDIT_MAX_BYTES:
+        raise GuardError("too_large", "The file exceeds the editor size limit.", max_bytes=EDIT_MAX_BYTES)
+
+
+def _edit_stat(target, *, expected=None):
+    info = os.lstat(target)
+    if expected is not None and (stat.S_ISLNK(info.st_mode)
+            or (info.st_dev, info.st_ino) != (expected.st_dev, expected.st_ino)):
+        raise GuardError("changed", "The file changed while saving.")
+    if stat.S_ISLNK(info.st_mode):
+        raise GuardError("is_link", "Editing a symbolic link is not allowed.")
+    if not stat.S_ISREG(info.st_mode):
+        raise GuardError("not_a_file", "The selected path is not a regular file.")
+    if info.st_nlink > 1:
+        raise GuardError("hard_link", "Editing a hard-linked file is not allowed.")
+    _edit_size(info.st_size)
+    return info
+
+
+def _edit_read(target):
+    before = _edit_stat(target)
+    fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    try:
+        info = os.fstat(fd)
+        if ((info.st_dev, info.st_ino) != (before.st_dev, before.st_ino)
+                or not stat.S_ISREG(info.st_mode)):
+            raise GuardError("changed", "The file changed while opening.")
+        chunks, remaining = [], EDIT_MAX_BYTES + 1
+        while remaining:
+            chunk = os.read(fd, min(remaining, 65536))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        _edit_size(len(raw))
+        return raw, info
+    finally:
+        os.close(fd)
+
+
+@router.get("/file")
+@_protocol
+def read_file(root: str, path: str):
+    selected, _ = _request_root(root)
+    target = _resolve(selected, path, for_write=False)
+    _edit_suffix(target)
+    try:
+        raw, info = _edit_read(target)
+    except FileNotFoundError:
+        raise GuardError("not_found", "The file no longer exists.")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise GuardError("not_text", "The file is not valid UTF-8 text.")
+    return {"ok": True, "text": text, "sha256": hashlib.sha256(raw).hexdigest(),
+            "size": info.st_size, "mtime": info.st_mtime}
+
+
+@router.post("/file/save")
+@_protocol
+def save_file(body: FileSave):
+    root, _ = _request_root(body.root)
+    target = _resolve(root, body.path, for_write=True)
+    _edit_suffix(target)
+    try:
+        data = body.text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise GuardError("not_text", "The text cannot be saved as UTF-8.")
+    _edit_size(len(data))
+    key = str(target)
+    with _EDIT_LOCKS_LOCK:
+        slot = _EDIT_LOCKS.setdefault(key, [Lock(), 0])
+        slot[1] += 1
+    try:
+        with slot[0]:
+            return _save_file(root, target, body, data)
+    finally:
+        with _EDIT_LOCKS_LOCK:
+            slot[1] -= 1
+            if not slot[1]:
+                _EDIT_LOCKS.pop(key, None)
+
+
+def _save_file(root, target, body, data):
+    try:
+        raw, current = _edit_read(target)
+    except FileNotFoundError:
+        raise GuardError("gone", "The file no longer exists.")
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != body.base_sha256:
+        details = {"sha256": digest}
+        try:
+            details["text"] = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+        raise GuardError("conflict", "The file has changed since it was opened.", **details)
+    temp = target.parent / f".cfm-{secrets.token_hex(16)}.part"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(temp, flags, 0o600)
+    try:
+        try:
+            remaining = memoryview(data)
+            while remaining:
+                written = os.write(fd, remaining)
+                if written == 0:
+                    raise OSError("No write progress")
+                remaining = remaining[written:]
+            os.fsync(fd)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, current.st_mode & 0o7777)
+        finally:
+            os.close(fd)
+        try:
+            # Detect a replaced final entry before _resolve, without translating any guard code.
+            _edit_stat(target, expected=current)
+            _resolve(root, body.path, for_write=True)
+            _edit_stat(target, expected=current)
+        except FileNotFoundError:
+            raise GuardError("changed", "The file disappeared while saving.")
+        os.replace(temp, target)
+        info = os.lstat(target)
+        return {"ok": True, "sha256": hashlib.sha256(data).hexdigest(),
+                "size": info.st_size, "mtime": info.st_mtime}
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _upload_target(root, rel):

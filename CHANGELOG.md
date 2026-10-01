@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Added
+- Gateway editor routes: `GET /file` reads confined Markdown and text files with their SHA-256;
+  `POST /file/save` explicitly saves an existing file only when its base SHA-256 still matches.
+
 ## [0.2.0] - 2026-10-01
 
 Google Drive, read-only, through the agent's own Google sign-in.
