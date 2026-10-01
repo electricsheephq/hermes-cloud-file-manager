@@ -14,8 +14,13 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
 
 - It never lists, reads, creates or writes anything inside the agent's Hermes home (settings, API keys,
   sessions), even when that folder sits inside a folder the plugin shows.
-- It never touches paths outside the configured folders, never follows a symlink that leads outside them, and
-  never writes through a symlink.
+  - The one exception is explicit: if an operator sets the `roots` setting to a folder *inside* a Hermes home
+    (for example a sub-folder kept for sharing), that chosen folder is shown. The Hermes home itself is never
+    shown as a root.
+- It never touches paths outside the configured folders, and never follows a symlink that leads outside them.
+  - A symlink that stays inside the shown folders works like the folder it points to.
+  - The file an upload finally writes is never a symlink, and a name taken by a symlink is refused rather than
+    written through.
 - Uploads never overwrite, rename or delete an existing file.
 - It adds no authentication of its own: access is exactly the gateway's existing dashboard authentication.
 

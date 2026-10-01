@@ -82,10 +82,12 @@ All optional, under `plugins.entries.hermes-cloud-file-manager.settings` in the 
 
 - The plugin adds **no login, tokens or permission layer** of its own. Desktop reaches it through the gateway's
   existing authenticated plugin channel, so it is exactly as private as your gateway.
-- Every path is confined to the configured folders. Names are checked for traversal and non-portable
-  characters, symlinks that point outside are not followed, nothing is written through a link, and **the
-  agent's Hermes home (its settings and API keys) can never be listed or written**, even when it sits inside a
-  shown folder. When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
+- Every path is confined to the configured folders.
+  - Names are checked for traversal and non-portable characters.
+  - Symlinks that point outside the shown folders are not followed. An upload never writes its final file
+    through a link.
+  - **The agent's Hermes home (its settings and API keys) can never be listed or written**, even when it sits
+    inside a shown folder. The only exception is a sub-folder of it that you explicitly set in `roots`. When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
   are hidden and refused.
 - Uploads never overwrite, rename or delete existing files. There is no delete in this version.
 - Everyone who can use the agent can see its files — the same access the agent itself has.
