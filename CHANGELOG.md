@@ -2,7 +2,10 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## Unreleased
+## [0.3.0] - 2026-10-02
+
+Read and edit Markdown and text files, with an explicit Save. After updating, restart the agent's gateway once so
+the new routes mount.
 
 ### Added
 - **Open and edit** Markdown and text files from Cloud Files. A file opens read-only and rendered; **Edit** shows
@@ -11,6 +14,12 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
   agent's machine since you opened it, Save is refused and you can compare with their version first.
 - Gateway editor routes: `GET /file` reads confined Markdown and text files with their SHA-256;
   `POST /file/save` explicitly saves an existing file only when its base SHA-256 still matches.
+
+### Security
+- The editor's **Save** is the only write that replaces an existing file; uploads still never overwrite. A save
+  replaces only an existing `.md`, `.markdown` or `.txt` file of at most 1 MiB, atomically and with its mode kept.
+  It never creates, renames or deletes files. Links, hard links, mount points and other non-regular files are
+  refused, and the agent's Hermes home stays out of reach as before.
 
 ## [0.2.0] - 2026-10-01
 
