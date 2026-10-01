@@ -13,9 +13,16 @@ export function atom<T>(initial: T) {
       value = next
       listeners.forEach(fn => fn(value))
     },
+    /** Like Nano Stores: calls the listener at once with the current value, then on every change. */
     subscribe(fn: Listener<T>) {
       listeners.add(fn)
-      return () => listeners.delete(fn)
+      fn(value)
+      return () => void listeners.delete(fn)
+    },
+    /** Like Nano Stores: change-only, no immediate call. */
+    listen(fn: Listener<T>) {
+      listeners.add(fn)
+      return () => void listeners.delete(fn)
     }
   }
 }

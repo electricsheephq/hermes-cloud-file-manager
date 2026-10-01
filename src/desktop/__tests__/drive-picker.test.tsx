@@ -132,30 +132,78 @@ describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
       host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile })
     })
 
-  it('P1: inserts nothing into another agent\'s draft, and inserts exactly once after switching back', async () => {
+  /** Start an import of report.pdf + Budget and leave the final request in flight. */
+  async function finalImportPending() {
     const { pending, route } = held()
-    setup({ '/drive/import': route })
+    const backend = setup({ '/drive/import': route })
     const insertText = openDrive()
     await pickTwo()
     fireEvent.click(screen.getByRole('button', { name: 'Import and insert' }))
     await flush()
     pending[0]()
     await flush()
-    expect(pending).toHaveLength(2) // the final import is in flight
+    expect(pending).toHaveLength(2)
+    return { ...backend, insertText, finish: async () => (pending[1](), await flush()) }
+  }
+  const BOTH = () => formatInsertText('default', [importedEntry('pdf1'), importedEntry('sheet1')])
+  const insertButton = () => screen.getByRole('button', { name: 'Insert' })
+
+  it('R2: a normal completion inserts exactly once (immediate-subscribe atoms)', async () => {
+    const { insertText, finish } = await finalImportPending()
+    await finish()
+    expect(insertText).toHaveBeenCalledTimes(1)
+    expect(insertText).toHaveBeenCalledWith(BOTH())
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('R2: a mismatch at completion inserts nothing, and switching back alone inserts nothing', async () => {
+    const { insertText, finish } = await finalImportPending()
     switchTo('agent-b')
-    pending[1]()
-    await flush()
+    await finish()
     expect(insertText).not.toHaveBeenCalled()
-    expect(screen.getByText('Switch back to default to insert these files')).toBeTruthy()
+    expect(screen.getByText("These files were imported to default's uploads/drive.")).toBeTruthy()
     switchTo('default')
     await flush()
+    expect(insertText).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('R2: the Insert button is disabled while the agent or the focused chat mismatches', async () => {
+    const { finish } = await finalImportPending()
+    switchTo('agent-b')
+    await finish()
+    expect(insertButton().hasAttribute('disabled')).toBe(true)
+    act(() => host.state.profile.set('default')) // agent back, but the focused chat is still agent-b's
+    expect(insertButton().hasAttribute('disabled')).toBe(true)
+    act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' }))
+    expect(insertButton().hasAttribute('disabled')).toBe(false)
+  })
+
+  it('R2: switching back and clicking Insert inserts exactly once, then closes', async () => {
+    const { insertText, finish } = await finalImportPending()
+    switchTo('agent-b')
+    await finish()
+    switchTo('default')
+    fireEvent.click(insertButton())
+    fireEvent.click(insertButton())
     expect(insertText).toHaveBeenCalledTimes(1)
-    expect(insertText).toHaveBeenCalledWith(formatInsertText('default', [importedEntry('pdf1'), importedEntry('sheet1')]))
+    expect(insertText).toHaveBeenCalledWith(BOTH())
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     switchTo('agent-b')
     switchTo('default')
     await flush()
     expect(insertText).toHaveBeenCalledTimes(1)
+  })
+
+  it('R2: closing after a mismatch inserts nothing', async () => {
+    const { insertText, finish } = await finalImportPending()
+    switchTo('agent-b')
+    await finish()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    switchTo('default')
+    await flush()
+    expect(insertText).not.toHaveBeenCalled()
   })
 
   it('P4: pauses imports while the focused chat belongs to another agent, and resumes after', async () => {
