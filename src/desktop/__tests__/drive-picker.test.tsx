@@ -13,9 +13,10 @@ const flush = async (rounds = 10) => {
 
 function setup(overrides?: Parameters<typeof fakeBackend>[0]) {
   const backend = fakeBackend(overrides)
-  bindContext(createTestContext({ rest: backend.rest }).ctx as any)
+  const { ctx } = createTestContext({ rest: backend.rest })
+  bindContext(ctx as any)
   render(<PickerHost />)
-  return backend
+  return { ...backend, ctx }
 }
 
 function openDrive(insertText = vi.fn()) {
@@ -119,11 +120,16 @@ describe('+ → Google Drive picker', () => {
   })
 })
 
-describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
+describe('+ → Google Drive picker: the chat changes while it is open (fix rounds 1-3)', () => {
   /** /drive/import requests that answer only when the test releases them. */
-  function held() {
+  function held(fail: string[] = []) {
     const pending: Array<() => void> = []
-    const route = (opts: any) => new Promise(resolve => pending.push(() => resolve({ ok: true, entry: importedEntry(opts.body.id), renamed: false })))
+    const route = (opts: any) =>
+      new Promise(resolve =>
+        pending.push(() =>
+          resolve(fail.includes(opts.body.id) ? { ok: false, code: 'drive_error', message: 'x' } : { ok: true, entry: importedEntry(opts.body.id), renamed: false })
+        )
+      )
     return { pending, route }
   }
   const switchTo = (profile: string) =>
@@ -133,9 +139,10 @@ describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
     })
 
   /** Start an import of report.pdf + Budget and leave the final request in flight. */
-  async function finalImportPending() {
-    const { pending, route } = held()
+  async function finalImportPending(fail: string[] = []) {
+    const { pending, route } = held(fail)
     const backend = setup({ '/drive/import': route })
+    const copy = vi.spyOn(backend.ctx.os, 'writeClipboard')
     const insertText = openDrive()
     await pickTwo()
     fireEvent.click(screen.getByRole('button', { name: 'Import and insert' }))
@@ -143,58 +150,72 @@ describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
     pending[0]()
     await flush()
     expect(pending).toHaveLength(2)
-    return { ...backend, insertText, finish: async () => (pending[1](), await flush()) }
+    return { ...backend, copy, insertText, finish: async () => (pending[1](), await flush()) }
   }
   const BOTH = () => formatInsertText('default', [importedEntry('pdf1'), importedEntry('sheet1')])
-  const insertButton = () => screen.getByRole('button', { name: 'Insert' })
+  const IMPORTED_TO = "These files were imported to default's uploads/drive."
 
-  it('R2: a normal completion inserts exactly once (immediate-subscribe atoms)', async () => {
-    const { insertText, finish } = await finalImportPending()
+  it('R3: an untouched open inserts exactly once on completion (immediate-subscribe atoms)', async () => {
+    const { insertText, copy, finish } = await finalImportPending()
     await finish()
     expect(insertText).toHaveBeenCalledTimes(1)
     expect(insertText).toHaveBeenCalledWith(BOTH())
+    expect(copy).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('R2: a mismatch at completion inserts nothing, and switching back alone inserts nothing', async () => {
+  it('R3: the two-composer case (focused chat moves away and back) inserts nothing and offers Copy locations', async () => {
+    const { insertText, copy, finish } = await finalImportPending()
+    act(() => {
+      host.state.activeSessionId.set('session-2')
+      host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })
+    })
+    act(() => host.state.activeSessionId.set('session-1'))
+    await finish()
+    expect(insertText).not.toHaveBeenCalled()
+    expect(screen.getByText(IMPORTED_TO)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Insert' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy locations' }))
+    expect(copy).toHaveBeenCalledTimes(1)
+    expect(copy).toHaveBeenCalledWith(BOTH())
+    expect(insertText).not.toHaveBeenCalled()
+  })
+
+  it('R3: touched, then switched back to the identical snapshot, still inserts nothing', async () => {
+    const { insertText, finish } = await finalImportPending()
+    switchTo('agent-b')
+    switchTo('default')
+    await finish()
+    expect(insertText).not.toHaveBeenCalled()
+    expect(screen.getByText(IMPORTED_TO)).toBeTruthy()
+    act(() => host.state.activeSessionId.set('session-1'))
+    await flush()
+    expect(insertText).not.toHaveBeenCalled()
+  })
+
+  it('R3: a mismatch at completion inserts nothing, and switching back alone inserts nothing', async () => {
     const { insertText, finish } = await finalImportPending()
     switchTo('agent-b')
     await finish()
     expect(insertText).not.toHaveBeenCalled()
-    expect(screen.getByText("These files were imported to default's uploads/drive.")).toBeTruthy()
+    expect(screen.getByText(IMPORTED_TO)).toBeTruthy()
     switchTo('default')
     await flush()
     expect(insertText).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
-  it('R2: the Insert button is disabled while the agent or the focused chat mismatches', async () => {
-    const { finish } = await finalImportPending()
-    switchTo('agent-b')
+  it('R3: a partial failure while touched lists the failures and copies the successes only', async () => {
+    const { insertText, copy, finish } = await finalImportPending(['sheet1'])
+    act(() => host.state.activeSessionId.set('session-2'))
     await finish()
-    expect(insertButton().hasAttribute('disabled')).toBe(true)
-    act(() => host.state.profile.set('default')) // agent back, but the focused chat is still agent-b's
-    expect(insertButton().hasAttribute('disabled')).toBe(true)
-    act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' }))
-    expect(insertButton().hasAttribute('disabled')).toBe(false)
+    expect(insertText).not.toHaveBeenCalled()
+    expect(screen.getByText("Budget: Google Drive couldn't finish that. Try again.")).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy locations' }))
+    expect(copy).toHaveBeenCalledWith(formatInsertText('default', [importedEntry('pdf1')]))
   })
 
-  it('R2: switching back and clicking Insert inserts exactly once, then closes', async () => {
-    const { insertText, finish } = await finalImportPending()
-    switchTo('agent-b')
-    await finish()
-    switchTo('default')
-    fireEvent.click(insertButton())
-    expect(insertText).toHaveBeenCalledTimes(1)
-    expect(insertText).toHaveBeenCalledWith(BOTH())
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    switchTo('agent-b')
-    switchTo('default')
-    await flush()
-    expect(insertText).toHaveBeenCalledTimes(1)
-  })
-
-  it('R2: closing after a mismatch inserts nothing', async () => {
+  it('R3: closing after a change inserts nothing', async () => {
     const { insertText, finish } = await finalImportPending()
     switchTo('agent-b')
     await finish()
@@ -205,7 +226,7 @@ describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
     expect(insertText).not.toHaveBeenCalled()
   })
 
-  it('P4: pauses imports while the focused chat belongs to another agent, and resumes after', async () => {
+  it('P4: pauses imports while the focused chat belongs to another agent, and resumes after (then offers Copy)', async () => {
     const { pending, route } = held()
     const { calls } = setup({ '/drive/import': route })
     const insertText = openDrive()
@@ -221,7 +242,9 @@ describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
     await flush()
     expect(imports(calls)).toHaveLength(2)
     pending[1]()
-    await waitFor(() => expect(insertText).toHaveBeenCalledTimes(1))
+    await flush()
+    expect(insertText).not.toHaveBeenCalled() // the focused chat changed while open: copy, never insert
+    expect(screen.getByRole('button', { name: 'Copy locations' })).toBeTruthy()
   })
 })
 

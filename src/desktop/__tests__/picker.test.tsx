@@ -90,3 +90,66 @@ describe('+ → Cloud picker', () => {
     expect($hostClaim.get()).not.toBeNull()
   })
 })
+
+describe('+ → Cloud when the chat changes while it is open (fix round 3)', () => {
+  function bindWithClipboard() {
+    const t = createTestContext({ rest: fakeBackend().rest })
+    bindContext(t.ctx as any)
+    return vi.spyOn(t.ctx.os, 'writeClipboard')
+  }
+
+  it('R3: replaces Insert locations with Copy locations and inserts nothing', async () => {
+    const copy = bindWithClipboard()
+    render(<PickerHost />)
+    const insertText = open()
+    await screen.findByText('notes.txt')
+    act(() => host.state.activeSessionId.set('session-2'))
+    fireEvent.click(screen.getByLabelText('notes.txt'))
+    expect(screen.queryByRole('button', { name: 'Insert locations' })).toBeNull()
+    expect(screen.getByText("The chat changed while this was open, so the locations weren't inserted. Copy them instead.")).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy locations' }))
+    expect(copy).toHaveBeenCalledWith(`\nCloud files on the agent's machine:\n- ${TICK}/home/agent/notes.txt${TICK}`)
+    expect(insertText).not.toHaveBeenCalled()
+  })
+
+  it('R3: stays touched after the chat returns to the same values', async () => {
+    bindWithClipboard()
+    render(<PickerHost />)
+    const insertText = open()
+    await screen.findByText('notes.txt')
+    act(() => host.state.activeSessionId.set('session-2'))
+    act(() => host.state.activeSessionId.set('session-1'))
+    fireEvent.click(screen.getByLabelText('notes.txt'))
+    expect(screen.queryByRole('button', { name: 'Insert locations' })).toBeNull()
+    expect(insertText).not.toHaveBeenCalled()
+  })
+
+  it('R3: closing and reopening resets it', async () => {
+    bindWithClipboard()
+    render(<PickerHost />)
+    open()
+    await screen.findByText('notes.txt')
+    act(() => host.state.activeSessionId.set('session-2'))
+    expect(await screen.findByRole('button', { name: 'Copy locations' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const insertText = open()
+    fireEvent.click(await screen.findByLabelText('notes.txt'))
+    fireEvent.click(screen.getByRole('button', { name: 'Insert locations' }))
+    expect(insertText).toHaveBeenCalledTimes(1)
+  })
+
+  it('R3: shows the copy-failed notice when the clipboard write rejects', async () => {
+    const copy = bindWithClipboard()
+    copy.mockRejectedValue(new Error('clipboard denied'))
+    const notify = vi.spyOn(host, 'notify')
+    render(<PickerHost />)
+    open()
+    await screen.findByText('notes.txt')
+    act(() => host.state.activeSessionId.set('session-2'))
+    fireEvent.click(screen.getByLabelText('notes.txt'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy locations' }))
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ kind: 'error', message: "Couldn't copy to the clipboard" }))
+    notify.mockRestore()
+  })
+})
