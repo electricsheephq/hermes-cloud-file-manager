@@ -7,8 +7,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 
 - **Cloud Files** in the sidebar: browse the agent's folders, search by name, create folders, and upload files
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
-  (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and nothing
-  is ever overwritten — a name clash keeps both files.
+  (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
+  never overwrite — a name clash keeps both files.
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
   message. Nothing is uploaded again and nothing is copied into the chat; the agent opens the files where they
   are with its own tools.
@@ -121,20 +121,24 @@ All optional, under `plugins.entries.hermes-cloud-file-manager.settings` in the 
     through a link.
   - A listing may show such a link as not openable, with the link's own size and date. The plugin never opens
     its target or shows the target's size or date; it only checks where the link points.
-  - **The agent's Hermes home (its settings and API keys) can never be listed or written**, even when it sits
+  - **The agent's Hermes home (its settings and API keys) can never be listed, read or written**, even when it sits
     inside a shown folder. The exception is a folder inside it that the agent is set up to work in (`roots`,
     `terminal.cwd`, or the Docker `workspace/` folder); see [SECURITY.md](SECURITY.md).
   - When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
     are hidden and refused.
 - Uploads never overwrite, rename or delete existing files. There is no delete in this version. (Stale temporary
   files with the plugin's reserved `.cfm-…part` name are cleaned up after 24 hours.)
+- Only Save in the editor overwrites, only the file you opened, and only if it has not changed since you opened
+  it. See [SECURITY.md](SECURITY.md) for the accepted race with writers outside this process.
 - Everyone who can use the agent can see its files — the same access the agent itself has.
 
 Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Limits in this version
 
-- No rename, move, delete or overwrite (coming later; use the agent or a shell for now).
+- No rename, move or delete (coming later; use the agent or a shell for now).
+- Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
+  changed since you opened it.
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.
 - A folder with more than 500 items shows the first 500; use **Search files** to find the rest.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.

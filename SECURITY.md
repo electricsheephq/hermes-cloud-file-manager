@@ -26,17 +26,30 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
   folders, and never touches paths outside them otherwise.
   - A listing may show such a link as not openable, with the link's own size and date. The plugin never opens
     its target or shows the target's size or date; it only checks where the link points.
-  - A symlink that stays inside the shown folders works like the folder it points to.
+  - A folder symlink that stays inside the shown folders works like the folder it points to. The editor refuses
+    final file symlinks for both reads and saves.
   - The file an upload finally writes is never a symlink, and a name taken by a symlink is refused rather than
     written through.
 - Uploads and Drive imports never overwrite, rename or delete an existing file. Two reserved name patterns are
-  the plugin's own temporary names: `.cfm-<32 lowercase hex>.part` (an upload in progress) and
+  the plugin's own temporary names: `.cfm-<32 lowercase hex>.part` (an upload or editor save in progress) and
   `.cfm-<32 lowercase hex>.dir` (a Drive import in progress):
   - a file is never stored under either name;
   - regular files with exactly the `.part` name that are older than 24 hours are removed from a folder when a new
     upload starts there;
   - a `.dir` folder is removed when its import finishes or fails. One left behind by a gateway crash or a failed
     cleanup stays hidden and is not removed automatically yet.
+- Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
+  changed since you opened it. Reads and saves accept only regular `.md`, `.markdown` and `.txt` files up to
+  1 MiB. Files with more than one hard link are refused: another name could alias a protected Hermes-home file.
+- Accepted race: a writer outside this process (for example the agent) that changes the file between the save's
+  current-content hash check and `os.replace` is overwritten. The window is the duration of one local write.
+  Saves within this gateway run one at a time; that does not coordinate with external writers.
+- Files with more than one hard link and files that are mount points (for example a Docker bind mount of a single
+  file) are refused by the editor. A bind mount within the same filesystem cannot be told apart from a normal
+  file and is not detected.
+- A save replaces the file with a new one: its permission bits are kept, but its owner becomes the gateway user and
+  file-specific ACLs or extended attributes are not carried over. Agent working files normally belong to the
+  gateway user already, so this matters only for files someone else created there.
 - Google Drive access is read-only and goes through the agent's own `google-workspace` skill. The plugin never
   reads the agent's Google token. It runs only that skill's sign-in check (and only when the Google libraries are
   already installed, so the check never installs anything) and its Drive search, get and download commands.
