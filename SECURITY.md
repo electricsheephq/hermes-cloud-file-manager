@@ -44,6 +44,9 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
 - Accepted race: a writer outside this process (for example the agent) that changes the file between the save's
   current-content hash check and `os.replace` is overwritten. The window is the duration of one local write.
   Saves within this process use a per-target lock; it does not coordinate with external writers.
+- A save replaces the file with a new one: its permission bits are kept, but its owner becomes the gateway user and
+  file-specific ACLs or extended attributes are not carried over. Agent working files normally belong to the
+  gateway user already, so this matters only for files someone else created there.
 - Google Drive access is read-only and goes through the agent's own `google-workspace` skill. The plugin never
   reads the agent's Google token. It runs only that skill's sign-in check (and only when the Google libraries are
   already installed, so the check never installs anything) and its Drive search, get and download commands.

@@ -57,7 +57,7 @@ _SWEEP_LOCK = Lock()
 _FINISHED: dict = {}
 _FINISHED_LOCK = Lock()
 _FINISH_LOCKS = {}  # upload_id -> [Lock, holders]: a retry racing its in-flight original waits, then replays
-_EDIT_LOCKS = {}  # str(target) -> [Lock, holders]
+_EDIT_LOCKS = {}  # (st_dev, st_ino) -> [Lock, holders]
 _EDIT_LOCKS_LOCK = Lock()
 
 
@@ -474,7 +474,11 @@ def save_file(body: FileSave):
     except UnicodeEncodeError:
         raise GuardError("not_text", "The text cannot be saved as UTF-8.")
     _edit_size(len(data))
-    key = str(target)
+    try:  # one lock per file, whatever spelling reached it (folder links, case variants)
+        identity = os.lstat(target)
+    except FileNotFoundError:
+        raise GuardError("gone", "The file no longer exists.")
+    key = (identity.st_dev, identity.st_ino)
     with _EDIT_LOCKS_LOCK:
         slot = _EDIT_LOCKS.setdefault(key, [Lock(), 0])
         slot[1] += 1
@@ -486,6 +490,20 @@ def save_file(body: FileSave):
             slot[1] -= 1
             if not slot[1]:
                 _EDIT_LOCKS.pop(key, None)
+
+
+def _sync_dir(path):
+    # Best effort: make the rename itself durable where the platform allows syncing a folder.
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _save_file(root, target, body, data):
@@ -512,9 +530,9 @@ def _save_file(root, target, body, data):
                 if written == 0:
                     raise OSError("No write progress")
                 remaining = remaining[written:]
-            os.fsync(fd)
             if hasattr(os, "fchmod"):
                 os.fchmod(fd, current.st_mode & 0o7777)
+            os.fsync(fd)
         finally:
             os.close(fd)
         try:
@@ -525,6 +543,7 @@ def _save_file(root, target, body, data):
         except FileNotFoundError:
             raise GuardError("changed", "The file disappeared while saving.")
         os.replace(temp, target)
+        _sync_dir(target.parent)
         info = os.lstat(target)
         return {"ok": True, "sha256": hashlib.sha256(data).hexdigest(),
                 "size": info.st_size, "mtime": info.st_mtime}

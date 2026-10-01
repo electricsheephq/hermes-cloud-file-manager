@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import stat
 from threading import Barrier, Thread
+import time
 
 import pytest
 
@@ -359,3 +360,45 @@ def test_save_unencodable_text_not_text(client, fs):
     assert response.status_code == 200
     error(response.json(), "not_text")
     assert target.read_bytes() == b"old"
+
+
+def test_save_aliases_share_one_lock(client, api, fs, monkeypatch):
+    # Two spellings of one file (a folder link inside the root) must serialise: the second save sees the
+    # first one's content and returns conflict instead of silently replacing it.
+    root, _ = fs
+    (root / "sub").mkdir()
+    target = root / "sub" / "note.md"
+    target.write_bytes(b"old")
+    (root / "alias").symlink_to(root / "sub", target_is_directory=True)
+    replace, entered, results = api.os.replace, Barrier(2), []
+
+    def slow_replace(source, destination):
+        if not results:  # only the first save to reach the replace waits, holding its lock
+            results.append("slow")
+            entered.wait(timeout=2)
+            time.sleep(0.3)
+        return replace(source, destination)
+
+    monkeypatch.setattr(api.os, "replace", slow_replace)
+    first = Thread(target=lambda: results.append(save(client, path="sub/note.md", text="first")), daemon=True)
+    first.start()
+    entered.wait(timeout=2)
+    second = save(client, path="alias/note.md", text="second")
+    first.join(timeout=3)
+    assert results[1]["ok"] is True
+    error(second, "conflict")
+    assert target.read_bytes() == b"first"
+
+
+def test_save_syncs_the_folder(client, api, fs, monkeypatch):
+    target = fs[0] / "note.md"
+    target.write_bytes(b"old")
+    synced, fsync = [], api.os.fsync
+
+    def record(fd):
+        synced.append(os.path.isdir(f"/dev/fd/{fd}") or stat.S_ISDIR(os.fstat(fd).st_mode))
+        return fsync(fd)
+
+    monkeypatch.setattr(api.os, "fsync", record)
+    assert save(client)["ok"] is True
+    assert synced == [False, True]  # the temp file, then its folder after the replace
