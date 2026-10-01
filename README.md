@@ -92,6 +92,13 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
 
+## Compatibility
+
+Requires Hermes and Hermes Desktop **0.21.1 or newer** (`requires_hermes: ">=0.21.1"`). CI checks every change
+against pinned builds of upstream [Hermes Agent](https://github.com/NousResearch/hermes-agent) and one downstream
+Desktop fork (see `HERMES_*_SHA` in `.github/workflows/ci.yml`). Those pins are bumped deliberately, after the
+suite passes against the new builds.
+
 ## Uninstall
 
 Remove the plugin from **Capabilities → Plugins** (trash button), or run
