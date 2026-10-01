@@ -1,4 +1,4 @@
-import { entryIcon, formatInsertText, formatLocation, humanSize, joinPath } from '../format'
+import { entryIcon, formatInsertText, formatLocation, humanSize, joinPath, shortDate } from '../format'
 
 const TICK = '`'
 
@@ -45,5 +45,14 @@ describe('helpers', () => {
     expect(entryIcon({ name: 'x', is_dir: true })).toBe('folder')
     expect(entryIcon({ name: 'x', is_dir: true, link_outside: true })).toBe('link')
     expect(entryIcon({ name: 'notes.md', is_dir: false })).toBe('file')
+  })
+})
+
+describe('shortDate', () => {
+  it('U2: pads today\'s hour to two digits so times line up with the rest of the app', () => {
+    const now = new Date(2026, 0, 15, 16, 27)
+    const early = new Date(2026, 0, 15, 1, 15)
+    expect(shortDate(early.getTime() / 1000, now).startsWith('01')).toBe(true)
+    expect(shortDate(early.getTime() / 1000, now)).toContain('15')
   })
 })

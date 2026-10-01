@@ -119,6 +119,65 @@ describe('+ → Google Drive picker', () => {
   })
 })
 
+describe('+ → Google Drive picker: owner changes (fix round 1)', () => {
+  /** /drive/import requests that answer only when the test releases them. */
+  function held() {
+    const pending: Array<() => void> = []
+    const route = (opts: any) => new Promise(resolve => pending.push(() => resolve({ ok: true, entry: importedEntry(opts.body.id), renamed: false })))
+    return { pending, route }
+  }
+  const switchTo = (profile: string) =>
+    act(() => {
+      host.state.profile.set(profile)
+      host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile })
+    })
+
+  it('P1: inserts nothing into another agent\'s draft, and inserts exactly once after switching back', async () => {
+    const { pending, route } = held()
+    setup({ '/drive/import': route })
+    const insertText = openDrive()
+    await pickTwo()
+    fireEvent.click(screen.getByRole('button', { name: 'Import and insert' }))
+    await flush()
+    pending[0]()
+    await flush()
+    expect(pending).toHaveLength(2) // the final import is in flight
+    switchTo('agent-b')
+    pending[1]()
+    await flush()
+    expect(insertText).not.toHaveBeenCalled()
+    expect(screen.getByText('Switch back to default to insert these files')).toBeTruthy()
+    switchTo('default')
+    await flush()
+    expect(insertText).toHaveBeenCalledTimes(1)
+    expect(insertText).toHaveBeenCalledWith(formatInsertText('default', [importedEntry('pdf1'), importedEntry('sheet1')]))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    switchTo('agent-b')
+    switchTo('default')
+    await flush()
+    expect(insertText).toHaveBeenCalledTimes(1)
+  })
+
+  it('P4: pauses imports while the focused chat belongs to another agent, and resumes after', async () => {
+    const { pending, route } = held()
+    const { calls } = setup({ '/drive/import': route })
+    const insertText = openDrive()
+    await pickTwo()
+    fireEvent.click(screen.getByRole('button', { name: 'Import and insert' }))
+    await flush()
+    act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'research' }))
+    pending[0]()
+    await flush()
+    expect(imports(calls)).toHaveLength(1)
+    expect(screen.getByText(/This chat belongs to research/)).toBeTruthy()
+    act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' }))
+    await flush()
+    expect(imports(calls)).toHaveLength(2)
+    pending[1]()
+    await waitFor(() => expect(insertText).toHaveBeenCalledTimes(1))
+  })
+})
+
 describe('+ → Cloud is unchanged', () => {
   it('still opens the Cloud picker and inserts the same text after a Drive pick was opened and closed', async () => {
     setup()

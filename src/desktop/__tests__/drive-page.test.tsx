@@ -155,6 +155,24 @@ describe('Cloud Files page: Import to Cloud Files', () => {
     expect(await screen.findByText('Imported 2 files')).toBeTruthy()
   })
 
+  it('U1: labels the import button with the number of selected files, kept across folders', async () => {
+    setup()
+    await openDrive()
+    expect(screen.getByRole('button', { name: 'Import to Cloud Files' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByText('report.pdf'))
+    expect(screen.getByRole('button', { name: 'Import 1 to Cloud Files' }).hasAttribute('disabled')).toBe(false)
+    fireEvent.click(screen.getByText('Projects'))
+    await screen.findByText('Budget')
+    fireEvent.click(screen.getByText('Budget'))
+    expect(screen.getByRole('button', { name: 'Import 2 to Cloud Files' })).toBeTruthy()
+    fireEvent.click(screen.getByText('Budget'))
+    expect(screen.getByRole('button', { name: 'Import 1 to Cloud Files' })).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Google Drive' }))
+    await screen.findByText('report.pdf')
+    fireEvent.click(screen.getByText('report.pdf'))
+    expect(screen.getByRole('button', { name: 'Import to Cloud Files' }).hasAttribute('disabled')).toBe(true)
+  })
+
   it('lists failures with their code text', async () => {
     const { calls } = setup({
       '/drive/import': (opts: any) =>
