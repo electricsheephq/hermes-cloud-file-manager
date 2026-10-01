@@ -37,7 +37,7 @@ def test_symlinks(client, api, fs, tmp_path):
     assert "dangling" not in entries
     assert entries["external"]["link_outside"] is True
     assert entries["external"]["is_dir"] is False
-    assert entries["external"]["size"] is None
+    assert entries["external"]["size"] == (root / "external").lstat().st_size
     for path in ("external", "external/x"):
         error(get(client, "list", root="r0", path=path), "outside_root")
         error(post(client, "mkdir", root="r0", path=path), "outside_root")
@@ -146,7 +146,7 @@ def test_configured_subfolder_of_hermes_home_allowed(client, api, fs, monkeypatc
     monkeypatch.setattr(api, "_hermes_homes", lambda: {root})
     cfg["plugins"]["entries"]["hermes-cloud-file-manager"]["settings"]["roots"] = [str(root), str(workspace)]
     roots = get(client, "roots")["roots"]
-    assert [(r["id"], r["path"]) for r in roots] == [("r0", str(workspace))]
-    assert post(client, "mkdir", root="r0", path="docs")["ok"] is True
-    assert get(client, "list", root="r0")["entries"][0]["name"] == "docs"
+    assert [(r["id"], r["path"]) for r in roots] == [("r1", str(workspace))]
+    assert post(client, "mkdir", root="r1", path="docs")["ok"] is True
+    assert get(client, "list", root="r1")["entries"][0]["name"] == "docs"
     assert not (workspace / "workspace").exists()

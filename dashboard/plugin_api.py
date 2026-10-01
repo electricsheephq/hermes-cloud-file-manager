@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import binascii
 from dataclasses import dataclass
+import errno
 import fnmatch
 from functools import wraps
 import os
@@ -16,6 +17,8 @@ from pathlib import Path
 import re
 import secrets
 import stat
+import sys
+from threading import Lock
 import time
 from typing import Annotated
 
@@ -36,6 +39,8 @@ TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.part$")
 UPLOAD_RE = re.compile(r"^[0-9a-f]{32}$")
 DEVICE_RE = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$", re.I)
 SEARCH_SKIP = {".git", "node_modules", "__pycache__", ".venv", "venv", ".tox", ".mypy_cache", ".cache"}
+_LAST_SWEEP = {}
+_SWEEP_LOCK = Lock()
 
 
 class GuardError(Exception):
@@ -65,14 +70,14 @@ def _load_config():
 
 
 def _hermes_homes():
+    homes = {Path.home() / ".hermes"}
+    if os.environ.get("HERMES_HOME"):
+        homes.add(Path(os.environ["HERMES_HOME"]))
     try:
         from hermes_constants import get_hermes_home, get_process_hermes_home, get_default_hermes_root
     except ImportError:
-        homes = {Path.home() / ".hermes"}
-        if os.environ.get("HERMES_HOME"):
-            homes.add(Path(os.environ["HERMES_HOME"]))
         return homes
-    return {Path(get_hermes_home()), Path(get_process_hermes_home()), Path(get_default_hermes_root())}
+    return homes | {Path(get_hermes_home()), Path(get_process_hermes_home()), Path(get_default_hermes_root())}
 
 
 def _dict(value):
@@ -107,35 +112,46 @@ def _excluded():
     return {identity for path in _hermes_homes() if (identity := _identity(Path(path))) is not None}
 
 
+def _canonical(path):
+    value = os.path.realpath(path)
+    return value.casefold() if sys.platform in {"darwin", "win32"} else value
+
+
+def _home_path(path):
+    return any(_canonical(path) == _canonical(home) for home in _hermes_homes())
+
+
 def _roots(cfg=None):
     cfg = _dict(_load_config()) if cfg is None else cfg
     configured = _settings(cfg).get("roots")
     if isinstance(configured, list) and configured:
         roots = []
         excluded = _excluded()
-        for value in configured:
-            if not isinstance(value, str):
+        for index, value in enumerate(configured):
+            if not isinstance(value, str) or not _encodable(value):
                 continue
             path = Path(value)
             if not path.is_absolute() or not path.is_dir() or Path(os.path.realpath(path)).parent == Path(os.path.realpath(path)):
                 continue
-            if _identity(path) in excluded:
+            if _identity(path) in excluded or _home_path(path):
                 continue
-            roots.append(Root(f"r{len(roots)}", path.name or str(path), path))
+            roots.append(Root(f"r{index}", path.name or str(path), path))
         return roots
     terminal = _dict(cfg.get("terminal"))
     workspace = Path.home()
     for value in (terminal.get("cwd"), os.environ.get("TERMINAL_CWD"), os.environ.get("MESSAGING_CWD")):
-        if not isinstance(value, str) or not value or value in {".", "auto", "cwd"}:
+        if not isinstance(value, str) or not value or not _encodable(value) or value in {".", "auto", "cwd"}:
             continue
         path = Path(value).expanduser()
-        if path.is_absolute() and path.is_dir():
+        if path.is_absolute() and path.is_dir() and Path(os.path.realpath(path)).parent != Path(os.path.realpath(path)):
             workspace = path
             break
-    if _identity(workspace) in _excluded():
+    if _identity(workspace) in _excluded() or _home_path(workspace):
         workspace = workspace / "workspace"
         workspace.mkdir(exist_ok=True)
-    return [Root("workspace", "Workspace", workspace)]
+    root = Root("workspace", "Workspace", workspace)
+    _resolve(root, "", for_write=False)
+    return [root]
 
 
 def _supported(cfg):
@@ -152,19 +168,33 @@ def _request_root(root_id):
     raise GuardError("unknown_root", "The requested root is unavailable.")
 
 
+def _encodable(value):
+    try:
+        value.encode("utf-8")
+        value.encode(sys.getfilesystemencoding())
+        return True
+    except UnicodeError:
+        return False
+
+
 def _segments(rel):
-    if (any(ord(c) < 32 or ord(c) == 127 for c in rel) or rel.startswith(("/", "~"))
-            or "\\" in rel or re.match(r"^[A-Za-z]:", rel)):
+    if not _encodable(rel) or "\x00" in rel or rel.startswith(("/", "~")) or Path(rel).is_absolute():
         raise GuardError("bad_path", "Use a valid relative path.")
     parts = []
     for segment in rel.split("/"):
         if segment in {"", "."}:
             continue
-        if (segment == ".." or any(c in segment for c in ':*?"<>|') or segment.endswith((".", " "))
-                or DEVICE_RE.fullmatch(segment.split(".", 1)[0]) or len(segment.encode("utf-8")) > 255):
-            raise GuardError("bad_path", "The path contains an invalid name.")
+        if segment == "..":
+            raise GuardError("bad_path", "Parent traversal is not allowed.")
         parts.append(segment)
     return parts
+
+
+def _portable(segment):
+    if (any(ord(c) < 32 or ord(c) == 127 for c in segment) or "\\" in segment
+            or any(c in segment for c in ':*?"<>|') or segment.endswith((".", " "))
+            or DEVICE_RE.fullmatch(segment.split(".", 1)[0]) or len(segment.encode("utf-8")) > 255):
+        raise GuardError("bad_path", "The path contains an invalid name to create.")
 
 
 def _inside(path, root):
@@ -180,6 +210,13 @@ def _home_root(root):
 
 
 def _check_protected(target, realroot):
+    canonical_target, canonical_root = _canonical(target), _canonical(realroot)
+    for home in _hermes_homes():
+        canonical_home = _canonical(home)
+        # R1 permits a scoped root strictly inside a home, but never that home itself.
+        scoped_inside = canonical_root != canonical_home and _inside(canonical_root, canonical_home)
+        if not scoped_inside and _inside(canonical_target, canonical_home):
+            raise GuardError("protected", "The Hermes home is protected.")
     excluded = _excluded()
     identity = _identity(target)
     if identity is not None and identity in excluded:
@@ -187,11 +224,18 @@ def _check_protected(target, realroot):
     ancestor = target
     while not ancestor.exists() and ancestor != ancestor.parent:
         ancestor = ancestor.parent
-    while ancestor != realroot and _inside(ancestor, realroot):
+    while _inside(ancestor, realroot):
         identity = _identity(ancestor)
         if identity is not None and identity in excluded:
             raise GuardError("protected", "The Hermes home is protected.")
+        if ancestor == realroot:
+            break
         ancestor = ancestor.parent
+
+
+def _home_dot(root, resolved, realroot):
+    return (_home_root(root) and _inside(resolved, realroot) and resolved != realroot
+            and resolved.relative_to(realroot).parts[0].startswith("."))
 
 
 def _resolve(root: Root, rel: str, *, for_write: bool) -> Path:
@@ -203,14 +247,21 @@ def _resolve(root: Root, rel: str, *, for_write: bool) -> Path:
         try:
             info = os.lstat(candidate)
         except FileNotFoundError:
+            _portable(part)
             continue
+        except NotADirectoryError:
+            raise GuardError("exists_file" if for_write else "not_a_dir", "A parent path is not a directory.")
+        except OSError as exc:
+            if exc.errno == errno.ENAMETOOLONG:
+                _portable(part)
+            raise
         if stat.S_ISLNK(info.st_mode) and not _inside(Path(os.path.realpath(candidate)), realroot):
             raise GuardError("outside_root", "The path leaves the selected root.")
     resolved = Path(os.path.realpath(candidate))
     if not _inside(resolved, realroot):
         raise GuardError("outside_root", "The path leaves the selected root.")
     _check_protected(resolved, realroot)
-    if parts and parts[0].startswith(".") and _home_root(root):
+    if _home_dot(root, resolved, realroot):
         raise GuardError("protected", "Hidden entries in the home root are protected.")
     if for_write:
         try:
@@ -227,17 +278,23 @@ def _rel(root, path):
 
 
 def _entry(root, path):
-    if TEMP_RE.fullmatch(path.name) or (_home_root(root) and path.parent == root.path and path.name.startswith(".")):
+    if not _encodable(str(path)) or TEMP_RE.fullmatch(path.name.lower()):
         return None
     try:
-        link = stat.S_ISLNK(os.lstat(path).st_mode)
+        link_info = os.lstat(path)
+        link = stat.S_ISLNK(link_info.st_mode)
         info = path.stat()
         is_dir = stat.S_ISDIR(info.st_mode)
         realpath = Path(os.path.realpath(path))
-        _check_protected(realpath, Path(os.path.realpath(root.path)))
-        outside = link and not _inside(realpath, Path(os.path.realpath(root.path)))
+        realroot = Path(os.path.realpath(root.path))
+        _check_protected(realpath, realroot)
+        if _home_dot(root, realpath, realroot):
+            return None
+        outside = link and not _inside(realpath, realroot)
+        if outside:
+            info = link_info
         return {"name": path.name, "rel": _rel(root, path), "abs": str(path),
-                "is_dir": is_dir and not outside, "size": None if is_dir or outside else info.st_size,
+                "is_dir": is_dir and not outside, "size": None if is_dir and not outside else info.st_size,
                 "mtime": info.st_mtime, "link_outside": outside}
     except (OSError, GuardError):
         return None
@@ -372,28 +429,32 @@ def search(root: str, q: str, limit: int = Query(100, ge=1, le=200)):
     q = q.strip()
     if not q or len(q) > 200:
         raise GuardError("bad_query", "Use a search query between 1 and 200 characters.")
-    stack, results, visited = [_resolve(selected, "", for_write=False)], [], 0
+    stack, results, visited, skipped = [_resolve(selected, "", for_write=False)], [], 0, 0
     started = time.monotonic()
     pattern, lower = "*" in q or "?" in q, q.lower()
     while stack:
         folder = stack.pop()
-        with os.scandir(folder) as scan:
-            for item in scan:
-                if visited >= SEARCH_VISIT_LIMIT or time.monotonic() - started >= SEARCH_SECONDS:
-                    return {"ok": True, "results": results, "truncated": True, "visited": visited}
-                visited += 1
-                entry = _entry(selected, Path(item.path))
-                if entry is None:
-                    continue
-                if entry["is_dir"] and (item.name in SEARCH_SKIP or (item.name.startswith(".") and not q.startswith("."))):
-                    continue
-                if fnmatch.fnmatch(item.name.lower(), lower) if pattern else lower in item.name.lower():
-                    results.append(entry)
-                    if len(results) >= limit:
-                        return {"ok": True, "results": results, "truncated": True, "visited": visited}
-                if entry["is_dir"] and not item.is_symlink():
-                    stack.append(_resolve(selected, entry["rel"], for_write=False))
-    return {"ok": True, "results": results, "truncated": visited >= SEARCH_VISIT_LIMIT, "visited": visited}
+        try:
+            folder = _resolve(selected, _rel(selected, folder), for_write=False)
+            with os.scandir(folder) as scan:
+                for item in scan:
+                    if visited >= SEARCH_VISIT_LIMIT or time.monotonic() - started >= SEARCH_SECONDS:
+                        return {"ok": True, "results": results, "truncated": True, "visited": visited, "skipped": skipped}
+                    visited += 1
+                    entry = _entry(selected, Path(item.path))
+                    if entry is None:
+                        continue
+                    if entry["is_dir"] and (item.name in SEARCH_SKIP or (item.name.startswith(".") and not q.startswith("."))):
+                        continue
+                    if fnmatch.fnmatch(item.name.lower(), lower) if pattern else lower in item.name.lower():
+                        results.append(entry)
+                        if len(results) >= limit:
+                            return {"ok": True, "results": results, "truncated": True, "visited": visited, "skipped": skipped}
+                    if entry["is_dir"] and not item.is_symlink():
+                        stack.append(Path(item.path))
+        except (GuardError, OSError):
+            skipped += 1
+    return {"ok": True, "results": results, "truncated": visited >= SEARCH_VISIT_LIMIT, "visited": visited, "skipped": skipped}
 
 
 @router.post("/mkdir")
@@ -404,6 +465,24 @@ def mkdir(body: Target):
     return {"ok": True, "created": created, "entry": _entry(root, path)}
 
 
+def _sweep(parent):
+    key, now = os.path.realpath(parent), time.monotonic()
+    with _SWEEP_LOCK:
+        if now - _LAST_SWEEP.get(key, float("-inf")) < 3600:
+            return
+        _LAST_SWEEP[key] = now
+    cutoff = time.time() - 24 * 3600
+    with os.scandir(parent) as scan:
+        for item in scan:
+            if TEMP_RE.fullmatch(item.name.lower()):
+                try:
+                    info = os.lstat(item.path)
+                    if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                        os.unlink(item.path)
+                except FileNotFoundError:
+                    pass
+
+
 @router.post("/uploads/start")
 @_protocol
 def upload_start(body: SizedTarget):
@@ -412,18 +491,10 @@ def upload_start(body: SizedTarget):
     if body.size > cap:
         _too_large(cap)
     target = _upload_target(root, body.path)
-    _mkdir(root, _rel(root, target.parent))
+    if not target.parent.is_dir():
+        _mkdir(root, _rel(root, target.parent))
     target = _resolve(root, body.path, for_write=True)
-    cutoff = time.time() - 24 * 3600
-    with os.scandir(target.parent) as scan:
-        for item in scan:
-            if TEMP_RE.fullmatch(item.name):
-                try:
-                    info = os.lstat(item.path)
-                    if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
-                        os.unlink(item.path)
-                except FileNotFoundError:
-                    pass
+    _sweep(target.parent)
     upload_id = secrets.token_hex(16)
     temp = target.parent / f".cfm-{upload_id}.part"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
@@ -484,16 +555,29 @@ def upload_finish(body: Finish):
         raise GuardError("size_mismatch", "The uploaded size differs from the expected size.", size=info.st_size)
     for number in range(1000):
         name = _final_name(target.name, number)
-        if TEMP_RE.fullmatch(name):
+        if TEMP_RE.fullmatch(name.lower()):
             continue
         candidate = target.parent / name
-        _resolve(root, _rel(root, candidate), for_write=False)
+        try:
+            _resolve(root, _rel(root, candidate), for_write=False)
+        except GuardError:
+            continue
         try:
             fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o666)
         except FileExistsError:
             continue
+        reserved = os.fstat(fd)
         os.close(fd)
-        os.replace(temp, candidate)
+        try:
+            os.replace(temp, candidate)
+        except OSError:
+            try:
+                current = os.lstat(candidate)
+                if (current.st_dev, current.st_ino) == (reserved.st_dev, reserved.st_ino) and current.st_size == 0:
+                    os.unlink(candidate)
+            except FileNotFoundError:
+                pass
+            raise
         return {"ok": True, "entry": _entry(root, candidate), "renamed": candidate.name != target.name}
     raise GuardError("no_free_name", "No unused filename is available.")
 

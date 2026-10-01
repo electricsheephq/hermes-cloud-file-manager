@@ -16,7 +16,7 @@ def test_roots_settings_and_notes(client, fs):
                     max_file_mb=2)
     body = get(client, "roots")
     assert body["supported"] is True and body["reason"] is None
-    assert body["roots"] == [{"id": "r0", "label": "files", "path": str(root), "notes": {"docs": "Imported"}}]
+    assert body["roots"] == [{"id": "r3", "label": "files", "path": str(root), "notes": {"docs": "Imported"}}]
     assert body["max_file_bytes"] == 2 * 1024 * 1024
     assert body["chunk_bytes"] == 4 * 1024 * 1024
     assert body["highlights"] == ["docs", "uploads"]
