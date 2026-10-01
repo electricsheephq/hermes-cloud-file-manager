@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
 import { fakeBackend } from './fake-backend'
 import { $available, bindContext } from '../api'
-import { $batch, CloudFilesPage } from '../page'
+import { $batch, CloudFilesPage, enqueueUpload } from '../page'
 
 function setup(overrides?: Parameters<typeof fakeBackend>[0]) {
   const backend = fakeBackend(overrides)
@@ -215,5 +215,46 @@ describe('Cloud Files page', () => {
     ).toBeTruthy()
     expect(screen.queryByText("Couldn't load files")).toBeNull()
     expect(screen.getByText(/404/)).toBeTruthy() // raw error kept as a small details line
+  })
+
+  it('Space on a row checkbox toggles the entry exactly once (thread 4152214271)', async () => {
+    setup()
+    await screen.findByText('notes.txt')
+    const box = screen.getByLabelText('notes.txt')
+    fireEvent.keyDown(box, { key: ' ' }) // bubbles to the row
+    fireEvent.click(box) // the checkbox's own activation
+    expect(screen.getByText('notes.txt').closest('[role=listitem]')!.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('shows the copy-failed notice when the clipboard write rejects (thread 4152214259)', async () => {
+    const { ctx } = setup()
+    vi.spyOn(ctx.os, 'writeClipboard').mockRejectedValue(new Error('clipboard denied'))
+    const notify = vi.spyOn(host, 'notify')
+    await screen.findByText('notes.txt')
+    fireEvent.click(screen.getByLabelText('notes.txt'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy path' }))
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ kind: 'error', message: "Couldn't copy to the clipboard" }))
+    notify.mockRestore()
+  })
+
+  it('accepts a new upload on another agent while a canceled batch is still settling (thread 4152214233)', async () => {
+    const backend = fakeBackend({
+      '/uploads/start': () => ({ ok: true, upload_id: 'u1' }),
+      '/uploads/chunk': () => new Promise(() => undefined)
+    })
+    bindContext(createTestContext({ rest: backend.rest }).ctx as any)
+    const notify = vi.spyOn(host, 'notify')
+    const limits = { max_file_bytes: 1e6, chunk_bytes: 262144 }
+    enqueueUpload({ files: [{ file: new File(['a'], 'a.txt'), rel: 'a.txt' }] }, { root: 'home', folder: '' }, limits)
+    await flush()
+    const first = $batch.get()!
+    first.cancel()
+    expect(first.getSnapshot()).toMatchObject({ canceled: true, running: true })
+    act(() => host.state.profile.set('other'))
+    enqueueUpload({ files: [{ file: new File(['b'], 'b.txt'), rel: 'b.txt' }] }, { root: 'home', folder: '' }, limits)
+    expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Finish or cancel the current uploads first' }))
+    expect($batch.get()).not.toBe(first)
+    expect($batch.get()!.getSnapshot()).toMatchObject({ profile: 'other', canceled: false })
+    notify.mockRestore()
   })
 })

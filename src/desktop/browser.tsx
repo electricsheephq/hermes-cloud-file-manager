@@ -260,6 +260,8 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
       onClick={click}
       onDoubleClick={() => onOpen(entry)}
       onKeyDown={event => {
+        // Only keys aimed at the row itself: Space on the nested checkbox is the checkbox's own toggle.
+        if (event.target !== event.currentTarget) return
         if (event.key === 'Enter') onOpen(entry)
         if (event.key === ' ') {
           event.preventDefault()

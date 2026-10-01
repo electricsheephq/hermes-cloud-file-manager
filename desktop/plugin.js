@@ -385,6 +385,7 @@ var UploadBatch = class {
           const fin = await this.send("/uploads/finish", { upload_id: uploadId, root, path, size }, false);
           if (fin.ok) {
             this.inFlight.delete(item.id);
+            if (this.snapshot.canceled) return;
             const finalName = baseName(fin.entry?.rel ?? fin.entry?.name ?? path);
             this.patch(item.id, { status: "done", sent: size, ...fin.renamed ? { savedAs: finalName } : {} });
             return;
@@ -649,6 +650,7 @@ function EntryRow({ b, entry, onOpen, searching }) {
       onClick: click,
       onDoubleClick: () => onOpen(entry),
       onKeyDown: (event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter") onOpen(entry);
         if (event.key === " ") {
           event.preventDefault();
@@ -746,7 +748,7 @@ function enqueueUpload(input, dest, limits, pin = currentPin()) {
   let batch = $batch.get();
   const snap = batch?.getSnapshot();
   const sameAgent = snap?.profile === pin.profile && snap?.connectionId === pin.connectionId;
-  if (snap?.running && !sameAgent) {
+  if (snap?.running && !snap.canceled && !sameAgent) {
     host2.notify({ kind: "warning", message: S.busyElsewhere });
     return;
   }
@@ -856,7 +858,7 @@ function Files({ profile, roots }) {
   };
   const copyPaths = () => {
     const text = [...b.selected.keys()].join("\n");
-    void pluginCtx().os.writeClipboard(text).then((ok) => host2.notify(ok ? { kind: "success", message: S.copied(b.selected.size) } : { kind: "error", message: S.copyFailed }));
+    void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host2.notify(ok ? { kind: "success", message: S.copied(b.selected.size) } : { kind: "error", message: S.copyFailed }));
   };
   return /* @__PURE__ */ jsxs2(
     Frame,

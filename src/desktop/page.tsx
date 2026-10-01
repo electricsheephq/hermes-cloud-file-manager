@@ -41,7 +41,8 @@ export function enqueueUpload(input: UploadInput, dest: Destination, limits: Lim
   let batch = $batch.get()
   const snap = batch?.getSnapshot()
   const sameAgent = snap?.profile === pin.profile && snap?.connectionId === pin.connectionId
-  if (snap?.running && !sameAgent) {
+  // A canceled batch may still be settling its last request; it no longer blocks another agent's upload.
+  if (snap?.running && !snap.canceled && !sameAgent) {
     host.notify({ kind: 'warning', message: S.busyElsewhere })
     return
   }
@@ -186,6 +187,7 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
     const text = [...b.selected.keys()].join('\n')
     void pluginCtx()
       .os.writeClipboard(text)
+      .then(ok => ok, () => false)
       .then(ok => host.notify(ok ? { kind: 'success', message: S.copied(b.selected.size) } : { kind: 'error', message: S.copyFailed }))
   }
 

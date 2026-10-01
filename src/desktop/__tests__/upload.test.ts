@@ -282,4 +282,18 @@ describe('upload engine', () => {
     expect(h.calls.every(c => c.agent === 'origin')).toBe(true)
     expect(batch.getSnapshot().items[0].status).toBe('done')
   })
+
+  it('a finish that succeeds after cancel leaves no done row in the canceled batch (thread 4152251051)', async () => {
+    let finish!: (value: unknown) => void
+    const h = harness({ '/uploads/finish': () => new Promise(resolve => (finish = resolve)) })
+    h.batch.add({ files: [{ file: blob(10), rel: 'a.txt' }] }, { root: 'home', folder: '' })
+    const done = h.batch.start()
+    await flush()
+    expect(h.of('/uploads/finish')).toHaveLength(1)
+    h.batch.cancel()
+    finish({ ok: true, renamed: false, entry: { name: 'a.txt', rel: 'a.txt' } })
+    await done
+    expect(h.batch.getSnapshot().canceled).toBe(true)
+    expect(h.batch.getSnapshot().items.map(item => item.status)).toEqual(['canceled'])
+  })
 })

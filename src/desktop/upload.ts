@@ -263,6 +263,7 @@ export class UploadBatch {
           const fin = await this.send('/uploads/finish', { upload_id: uploadId, root, path, size }, false)
           if (fin.ok) {
             this.inFlight.delete(item.id)
+            if (this.snapshot.canceled) return // the row stays canceled, like the rest of the batch
             const finalName = baseName(fin.entry?.rel ?? fin.entry?.name ?? path)
             this.patch(item.id, { status: 'done', sent: size, ...(fin.renamed ? { savedAs: finalName } : {}) })
             return
