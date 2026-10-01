@@ -166,6 +166,7 @@ export function useImport(job: null | DriveImport): null | ImportSnapshot {
 
 /** One line for an import: paused on another agent, "Importing 2 of 5…", or "Imported N files". */
 export function importStatus(snap: ImportSnapshot): string {
+  if (snap.canceled && !snap.running) return S.importCanceled(snap.imported.length)
   if (snap.paused) return S.importPaused(snap.pin.profile)
   if (snap.running) return S.importing(Math.min(snap.total, snap.settled + 1), snap.total)
   return S.imported(snap.imported.length)

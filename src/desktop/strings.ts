@@ -73,6 +73,7 @@ export const S = {
   importing: (n: number, total: number) => `Importing ${n} of ${total}…`,
   imported: (n: number) => `Imported ${n} ${n === 1 ? 'file' : 'files'}`,
   importPaused: (profile: string) => `Switch back to ${profile} to finish importing`,
+  importCanceled: (n: number) => `Import canceled after ${n} ${n === 1 ? 'file' : 'files'}`,
   importedTo: (profile: string) => `These files were imported to ${profile}'s uploads/drive.`,
   copyLocations: 'Copy locations',
   locationsCopied: 'Locations copied',

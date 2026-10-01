@@ -78,6 +78,7 @@ var S = {
   importing: (n, total) => `Importing ${n} of ${total}\u2026`,
   imported: (n) => `Imported ${n} ${n === 1 ? "file" : "files"}`,
   importPaused: (profile) => `Switch back to ${profile} to finish importing`,
+  importCanceled: (n) => `Import canceled after ${n} ${n === 1 ? "file" : "files"}`,
   importedTo: (profile) => `These files were imported to ${profile}'s uploads/drive.`,
   copyLocations: "Copy locations",
   locationsCopied: "Locations copied",
@@ -935,6 +936,7 @@ function useImport(job) {
   return useSyncExternalStore(job?.subscribe ?? noop, job?.getSnapshot ?? none, job?.getSnapshot ?? none);
 }
 function importStatus(snap) {
+  if (snap.canceled && !snap.running) return S.importCanceled(snap.imported.length);
   if (snap.paused) return S.importPaused(snap.pin.profile);
   if (snap.running) return S.importing(Math.min(snap.total, snap.settled + 1), snap.total);
   return S.imported(snap.imported.length);
@@ -1211,7 +1213,7 @@ function ImportStatus({ onShow, onSettled }) {
     /* @__PURE__ */ jsxs3("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
       /* @__PURE__ */ jsx3("span", { style: { flex: 1, minWidth: 0 }, children: importStatus(snap) }),
       !snap.running && snap.imported.length > 0 && /* @__PURE__ */ jsx3(Button3, { onClick: onShow, size: "sm", variant: "text", children: S.show }),
-      !snap.running && /* @__PURE__ */ jsx3(Button3, { onClick: () => $driveJob.set(null), size: "sm", variant: "text", children: S.clear })
+      snap.running ? /* @__PURE__ */ jsx3(Button3, { disabled: snap.canceled, onClick: () => job?.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx3(Button3, { onClick: () => $driveJob.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
     /* @__PURE__ */ jsx3(ImportFailures, { failures: snap.failures })
   ] });

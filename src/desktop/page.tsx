@@ -309,7 +309,11 @@ function ImportStatus({ onShow, onSettled }: { onShow: () => void; onSettled: ()
             {S.show}
           </Button>
         )}
-        {!snap.running && (
+        {snap.running ? (
+          <Button disabled={snap.canceled} onClick={() => job?.cancel()} size="sm" variant="text">
+            {S.cancel}
+          </Button>
+        ) : (
           <Button onClick={() => $driveJob.set(null)} size="sm" variant="text">
             {S.clear}
           </Button>
