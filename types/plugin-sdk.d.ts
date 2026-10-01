@@ -43,8 +43,9 @@ declare module '@hermes/plugin-sdk' {
   export interface PluginContext {
     register(contribution: Contribution<any>): () => void
     onDispose(fn: () => void): void
-    setTimeout(fn: () => void, ms: number): number
-    setInterval(fn: () => void, ms: number): number
+    /** Both return a cancel function (not a timer id). */
+    setTimeout(fn: () => void, ms: number): () => void
+    setInterval(fn: () => void, ms: number): () => void
     rest<T = unknown>(path: string, opts?: PluginRestOptions): Promise<T>
     os: PluginOs
     storage: PluginStorage

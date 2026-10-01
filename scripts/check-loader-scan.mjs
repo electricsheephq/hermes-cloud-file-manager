@@ -17,7 +17,8 @@ const args = process.argv.slice(2)
 const selfTest = args.includes('--self-test')
 const bundleAt = args.indexOf('--bundle')
 const bundle = bundleAt >= 0 ? args[bundleAt + 1] : 'desktop/plugin.js'
-const loaders = args.filter((arg, i) => !arg.startsWith('--') && i !== bundleAt + 1)
+// Drop the --bundle value only when --bundle was given (bundleAt === -1 would otherwise drop argv[0]).
+const loaders = args.filter((arg, i) => !arg.startsWith('--') && !(bundleAt >= 0 && i === bundleAt + 1))
 if (!loaders.length) {
   console.error('usage: check-loader-scan.mjs [--self-test] [--bundle file] <runtime-loader.ts> [...]')
   process.exit(2)
@@ -72,6 +73,7 @@ let failed = false
 const here = dirname(fileURLToPath(import.meta.url))
 const trap = readFileSync(join(here, 'fixtures', 'loader-trap.js'), 'utf8')
 let trapCaught = 0
+let scanned = 0
 
 for (const loader of loaders) {
   let scanner
@@ -82,6 +84,7 @@ for (const loader of loaders) {
     failed = true
     continue
   }
+  scanned += 1
   const label = `${loader} [${scanner.helpers.join(', ')}]`
   const bad = scanner.scan(readFileSync(bundle, 'utf8'))
   if (bad.length) {
@@ -102,6 +105,11 @@ for (const loader of loaders) {
   }
 }
 
+// Every loader named on the command line must have been scanned (upstream and fork in CI).
+if (selfTest && (scanned !== loaders.length || scanned < 2)) {
+  failed = true
+  console.error(`self-test: scanned ${scanned} of ${loaders.length} loader(s); expected every given loader, at least 2`)
+}
 if (selfTest && !trapCaught) {
   failed = true
   console.error('self-test: loader-trap.js was not flagged by any loader; the check cannot catch the regex trap')

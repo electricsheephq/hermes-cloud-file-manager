@@ -153,8 +153,8 @@ export function createTestContext(options: TestContextOptions = {}) {
       return () => live.delete(contribution.id)
     },
     onDispose: (fn: () => void) => disposers.push(fn),
-    setTimeout: (fn: () => void) => (fn(), 0),
-    setInterval: (fn: () => void) => (intervals.push(fn), intervals.length),
+    setTimeout: (fn: () => void) => (fn(), () => undefined),
+    setInterval: (fn: () => void) => (intervals.push(fn), () => undefined),
     rest: options.rest ?? (async () => ({ ok: true })),
     os: { writeClipboard: async (_text: string) => true, openExternal: async () => true },
     storage: { get: () => undefined, set: () => undefined, remove: () => undefined }
