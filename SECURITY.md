@@ -24,7 +24,8 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
     The Hermes home itself is never shown as a root.
 - It never browses into, uploads through or writes through a symlink that leads outside the configured
   folders, and never touches paths outside them otherwise.
-  - A listing may show such a link as not openable, with the size and date its target reports.
+  - A listing may show such a link as not openable, with the link's own size and date; the plugin never opens
+    or stats its target.
   - A symlink that stays inside the shown folders works like the folder it points to.
   - The file an upload finally writes is never a symlink, and a name taken by a symlink is refused rather than
     written through.
