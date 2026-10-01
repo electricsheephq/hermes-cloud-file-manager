@@ -109,8 +109,10 @@ def test_a6_double_finish_removes_only_failed_reservation(client, api, fs, monke
         barrier.wait(timeout=3)
         return replace(source, target)
     monkeypatch.setattr(api.os, "replace", racing_replace)
+    # HTTP finishes are serialized now (a racing retry replays), so race the unserialized publish step directly.
+    finish = api._protocol(api._finish)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        bodies = list(pool.map(lambda _: post(client, "uploads/finish", **upload, size=4), range(2)))
+        bodies = list(pool.map(lambda _: finish(api.Finish(**upload, size=4)), range(2)))
     assert sum(body["ok"] for body in bodies) == 1
     assert [path.read_bytes() for path in root.iterdir()] == [b"data"]
 

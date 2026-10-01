@@ -53,6 +53,7 @@ _LAST_SWEEP = {}
 _SWEEP_LOCK = Lock()
 _FINISHED: dict = {}
 _FINISHED_LOCK = Lock()
+_FINISH_SERIAL = Lock()  # one finish at a time: a retry racing its in-flight original waits, then replays
 
 
 class GuardError(Exception):
@@ -594,6 +595,11 @@ def _final_name(name, number):
 @router.post("/uploads/finish")
 @_protocol
 def upload_finish(body: Finish):
+    with _FINISH_SERIAL:
+        return _finish(body)
+
+
+def _finish(body):
     root, _ = _request_root(body.root)
     with _FINISHED_LOCK:
         record = _FINISHED.get(body.upload_id)

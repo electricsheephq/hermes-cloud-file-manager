@@ -13,8 +13,9 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 ### Fixed
 - A retried upload whose first "finish" response was lost now gets the file it already created, instead of
   uploading it again as a duplicate `name (1).ext`.
-- Listings never look up the target of a link that leaves the shown folders. Such a link shows its own size and
-  date, and one whose target is missing is now listed (not openable) instead of hidden.
+- A link that leaves the shown folders is listed from the link itself: its own size and date, never the target's,
+  and no `stat()` through it beyond the check of where it points. One whose target is missing is now listed (not
+  openable) instead of hidden.
 
 ## [0.1.0] - 2026-10-01
 

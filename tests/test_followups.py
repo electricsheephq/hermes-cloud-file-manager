@@ -209,3 +209,34 @@ def test_finish_record_failure_never_fails_a_published_upload(client, api, fs, m
     monkeypatch.setattr(api.os, "lstat", flaky)
     body = post(client, "uploads/finish", root="r0", path="late.txt", size=0, upload_id=upload["upload_id"])
     assert body["ok"] is True and (fs[0] / "late.txt").exists()
+
+
+def test_finish_retry_during_inflight_original_replays(client, api, fs, monkeypatch):
+    # A retry sent while the first finish is still publishing (client timeout) must wait and replay, not duplicate.
+    import threading
+    import time as _time
+    root, _ = fs
+    data = b"slow"
+    started = post(client, "uploads/start", root="r0", path="slow.txt", size=len(data))
+    upload = {"root": "r0", "path": "slow.txt", "upload_id": started["upload_id"]}
+    post(client, "uploads/chunk", **upload, offset=0, data=base64.b64encode(data).decode())
+    request = {**upload, "size": len(data)}
+    real_publish, entered, release = api._publish, threading.Event(), threading.Event()
+    def slow_publish(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return real_publish(*args, **kwargs)
+    monkeypatch.setattr(api, "_publish", slow_publish)
+    results = {}
+    first = threading.Thread(target=lambda: results.__setitem__("first", post(client, "uploads/finish", **request)))
+    first.start()
+    assert entered.wait(5)
+    retry = threading.Thread(target=lambda: results.__setitem__("retry", post(client, "uploads/finish", **request)))
+    retry.start()
+    _time.sleep(0.3)  # the retry is now waiting behind the in-flight original
+    release.set()
+    first.join(5)
+    retry.join(5)
+    assert results["first"]["ok"] is True
+    assert results["retry"] == results["first"]
+    assert sorted(p.name for p in root.iterdir()) == ["slow.txt"]
