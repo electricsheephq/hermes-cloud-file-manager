@@ -24,7 +24,10 @@ export const S = {
   dropTo: (folder: string) => `Drop to upload to ${folder}`,
   copied: (n: number) => (n === 1 ? 'Path copied' : `${n} paths copied`),
   copyFailed: "Couldn't copy to the clipboard",
-  name: 'Name',
+  breadcrumbs: 'Folder path',
+  uploads: 'Uploads',
+  expand: 'Show uploads',
+  collapse: 'Hide uploads',
   // New folder dialog
   folderName: 'Folder name',
   create: 'Create',

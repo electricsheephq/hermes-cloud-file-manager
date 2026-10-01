@@ -1,4 +1,5 @@
 import { createTestContext, host } from './sdk-mock'
+import { $available } from '../api'
 import plugin, { isNotFoundError } from '../plugin'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -35,6 +36,33 @@ describe('availability gate', () => {
     await flush()
     expect(t.live.has('nav')).toBe(false)
     expect(t.live.has('page')).toBe(true)
+  })
+
+  it('adds and removes the + → Cloud provider and its picker host together with the row', async () => {
+    let answer: () => Promise<unknown> = async () => ({ ok: true })
+    const t = createTestContext({ rest: () => answer() })
+    plugin.register(t.ctx as any)
+    await flush()
+    expect(t.live.get('attach-cloud')).toMatchObject({ area: 'composer.attachments', data: { label: 'Cloud', icon: 'cloud' } })
+    expect(t.live.get('picker-host')?.area).toBe('composer.underside')
+    expect($available.get()).toBe(true)
+
+    answer = async () => {
+      throw new Error('Error invoking remote method: timed out')
+    }
+    t.tickIntervals()
+    await flush()
+    expect(t.live.has('attach-cloud')).toBe(true)
+
+    answer = async () => {
+      throw ipcError(404)
+    }
+    t.tickIntervals()
+    await flush()
+    expect([t.live.has('nav'), t.live.has('attach-cloud'), t.live.has('picker-host')]).toEqual([false, false, false])
+    expect($available.get()).toBe(false)
+    expect(t.live.has('page')).toBe(true)
+    t.dispose()
   })
 
   it('re-probes when the selected agent changes', async () => {

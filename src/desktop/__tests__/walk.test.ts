@@ -34,7 +34,7 @@ describe('folder walk', () => {
     const out = await walkEntries([top, fileEntry('loose.txt')])
     expect(out.files.map(f => f.rel)).toEqual(['photos/a.jpg', 'photos/inner/c.txt', 'photos/b.jpg', 'loose.txt'])
     expect(top.reads).toBe(3) // two batches, then the empty one that ends the loop
-    expect(out.files[0].file.name).toBe('a.jpg')
+    expect((out.files[0].file as File).name).toBe('a.jpg')
   })
 
   it('reports empty directories so they can be created', async () => {

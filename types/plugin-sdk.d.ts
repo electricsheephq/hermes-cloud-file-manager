@@ -99,9 +99,39 @@ declare module '@hermes/plugin-sdk' {
     run(ctx: ComposerAttachmentContext): void | Promise<void>
   }
 
+  // React Query (the app's own client and provider). Only the slice this plugin uses.
+  export interface UseQueryResult<T> {
+    data: T | undefined
+    error: unknown
+    isFetching: boolean
+    refetch(): Promise<unknown>
+  }
+  export function useQuery<T>(options: {
+    queryKey: readonly unknown[]
+    queryFn: () => Promise<T>
+    enabled?: boolean
+    retry?: boolean | number
+    staleTime?: number
+  }): UseQueryResult<T>
+  export function useQueryClient(): { invalidateQueries(filters: { queryKey: readonly unknown[] }): Promise<void> }
+
   // UI kit: loosely typed on purpose; the app owns the real props.
   export const Button: ComponentType<any>
+  export const Checkbox: ComponentType<any>
   export const Codicon: ComponentType<any>
+  export const Dialog: ComponentType<any>
+  export const DialogContent: ComponentType<any>
+  export const DialogFooter: ComponentType<any>
+  export const DialogHeader: ComponentType<any>
+  export const DialogTitle: ComponentType<any>
   export const EmptyState: ComponentType<any>
+  export const ErrorState: ComponentType<any>
+  export const Input: ComponentType<any>
   export const SearchField: ComponentType<any>
+  export const Select: ComponentType<any>
+  export const SelectContent: ComponentType<any>
+  export const SelectItem: ComponentType<any>
+  export const SelectTrigger: ComponentType<any>
+  export const SelectValue: ComponentType<any>
+  export const Skeleton: ComponentType<any>
 }

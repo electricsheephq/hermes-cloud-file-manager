@@ -1,0 +1,147 @@
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+
+import { createTestContext, resetHost, resetQueryCache } from './sdk-mock'
+import { fakeBackend } from './fake-backend'
+import { $available, bindContext } from '../api'
+import { $batch, CloudFilesPage } from '../page'
+
+function setup(overrides?: Parameters<typeof fakeBackend>[0]) {
+  const backend = fakeBackend(overrides)
+  const t = createTestContext({ rest: backend.rest })
+  bindContext(t.ctx as any)
+  render(<CloudFilesPage />)
+  return { ...backend, ctx: t.ctx }
+}
+
+const rows = () => screen.getAllByRole('listitem').map(row => row.getAttribute('data-entry'))
+
+beforeEach(() => {
+  resetQueryCache()
+  resetHost()
+  $available.set(null)
+  $batch.set(null)
+})
+
+describe('Cloud Files page', () => {
+  it('lists the root with highlighted folders first and folder notes as secondary text', async () => {
+    setup()
+    expect(await screen.findByText('Cloud Files')).toBeTruthy()
+    await screen.findByText('notes.txt')
+    expect(rows()).toEqual(['docs', 'uploads', 'zeta', 'notes.txt', 'readme.md'])
+    expect(screen.getByText('Shared documents')).toBeTruthy()
+    expect(screen.getByText('Up to 100 MB per file')).toBeTruthy()
+  })
+
+  it('navigates into a folder on double-click and back through the breadcrumbs', async () => {
+    const { calls } = setup()
+    await screen.findByText('docs')
+    fireEvent.doubleClick(screen.getByText('docs'))
+    await screen.findByText('a.pdf')
+    expect(calls.some(c => c.path === '/list' && c.params.path === 'docs' && c.params.root === 'home')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+    await screen.findByText('notes.txt')
+  })
+
+  it('opens a folder with Enter', async () => {
+    setup()
+    await screen.findByText('docs')
+    fireEvent.keyDown(screen.getByText('docs').closest('[role=listitem]')!, { key: 'Enter' })
+    await screen.findByText('b.pdf')
+  })
+
+  it('shows search results across the root with their folder, and Esc returns to the folder', async () => {
+    const { calls } = setup()
+    await screen.findByText('docs')
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'pdf' } })
+    await screen.findByText('a.pdf', undefined, { timeout: 2000 })
+    expect(calls.find(c => c.path === '/search')?.params).toMatchObject({ root: 'home', q: 'pdf' })
+    expect(screen.getAllByText('docs').length).toBeGreaterThan(0) // the result's folder path
+    fireEvent.keyDown(screen.getByLabelText('Search files'), { key: 'Escape' })
+    await screen.findByText('notes.txt')
+  })
+
+  it('creates a folder with /mkdir and validates the name first', async () => {
+    const { calls } = setup()
+    await screen.findByText('docs')
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    const dialog = screen.getByRole('dialog')
+    const input = within(dialog).getByLabelText('Folder name')
+    fireEvent.change(input, { target: { value: 'a/b' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+    expect(await within(dialog).findByText('A folder name cannot contain /')).toBeTruthy()
+    expect(calls.some(c => c.path === '/mkdir')).toBe(false)
+
+    fireEvent.change(input, { target: { value: 'reports' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(calls.find(c => c.path === '/mkdir')?.opts).toMatchObject({ method: 'POST', body: { root: 'home', path: 'reports' } })
+  })
+
+  it('maps an in-band mkdir failure to readable text', async () => {
+    setup({ '/mkdir': () => ({ ok: false, code: 'exists_file', message: 'exists' }) })
+    await screen.findByText('docs')
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    fireEvent.change(screen.getByLabelText('Folder name'), { target: { value: 'notes.txt' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    expect(await screen.findByText('A file with that name already exists')).toBeTruthy()
+  })
+
+  it('copies the absolute paths of the selection', async () => {
+    const { ctx } = setup()
+    const copy = vi.spyOn(ctx.os, 'writeClipboard')
+    await screen.findByText('docs')
+    expect(screen.getByRole('button', { name: 'Copy path' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByLabelText('notes.txt'))
+    fireEvent.click(screen.getByLabelText('readme.md'))
+    fireEvent.click(screen.getByRole('button', { name: 'Copy path' }))
+    expect(copy).toHaveBeenCalledWith('/home/agent/notes.txt\n/home/agent/readme.md')
+  })
+
+  it('uploads dropped files into the current folder and shows them in the drawer', async () => {
+    const uploads = {
+      '/uploads/start': (opts: any) => ({ ok: true, upload_id: 'u1', chunk_bytes: 4 * 1024 * 1024, max_file_bytes: 1e9, path: opts.body.path }),
+      '/uploads/chunk': (opts: any) => ({ ok: true, size: opts.body.offset + atob(opts.body.data).length }),
+      '/uploads/finish': () => ({ ok: true, renamed: true, entry: { name: 'a (1).txt', rel: 'docs/a (1).txt' } })
+    }
+    const { calls } = setup(uploads)
+    await screen.findByText('docs')
+    fireEvent.doubleClick(screen.getByText('docs'))
+    await screen.findByText('a.pdf')
+    const file = new File(['hello'], 'a.txt')
+    const entry = { name: 'a.txt', isFile: true, isDirectory: false, file: (ok: (f: File) => void) => ok(file) }
+    const dataTransfer = { types: ['Files'], items: [{ kind: 'file', webkitGetAsEntry: () => entry }], files: [file] }
+    const page = screen.getByText('Cloud Files').closest('section')!
+    fireEvent.dragEnter(page, { dataTransfer })
+    expect(screen.getByText('Drop to upload to docs')).toBeTruthy()
+    fireEvent.drop(page, { dataTransfer })
+    expect(await screen.findByText('Saved as "a (1).txt"')).toBeTruthy()
+    expect(calls.find(c => c.path === '/uploads/start')?.opts.body).toEqual({ root: 'home', path: 'docs/a.txt', size: 5 })
+    expect(calls.find(c => c.path === '/uploads/chunk')?.opts.body).toMatchObject({ offset: 0, data: btoa('hello') })
+    expect(await screen.findByText('Uploaded 1 of 1')).toBeTruthy()
+    await waitFor(() => expect(calls.filter(c => c.path === '/list' && c.params.path === 'docs').length).toBeGreaterThan(1))
+  })
+
+  it('explains how to set up the plugin when the agent does not have it', async () => {
+    setup()
+    act(() => $available.set(false))
+    expect(
+      await screen.findByText(
+        "Cloud Files isn't set up on default yet. Install the plugin on the agent's gateway, add it to `plugins.enabled`, and restart the gateway."
+      )
+    ).toBeTruthy()
+  })
+
+  it('shows the backend reason when the storage is unsupported', async () => {
+    setup({ '/roots': () => ({ ok: true, supported: false, reason: 'Files live in a remote sandbox', roots: [], max_file_bytes: 0, chunk_bytes: 0 }) })
+    expect(await screen.findByText('Files live in a remote sandbox')).toBeTruthy()
+  })
+
+  it('shows an error with Retry when listing fails', async () => {
+    let fail = true
+    setup({ '/list': () => (fail ? Promise.reject(new Error('connect ECONNREFUSED')) : { ok: true, entries: [], total: 0, truncated: false }) })
+    expect(await screen.findByText('connect ECONNREFUSED')).toBeTruthy()
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('This folder is empty — drop files here or use Upload')).toBeTruthy()
+  })
+})

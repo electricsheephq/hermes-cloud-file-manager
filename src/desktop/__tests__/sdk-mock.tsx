@@ -1,6 +1,6 @@
 // Test double for Hermes Desktop's '@hermes/plugin-sdk' (aliased in vitest.config.ts).
 // Only what the plugin uses; behaviour mirrors the real SDK where tests depend on it.
-import { createElement, useSyncExternalStore } from 'react'
+import { createElement, type ReactNode, useEffect, useReducer, useRef, useSyncExternalStore } from 'react'
 
 type Listener<T> = (value: T) => void
 
@@ -34,15 +34,109 @@ export const host = {
   navigate: (_path: string) => undefined
 }
 
+/** Put the host atoms back to the default agent (tests that switch agents call this in afterEach). */
+export function resetHost() {
+  host.state.connectionId.set('conn-1')
+  host.state.profile.set('default')
+  host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })
+}
+
 export const ROUTES_AREA = 'routes'
 export const SIDEBAR_NAV_AREA = 'sidebar.nav'
 export const COMPOSER_AREAS = { underside: 'composer.underside', attachments: 'composer.attachments' } as const
 
-const passthrough = (tag: string) => (props: any) => createElement(tag, props, props?.children)
-export const Button = passthrough('button')
+// ---- React Query: a tiny keyed cache with the slice of the API the plugin uses (data/error/refetch,
+// `enabled`, prefix invalidation). Real React Query is the app's; this only mirrors its observable shape.
+interface CacheEntry {
+  data?: unknown
+  error?: unknown
+  pending?: Promise<void>
+  fn?: () => Promise<unknown>
+  listeners: Set<() => void>
+}
+const cache = new Map<string, CacheEntry>()
+const entryFor = (key: string) => {
+  if (!cache.has(key)) cache.set(key, { listeners: new Set() })
+  return cache.get(key)!
+}
+function fetchEntry(entry: CacheEntry): Promise<void> {
+  if (!entry.fn) return Promise.resolve()
+  entry.pending = entry.fn().then(
+    data => {
+      entry.data = data
+      entry.error = undefined
+    },
+    error => {
+      entry.error = error
+    }
+  )
+  return entry.pending.finally(() => {
+    entry.pending = undefined
+    entry.listeners.forEach(fn => fn())
+  })
+}
+export function resetQueryCache() {
+  cache.clear()
+}
+export function useQuery({ queryKey, queryFn, enabled = true }: { queryKey: readonly unknown[]; queryFn: () => Promise<unknown>; enabled?: boolean }) {
+  const key = JSON.stringify(queryKey)
+  const [, force] = useReducer((n: number) => n + 1, 0)
+  const fn = useRef(queryFn)
+  fn.current = queryFn
+  useEffect(() => {
+    const entry = entryFor(key)
+    entry.listeners.add(force)
+    entry.fn = () => fn.current()
+    if (enabled && !('data' in entry) && !entry.error && !entry.pending) void fetchEntry(entry)
+    return () => void entry.listeners.delete(force)
+  }, [key, enabled])
+  const entry = cache.get(key)
+  return {
+    data: enabled ? entry?.data : undefined,
+    error: enabled ? entry?.error : undefined,
+    isFetching: Boolean(entry?.pending),
+    refetch: () => fetchEntry(entryFor(key))
+  }
+}
+export function useQueryClient() {
+  return {
+    invalidateQueries: async ({ queryKey }: { queryKey: readonly unknown[] }) => {
+      const prefix = JSON.stringify(queryKey).slice(0, -1)
+      await Promise.all([...cache].filter(([key]) => key.startsWith(prefix)).map(([, entry]) => fetchEntry(entry)))
+    }
+  }
+}
+
+// ---- UI kit: plain elements with the props tests interact with.
+const omit = (props: any, ...keys: string[]) => {
+  const rest = { ...props }
+  for (const key of ['children', 'variant', 'size', 'loading', ...keys]) delete rest[key]
+  return rest
+}
+const passthrough = (tag: string) => (props: any) => createElement(tag, omit(props), props?.children)
+
+export const Button = (props: any) => createElement('button', { type: 'button', ...omit(props), disabled: props.disabled || props.loading }, props.children)
 export const Codicon = (props: any) => createElement('i', { 'data-codicon': props?.name })
-export const EmptyState = passthrough('div')
-export const SearchField = passthrough('input')
+export const EmptyState = ({ title, description }: { title: string; description?: string }) =>
+  createElement('div', { 'data-testid': 'empty' }, title, description ? createElement('p', null, description) : null)
+export const ErrorState = ({ title, description, children }: { title: ReactNode; description?: ReactNode; children?: ReactNode }) =>
+  createElement('div', { role: 'alert' }, createElement('h2', null, title), description, children)
+export const SearchField = ({ value, onChange, placeholder, 'aria-label': label }: any) =>
+  createElement('input', { 'aria-label': label ?? placeholder, placeholder, value, onChange: (e: any) => onChange(e.target.value) })
+export const Checkbox = ({ checked, onCheckedChange, 'aria-label': label }: any) =>
+  createElement('input', { type: 'checkbox', 'aria-label': label, checked: Boolean(checked), onChange: () => onCheckedChange?.(!checked) })
+export const Input = passthrough('input')
+export const Skeleton = passthrough('div')
+export const Dialog = ({ open, children }: { open?: boolean; children?: ReactNode }) => (open ? createElement('div', null, children) : null)
+export const DialogContent = (props: any) => createElement('div', { role: 'dialog', ...omit(props, 'onOpenAutoFocus') }, props.children)
+export const DialogHeader = passthrough('div')
+export const DialogFooter = passthrough('div')
+export const DialogTitle = passthrough('h2')
+export const Select = passthrough('div')
+export const SelectContent = passthrough('div')
+export const SelectItem = passthrough('div')
+export const SelectTrigger = passthrough('div')
+export const SelectValue = passthrough('span')
 
 export interface TestContextOptions {
   rest?: (path: string, opts?: any) => Promise<any>
@@ -62,7 +156,7 @@ export function createTestContext(options: TestContextOptions = {}) {
     setTimeout: (fn: () => void) => (fn(), 0),
     setInterval: (fn: () => void) => (intervals.push(fn), intervals.length),
     rest: options.rest ?? (async () => ({ ok: true })),
-    os: { writeClipboard: async () => true, openExternal: async () => true },
+    os: { writeClipboard: async (_text: string) => true, openExternal: async () => true },
     storage: { get: () => undefined, set: () => undefined, remove: () => undefined }
   }
   return {
