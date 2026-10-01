@@ -90,6 +90,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 - No rename, move, delete or overwrite (coming later; use the agent or a shell for now).
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.
+- A folder with more than 500 items shows the first 500; use **Search files** to find the rest.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
 
 ## Compatibility
