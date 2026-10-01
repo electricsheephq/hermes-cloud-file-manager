@@ -87,11 +87,11 @@ export function isNotFoundError(error: unknown): boolean {
   return httpStatus(error) === 404
 }
 
-/** The HTTP status in the IPC error format (`... Error: <status>: <body>`, first occurrence) or a bare
- *  leading `<status>:`; null when the text has neither. Never read from the body. */
+/** The HTTP status: an anchored leading `<status>:` first, else the first `Error: <status>:` (the IPC
+ *  wrapper always precedes the body). Null when neither is present. Never read from the body. */
 export function httpStatus(error: unknown): null | number {
   const text = error instanceof Error ? error.message : String(error)
-  const match = /Error: (\d{3}):/.exec(text) ?? /^(\d{3}):/.exec(text)
+  const match = /^\s*(\d{3}):/.exec(text) ?? /Error: (\d{3}):/.exec(text)
   return match ? Number(match[1]) : null
 }
 

@@ -1,5 +1,5 @@
 import { createTestContext, host } from './sdk-mock'
-import { $available } from '../api'
+import { $available, httpStatus } from '../api'
 import { $insertText, $pickerOpen } from '../picker'
 import plugin, { isNotFoundError } from '../plugin'
 
@@ -104,6 +104,15 @@ describe('availability gate', () => {
     expect(isNotFoundError(ipc('404: {"detail":"No such API endpoint"}'))).toBe(true)
     expect(isNotFoundError(new Error('404: Not Found'))).toBe(true)
     expect(isNotFoundError(new Error('connect ECONNREFUSED 10.0.0.1:404'))).toBe(false)
+  })
+
+  it('prefers an anchored leading status over an IPC-looking pattern nested in the body (N1)', () => {
+    const ipc = (text: string) => new Error(`Error invoking remote method 'hermes:api': Error: ${text}`)
+    expect(httpStatus(new Error('500: {"detail":"Error: 404: nested"}'))).toBe(500)
+    expect(httpStatus(new Error('403: {"detail":"denied; Error: 404: nested"}'))).toBe(403)
+    expect(httpStatus(ipc('404: {"detail":"No such API endpoint"}'))).toBe(404)
+    expect(httpStatus(ipc('500: {"detail":"Error: 404: nested"}'))).toBe(500)
+    expect(isNotFoundError(new Error('500: {"detail":"Error: 404: nested"}'))).toBe(false)
   })
 
   it('keeps the row when a non-404 error mentions 404 in its body (N1)', async () => {

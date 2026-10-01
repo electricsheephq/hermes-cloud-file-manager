@@ -116,7 +116,7 @@ function isNotFoundError(error) {
 }
 function httpStatus(error) {
   const text = error instanceof Error ? error.message : String(error);
-  const match = /Error: (\d{3}):/.exec(text) ?? /^(\d{3}):/.exec(text);
+  const match = /^\s*(\d{3}):/.exec(text) ?? /Error: (\d{3}):/.exec(text);
   return match ? Number(match[1]) : null;
 }
 var query = (path, params) => `${path}?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()}`;
