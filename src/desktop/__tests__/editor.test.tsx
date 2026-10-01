@@ -2,8 +2,9 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { useState } from 'react'
 
 import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
-import { fakeBackend, fakeSha, TEXTS } from './fake-backend'
-import { $available, bindContext } from '../api'
+import { DRIVE, fakeBackend, fakeSha, TEXTS } from './fake-backend'
+import { $available, $driveAvailable, bindContext, rest } from '../api'
+import { $driveJob, DriveImport } from '../drive'
 import { $drafts, type Doc, Editor } from '../editor'
 import { $batch, CloudFilesPage } from '../page'
 
@@ -55,6 +56,8 @@ beforeEach(() => {
   $available.set(null)
   $batch.set(null)
   $drafts.set(new Map())
+  $driveJob.set(null)
+  $driveAvailable.set(null)
 })
 
 describe('editor: View and Edit', () => {
@@ -186,6 +189,28 @@ describe('editor: never writes without an explicit Save', () => {
   })
 })
 
+describe('editor: typing while a Save is in flight', () => {
+  it('keeps text typed after Save as a dirty draft on the saved base, and blocks a second Save meanwhile', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    const { saves } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    await editTo('readme.md', 'first\n')
+    fireEvent.click(button('Review & save'))
+    const save = within(dialog()).getByRole('button', { name: 'Save' }) as HTMLButtonElement
+    fireEvent.click(save)
+    await flush(2)
+    expect(save.disabled).toBe(true)
+    reactProps(save).onClick() // a second click while pending is refused
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Back to editing' }))
+    fireEvent.change(textarea()!, { target: { value: 'first\nsecond\n' } })
+    await act(async () => answer({ ok: true, sha256: fakeSha('first\n') }))
+    expect(saves()).toHaveLength(1)
+    expect(textarea()?.value).toBe('first\nsecond\n')
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
+    fireEvent.click(button('Review & save'))
+    expect(within(dialog()).getByText('+1 −0 lines')).toBeTruthy() // diffed against the saved text
+  })
+})
+
 describe('editor: text fidelity', () => {
   const raw = '\uFEFF# Title\r\nline a\r\nline b\r\n'
 
@@ -215,6 +240,16 @@ describe('editor: text fidelity', () => {
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
     await screen.findByText('Saved')
     expect(saves()[0].opts.body.text).toBe('a\r\nb\r\nC\r\n')
+  })
+
+  it('drops the mixed-ending note once the save has made every line CRLF', async () => {
+    setup({}, { 'crlf.md': 'a\r\nb\nc\r\n' })
+    await editTo('crlf.md', 'a\nb\nC\n')
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await screen.findByText('Saved')
+    fireEvent.click(button('Edit'))
+    expect(screen.queryByText(/mixes line endings/)).toBeNull()
   })
 
   it('shows no line-ending note for a uniform file', async () => {
@@ -332,18 +367,19 @@ describe('editor: leaving', () => {
     expect(button('Review & save').disabled).toBe(true)
   })
 
-  it('keeps a newer parked draft when an older Save succeeds late', async () => {
+  it('rebases a parked newer draft (and clears the mixed flag) when an older Save succeeds late', async () => {
     let answer: (value: unknown) => void = () => undefined
-    const { view } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    const { view } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) }, { 'readme.md': 'a\r\nb\n' })
     await editTo('readme.md', 'sent\n')
     fireEvent.click(button('Review & save'))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
     await flush(2)
     view.unmount()
     const [key, parked] = [...$drafts.get()][0]
-    $drafts.set(new Map([[key, { ...parked, draft: 'newer\n' }]])) // a different snapshot replaced it meanwhile
+    expect(parked.mixed).toBe(true)
+    $drafts.set(new Map([[key, { ...parked, draft: 'newer\n' }]])) // a newer draft replaced the sent one meanwhile
     await act(async () => answer({ ok: true, sha256: 'sha-sent' }))
-    expect([...$drafts.get().values()][0]).toMatchObject({ draft: 'newer\n', mode: 'edit', sha: parked.sha })
+    expect([...$drafts.get().values()][0]).toMatchObject({ draft: 'newer\n', base: 'sent\n', sha: 'sha-sent', mode: 'edit', mixed: false })
   })
 
   it('does not restore a draft for another agent', async () => {
@@ -434,6 +470,47 @@ describe('editor: leaving', () => {
     expect(screen.getByLabelText('Search files')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Upload files' })).toBeTruthy()
     expect(screen.getByText('Up to 100 MB per file')).toBeTruthy()
+  })
+
+  it.each(['Close', 'docs'])('%s after an agent switch leaves the new agent at its own list, even with the same root id', async control => {
+    const { calls } = setup({}, { ...TEXTS, 'docs/guide.md': '# Guide\n' })
+    ENTRIES.push({ ...entry('docs/guide.md'), name: 'guide.md' })
+    try {
+      await openFile('guide.md')
+      act(() => host.state.profile.set('eva'))
+      await screen.findByRole('status')
+      fireEvent.click(button(control))
+      await screen.findByText('notes.txt')
+      await flush()
+      expect(calls.some(c => c.path === '/list' && c.profile === 'eva' && c.params.path === 'docs')).toBe(false)
+      // The same agent does go back to the file's folder.
+      act(() => host.state.profile.set('default'))
+      await openFile('guide.md')
+      fireEvent.click(button(control))
+      await waitFor(() => expect(calls.some(c => c.path === '/list' && c.profile === 'default' && c.params.path === 'docs')).toBe(true))
+    } finally {
+      ENTRIES.pop()
+    }
+  })
+
+  it('routes the Drive import Show through the discard guard and closes the file', async () => {
+    const { calls } = setup()
+    act(() => $driveAvailable.set(true))
+    const job = new DriveImport([DRIVE.root[2]], 'home', { connectionId: 'conn-1', profile: 'default' }, { rest, state: host.state })
+    act(() => $driveJob.set(job))
+    await act(() => job.start().then(() => undefined))
+    await editTo('readme.md', 'draft')
+    fireEvent.click(button('Show'))
+    expect(within(dialog()).getByText('Discard unsaved changes to readme.md?')).toBeTruthy()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Keep editing' }))
+    expect(textarea()?.value).toBe('draft')
+    fireEvent.click(button('Cancel'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    fireEvent.click(button('Show')) // clean now: closes without asking
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(calls.some(c => c.path === '/list' && c.params.path === 'uploads/drive')).toBe(true))
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Upload files' })).toBeTruthy()
   })
 
   it('asks before a breadcrumb leaves the file', async () => {

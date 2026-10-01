@@ -86,11 +86,17 @@ function setDraft(doc: Doc, keep: boolean) {
   $drafts.set(next)
 }
 
-/** A save that succeeds after the page unmounted: the draft parked meanwhile is now the saved version, so it
- *  comes back as a View. Only the exact snapshot that was sent (same draft, same base sha) is settled. */
+/** `doc` after the server saved `sent` as `sha`: that text is the new base (all CRLF if it was mixed). A draft
+ *  still equal to it is clean and goes back to View; anything typed since stays a dirty draft on the new base. */
+function savedAs(doc: Doc, sent: string, sha: string): Doc {
+  const next = { ...doc, base: sent, sha, mixed: false }
+  return doc.draft === sent ? { ...next, mode: 'view' } : next
+}
+
+/** A save that succeeds after the page unmounted: rebase the draft parked meanwhile (from the same base sha). */
 function settleParked(sent: Doc, sha: string) {
   const parked = $drafts.get().get(draftKey(sent))
-  if (parked && parked.draft === sent.draft && parked.sha === sent.sha) setDraft({ ...parked, base: sent.draft, sha, mode: 'view' }, true)
+  if (parked && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true)
 }
 
 /** The open file, owned above the per-agent page so an agent switch keeps it (with a banner). Mounting the
@@ -209,7 +215,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
   }
   const save = async () => {
     // ctx.rest targets the selected agent: never send while it isn't this file's. Never send an unchanged text.
-    if (!isCurrent(doc.pin) || !isDirty(doc)) return
+    if (!isCurrent(doc.pin) || !isDirty(doc) || busy) return
     const sent = doc.draft
     setBusy(true)
     setSaveError('')
@@ -218,7 +224,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
         method: 'POST',
         body: { root: doc.root, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
       })
-      setDoc(d => (d?.id === doc.id ? { ...d, base: sent, draft: sent, sha: res.sha256, mode: 'view' } : d))
+      setDoc(d => (d?.id === doc.id ? savedAs(d, sent, res.sha256) : d))
       settleParked(doc, res.sha256)
       setPopup(null)
       setChanges(false)
@@ -360,7 +366,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
             <Button onClick={() => setPopup(null)} variant="text">
               {S.backToEditing}
             </Button>
-            <Button disabled={!here || !dirty} loading={busy} onClick={() => void save()}>
+            <Button disabled={!here || !dirty || busy} loading={busy} onClick={() => void save()}>
               {S.save}
             </Button>
           </DialogFooter>

@@ -1139,9 +1139,13 @@ function setDraft(doc, keep) {
   else next.delete(draftKey(doc));
   $drafts.set(next);
 }
+function savedAs(doc, sent, sha) {
+  const next = { ...doc, base: sent, sha, mixed: false };
+  return doc.draft === sent ? { ...next, mode: "view" } : next;
+}
 function settleParked(sent, sha) {
   const parked = $drafts.get().get(draftKey(sent));
-  if (parked && parked.draft === sent.draft && parked.sha === sent.sha) setDraft({ ...parked, base: sent.draft, sha, mode: "view" }, true);
+  if (parked && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true);
 }
 function useOpenDoc() {
   const [doc, setDoc] = useState3(() => {
@@ -1233,7 +1237,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
     }
   };
   const save = async () => {
-    if (!isCurrent(doc.pin) || !isDirty(doc)) return;
+    if (!isCurrent(doc.pin) || !isDirty(doc) || busy) return;
     const sent = doc.draft;
     setBusy(true);
     setSaveError("");
@@ -1242,7 +1246,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
         method: "POST",
         body: { root: doc.root, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
       });
-      setDoc((d) => d?.id === doc.id ? { ...d, base: sent, draft: sent, sha: res.sha256, mode: "view" } : d);
+      setDoc((d) => d?.id === doc.id ? savedAs(d, sent, res.sha256) : d);
       settleParked(doc, res.sha256);
       setPopup(null);
       setChanges(false);
@@ -1332,7 +1336,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
       saveError && /* @__PURE__ */ jsx3("div", { style: { color: "var(--ui-red)", fontSize: 12 }, children: saveError }),
       /* @__PURE__ */ jsxs3(DialogFooter, { children: [
         /* @__PURE__ */ jsx3(Button3, { onClick: () => setPopup(null), variant: "text", children: S.backToEditing }),
-        /* @__PURE__ */ jsx3(Button3, { disabled: !here || !dirty, loading: busy, onClick: () => void save(), children: S.save })
+        /* @__PURE__ */ jsx3(Button3, { disabled: !here || !dirty || busy, loading: busy, onClick: () => void save(), children: S.save })
       ] })
     ] }) }),
     /* @__PURE__ */ jsx3(Dialog, { onOpenChange: (open) => !open && setPopup(null), open: Boolean(conflict), children: /* @__PURE__ */ jsxs3(DialogContent, { style: { maxWidth: 460 }, children: [
@@ -1551,23 +1555,26 @@ function Files({ profile, roots, doc, setDoc }) {
     const root = b.root;
     guard.leave(() => openDoc(entry, root, currentPin(), setDoc));
   };
+  const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile);
   const closeDoc = () => {
-    const folder = doc && doc.root === rootId ? parentPath(doc.path) : null;
+    const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null;
     setDoc(null);
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder);
   };
   const crumbTo = (path) => guard.leave(() => {
-    if (doc && doc.root !== rootId) b.switchRoot(doc.root);
+    const mine = docHere();
+    if (mine && doc && doc.root !== rootId) b.switchRoot(doc.root);
     setDoc(null);
-    b.navigate(path);
+    if (mine) b.navigate(path);
   });
   const rootSelect = { ...b, switchRoot: (id) => guard.leave(() => (setDoc(null), b.switchRoot(id))) };
   const chooseSource = (drive) => drive ? guard.leave(() => (setDoc(null), setSource("drive"))) : setSource("cloud");
-  const showImports = () => {
+  const showImports = () => guard.leave(() => {
+    setDoc(null);
     setSource("cloud");
     b.switchRoot(roots.roots[0].id);
     b.navigate(DRIVE_DEST);
-  };
+  });
   const fromInput = (input) => {
     if (!input?.files) return;
     enqueueUpload(filesFromInput(input.files), dest, limits, currentPin());

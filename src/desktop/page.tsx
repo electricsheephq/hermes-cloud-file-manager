@@ -201,26 +201,31 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
     const root = b.root
     guard.leave(() => openDoc(entry, root, currentPin(), setDoc))
   }
-  // Back to the file's folder when it is on the browser's current root; otherwise the list as it is.
+  // Back to the file's folder when it belongs to this agent and the browser's current root; otherwise the
+  // list as it is (root ids like `home` repeat across agents).
+  const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile)
   const closeDoc = () => {
-    const folder = doc && doc.root === rootId ? parentPath(doc.path) : null
+    const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null
     setDoc(null)
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder)
   }
   const crumbTo = (path: string) =>
     guard.leave(() => {
-      if (doc && doc.root !== rootId) b.switchRoot(doc.root)
+      const mine = docHere()
+      if (mine && doc && doc.root !== rootId) b.switchRoot(doc.root)
       setDoc(null)
-      b.navigate(path)
+      if (mine) b.navigate(path)
     })
   // A root or source change drops the open file, so it asks first.
   const rootSelect: Browser = { ...b, switchRoot: id => guard.leave(() => (setDoc(null), b.switchRoot(id))) }
   const chooseSource = (drive: boolean) => (drive ? guard.leave(() => (setDoc(null), setSource('drive'))) : setSource('cloud'))
-  const showImports = () => {
-    setSource('cloud')
-    b.switchRoot(roots.roots[0].id)
-    b.navigate(DRIVE_DEST)
-  }
+  const showImports = () =>
+    guard.leave(() => {
+      setDoc(null)
+      setSource('cloud')
+      b.switchRoot(roots.roots[0].id)
+      b.navigate(DRIVE_DEST)
+    })
 
   const fromInput = (input: HTMLInputElement | null) => {
     if (!input?.files) return
