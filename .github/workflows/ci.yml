@@ -43,6 +43,10 @@ jobs:
           done
       - name: Every imported SDK name exists in both pinned SDKs
         run: node scripts/check-sdk-exports.mjs pinned/upstream/apps/desktop/src/sdk/index.ts pinned/fork/apps/desktop/src/sdk/index.ts
+      - name: Both pinned runtime loaders accept the bundle (import scanner), and the trap fixture is caught
+        run: |
+          node scripts/check-loader-scan.mjs pinned/upstream/apps/desktop/src/contrib/runtime-loader.ts pinned/fork/apps/desktop/src/contrib/runtime-loader.ts
+          node scripts/check-loader-scan.mjs --self-test pinned/upstream/apps/desktop/src/contrib/runtime-loader.ts pinned/fork/apps/desktop/src/contrib/runtime-loader.ts
       - name: No self-updater (catalog rule 3)
         run: |
           # Same shape as the upstream catalog CI: a JS/TS file that both names a release/raw URL and writes files.

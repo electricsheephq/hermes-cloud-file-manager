@@ -1,4 +1,5 @@
 import {
+  COMPOSER_AREAS,
   type HermesPlugin,
   host,
   type PluginContext,
@@ -8,41 +9,49 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
+import { $available, bindContext, isNotFoundError } from './api'
+import { CloudFilesPage } from './page'
+import { $insertText, $pickerOpen, cloudProvider, PickerHost } from './picker'
+import { S } from './strings'
+
 export const PLUGIN_ID = 'hermes-cloud-file-manager'
 export const PAGE_PATH = '/cloud-files'
 const PROBE_INTERVAL_MS = 60_000
 
-/** True when `error` is the backend saying "this plugin is not mounted here" (a definite 404).
- *  HTTP status reaches the renderer only inside the IPC error text, e.g. "... Error: 404: {...}". */
-export function isNotFoundError(error: unknown): boolean {
-  const text = error instanceof Error ? error.message : String(error)
-  return /(^|\D)404(\D|$)/.test(text)
-}
+export { isNotFoundError }
 
-function CloudFilesPage() {
-  return <section style={{ padding: 24, color: 'var(--ui-text-secondary)' }}>Cloud Files</section>
-}
-
-/** Sidebar row only while the selected agent's backend answers /available; the route stays registered so a
- *  restored /cloud-files never falls through to the session route. Transport errors keep the last answer. */
+/** Sidebar row, "+ → Cloud" provider and the picker host only while the selected agent's backend answers
+ *  /available; the route stays registered so a restored /cloud-files never falls through to the session
+ *  route. Transport errors keep the last answer. */
 export function registerAvailabilityGate(ctx: PluginContext, onChange?: (available: boolean) => void) {
-  let removeNav: (() => void) | null = null
+  let removers: Array<() => void> | null = null
+  let known: boolean | null = null
   let disposed = false
 
   const set = (available: boolean) => {
     if (disposed) return
-    if (available && !removeNav) {
-      removeNav = ctx.register({
-        id: 'nav',
-        area: SIDEBAR_NAV_AREA,
-        order: 45,
-        data: { codicon: 'cloud', label: 'Cloud Files', path: PAGE_PATH } satisfies SidebarNavContribution
-      })
-      onChange?.(true)
-    } else if (!available && removeNav) {
-      removeNav()
-      removeNav = null
-      onChange?.(false)
+    if (available !== known) {
+      known = available
+      onChange?.(available)
+    }
+    if (available && !removers) {
+      removers = [
+        ctx.register({
+          id: 'nav',
+          area: SIDEBAR_NAV_AREA,
+          order: 45,
+          data: { codicon: 'cloud', label: S.navLabel, path: PAGE_PATH } satisfies SidebarNavContribution
+        }),
+        ctx.register({ id: 'attach-cloud', area: COMPOSER_AREAS.attachments, data: cloudProvider }),
+        ctx.register({ id: 'picker-host', area: COMPOSER_AREAS.underside, render: () => <PickerHost /> })
+      ]
+    } else if (!available && removers) {
+      // Close the picker and forget the old composer's insertText first: otherwise the stale picker
+      // would reopen on the next available flip and could insert into a composer that is gone.
+      $pickerOpen.set(false)
+      $insertText.set(null)
+      removers.forEach(remove => remove())
+      removers = null
     }
   }
 
@@ -77,13 +86,14 @@ const plugin: HermesPlugin = {
   name: 'Cloud File Manager',
   description: 'Browse, search and bulk-upload files on the machine your agent runs on, and hand the agent file locations from the chat + menu.',
   register(ctx) {
+    bindContext(ctx)
     ctx.register({
       id: 'page',
       area: ROUTES_AREA,
       data: { path: PAGE_PATH } satisfies RouteContribution,
       render: () => <CloudFilesPage />
     })
-    registerAvailabilityGate(ctx)
+    registerAvailabilityGate(ctx, available => $available.set(available))
   }
 }
 
