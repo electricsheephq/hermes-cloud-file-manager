@@ -1,4 +1,4 @@
-// "+ → Cloud": an attachment provider that opens a picker, and the single host that renders it.
+// "+ → Cloud" and "+ → Google Drive": attachment providers that open a picker, and the single host that renders it.
 // Every chat tile mounts its own composer (and so its own underside slot); one mounted host claims the
 // dialog and the rest render nothing.
 import {
@@ -17,23 +17,44 @@ import {
 import { useEffect, useRef } from 'react'
 
 import { Breadcrumbs, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
+import { DriveImport } from './drive'
+import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { formatInsertText } from './format'
+import { currentPin } from './page'
 import { S } from './strings'
-import type { RootsResponse } from './api'
+import { rest, type RootsResponse } from './api'
 
 export const $pickerOpen = atom(false)
 /** `insertText` of the composer whose "+" menu opened the picker. */
 export const $insertText = atom<null | ((text: string) => void)>(null)
 /** The host instance that renders the dialog (null when none is mounted). */
 export const $hostClaim = atom<null | object>(null)
+/** Which source the open picker browses. */
+export const $pickerSource = atom<'cloud' | 'drive'>('cloud')
+/** The "+ → Google Drive" import in progress; outlives the dialog body, which remounts on an agent switch. */
+const $pickerJob = atom<null | DriveImport>(null)
 const NO_OWNER = atom<null | { connectionId: null | string; profile: string }>(null)
+
+function openPicker(insertText: (text: string) => void, source: 'cloud' | 'drive') {
+  stopImport()
+  $insertText.set(insertText)
+  $pickerSource.set(source)
+  $pickerOpen.set(true)
+}
 
 export const cloudProvider: ComposerAttachmentProvider = {
   label: S.providerLabel,
   icon: 'cloud',
   run(ctx) {
-    $insertText.set(ctx.insertText)
-    $pickerOpen.set(true)
+    openPicker(ctx.insertText, 'cloud')
+  }
+}
+
+export const driveProvider: ComposerAttachmentProvider = {
+  label: S.drive,
+  icon: 'cloud-download',
+  run(ctx) {
+    openPicker(ctx.insertText, 'drive')
   }
 }
 
@@ -68,7 +89,14 @@ export function PickerHost() {
   return <PickerDialog />
 }
 
-function close() {
+/** No further import requests; files already imported stay where they are. */
+function stopImport() {
+  $pickerJob.get()?.cancel()
+  $pickerJob.set(null)
+}
+
+export function closePicker() {
+  stopImport()
   $pickerOpen.set(false)
   $insertText.set(null)
 }
@@ -78,21 +106,22 @@ function PickerDialog() {
   const connectionId = useValue(host.state.connectionId)
   const owner = useValue(host.state.focusedSessionOwner ?? NO_OWNER)
   const mismatch = ownerMismatch(owner, connectionId, profile)
+  const source = useValue($pickerSource)
 
   return (
-    <Dialog onOpenChange={(next: boolean) => !next && close()} open>
+    <Dialog onOpenChange={(next: boolean) => !next && closePicker()} open>
       <DialogContent style={{ maxWidth: 720, width: '92vw' }}>
         <DialogHeader>
-          <DialogTitle>{S.pickerTitle}</DialogTitle>
+          <DialogTitle>{source === 'drive' ? S.drivePickerTitle : S.pickerTitle}</DialogTitle>
         </DialogHeader>
         {mismatch ? (
           <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{S.ownerMismatch(owner!.profile, profile)}</p>
         ) : (
-          <PickerBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} />
+          <PickerBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} source={source} />
         )}
         {mismatch && (
           <DialogFooter>
-            <Button onClick={close} variant="text">
+            <Button onClick={closePicker} variant="text">
               {S.cancel}
             </Button>
           </DialogFooter>
@@ -102,13 +131,14 @@ function PickerDialog() {
   )
 }
 
-function PickerBody({ profile }: { profile: string }) {
+function PickerBody({ profile, source }: { profile: string; source: 'cloud' | 'drive' }) {
   const roots = useRoots()
   if (roots.error) return <LoadError error={roots.error} onRetry={() => void roots.refetch()} />
   if (roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
     return <EmptyState description={roots.data.reason} title={S.unsupportedTitle} />
   }
   if (!roots.data) return <div aria-busy="true" style={{ height: 360 }} />
+  if (source === 'drive') return <DrivePicker roots={roots.data} />
   return <PickerBrowser profile={profile} roots={roots.data} />
 }
 
@@ -117,7 +147,7 @@ function PickerBrowser({ profile, roots }: { profile: string; roots: RootsRespon
   const insert = () => {
     const text = formatInsertText(profile, [...b.selected.values()])
     $insertText.get()?.(text)
-    close()
+    closePicker()
   }
   return (
     <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
@@ -129,12 +159,54 @@ function PickerBrowser({ profile, roots }: { profile: string; roots: RootsRespon
       <EntryList b={b} height={360} />
       <DialogFooter style={{ alignItems: 'center' }}>
         <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{S.selected(b.selected.size)}</span>
-        <Button onClick={close} variant="text">
+        <Button onClick={closePicker} variant="text">
           {S.cancel}
         </Button>
         <Button disabled={!b.selected.size} onClick={insert}>
           {S.insert}
         </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+/** Pick Drive files, import them one at a time into <first root>/uploads/drive, then insert the locations of
+ *  the files that made it. Any failure keeps the dialog open with the list; none succeeded → nothing inserted. */
+function DrivePicker({ roots }: { roots: RootsResponse }) {
+  const d = useDriveBrowser()
+  const snap = useImport(useValue($pickerJob))
+  const start = () => {
+    const insertText = $insertText.get()
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host.state })
+    $pickerJob.set(job)
+    void job.start().then(done => {
+      if (done.canceled || $pickerJob.get() !== job) return
+      if (done.imported.length) insertText?.(formatInsertText(done.pin.profile, done.imported))
+      if (!done.failures.length) closePicker()
+    })
+  }
+  return (
+    <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--ui-stroke-tertiary)', paddingBottom: 6 }}>
+        <DriveCrumbs d={d} />
+        <BrowserSearch b={d} label={S.searchDrive} />
+      </div>
+      <DriveList d={d} height={360} />
+      {snap && <ImportFailures failures={snap.failures} />}
+      <DialogFooter style={{ alignItems: 'center' }}>
+        <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{snap ? importStatus(snap) : S.selected(d.selected.size)}</span>
+        {snap && !snap.running ? (
+          <Button onClick={closePicker}>{S.close}</Button>
+        ) : (
+          <>
+            <Button onClick={closePicker} variant="text">
+              {S.cancel}
+            </Button>
+            <Button disabled={!d.selected.size} loading={Boolean(snap)} onClick={start}>
+              {S.importAndInsert}
+            </Button>
+          </>
+        )}
       </DialogFooter>
     </div>
   )

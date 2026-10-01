@@ -61,7 +61,21 @@ export const S = {
   insert: 'Insert locations',
   ownerMismatch: (owner: string, profile: string) =>
     `This chat belongs to ${owner}. Cloud Files is showing ${profile}'s files — switch to ${owner} in the sidebar first.`,
-  insertHeader: (profile: string) => `Cloud files on ${machineOf(profile)}:`
+  insertHeader: (profile: string) => `Cloud files on ${machineOf(profile)}:`,
+  // Google Drive
+  drive: 'Google Drive',
+  searchDrive: 'Search Google Drive',
+  driveEmpty: 'This folder is empty',
+  drivePickerTitle: 'Insert from Google Drive',
+  importToCloud: 'Import to Cloud Files',
+  importHint: (rootLabel: string) => `Imports go to ${rootLabel}/uploads/drive`,
+  importing: (n: number, total: number) => `Importing ${n} of ${total}…`,
+  imported: (n: number) => `Imported ${n} ${n === 1 ? 'file' : 'files'}`,
+  importPaused: (profile: string) => `Switch back to ${profile} to finish importing`,
+  importFailed: (name: string, reason: string) => `${name}: ${reason}`,
+  importAndInsert: 'Import and insert',
+  show: 'Show',
+  close: 'Close'
 }
 
 /** Server error codes → short human text. */
@@ -78,7 +92,12 @@ export const CODE_TEXT: Record<string, string> = {
   unknown_root: 'That folder is no longer available',
   not_a_dir: 'That is not a folder',
   is_link: 'That item is a link outside the agent’s folders',
-  bad_query: 'That search is not valid'
+  bad_query: 'That search is not valid',
+  unavailable: "Google Drive isn't available for this agent right now.",
+  bad_id: "That Google Drive item isn't valid.",
+  is_folder: 'Choose files, not folders.',
+  drive_error: "Google Drive couldn't finish that. Try again.",
+  timeout: 'Google Drive took too long. Try again.'
 }
 
 export const codeText = (code: string | undefined, message?: string) =>
