@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import errno
 import fnmatch
 from functools import wraps
@@ -21,6 +21,7 @@ import sys
 from threading import Lock
 import time
 from typing import Annotated
+import unicodedata
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, StrictInt
@@ -94,10 +95,18 @@ def _max_bytes(cfg):
 
 
 @dataclass(frozen=True)
+class Protection:
+    homes: tuple[str, ...]
+    excluded: frozenset[tuple[int, int]]
+
+
+@dataclass(frozen=True)
 class Root:
     id: str
     label: str
     path: Path
+    protection: Protection | None = None
+    is_home: bool | None = None
 
 
 def _identity(path):
@@ -108,34 +117,46 @@ def _identity(path):
         return None
 
 
-def _excluded():
-    return {identity for path in _hermes_homes() if (identity := _identity(Path(path))) is not None}
+def _excluded(homes=None):
+    homes = _hermes_homes() if homes is None else homes
+    return {identity for path in homes if (identity := _identity(Path(path))) is not None}
 
 
 def _canonical(path):
     value = os.path.realpath(path)
+    if sys.platform == "darwin":
+        value = unicodedata.normalize("NFD", value)
     return value.casefold() if sys.platform in {"darwin", "win32"} else value
 
 
-def _home_path(path):
-    return any(_canonical(path) == _canonical(home) for home in _hermes_homes())
+def _protection():
+    homes = _hermes_homes()
+    return Protection(tuple(_canonical(home) for home in homes), frozenset(_excluded(homes)))
+
+
+def _home_path(path, protection):
+    return _canonical(path) in protection.homes
 
 
 def _roots(cfg=None):
     cfg = _dict(_load_config()) if cfg is None else cfg
+    protection = _protection()
+    home_identity = _identity(Path.home())
     configured = _settings(cfg).get("roots")
     if isinstance(configured, list) and configured:
         roots = []
-        excluded = _excluded()
+        excluded = protection.excluded
         for index, value in enumerate(configured):
             if not isinstance(value, str) or not _encodable(value):
                 continue
             path = Path(value)
             if not path.is_absolute() or not path.is_dir() or Path(os.path.realpath(path)).parent == Path(os.path.realpath(path)):
                 continue
-            if _identity(path) in excluded or _home_path(path):
+            identity = _identity(path)
+            if identity in excluded or _home_path(path, protection):
                 continue
-            roots.append(Root(f"r{index}", path.name or str(path), path))
+            roots.append(Root(f"r{index}", path.name or str(path), path, protection,
+                              identity is not None and identity == home_identity))
         return roots
     terminal = _dict(cfg.get("terminal"))
     workspace = Path.home()
@@ -146,10 +167,14 @@ def _roots(cfg=None):
         if path.is_absolute() and path.is_dir() and Path(os.path.realpath(path)).parent != Path(os.path.realpath(path)):
             workspace = path
             break
-    if _identity(workspace) in _excluded() or _home_path(workspace):
+    if _identity(workspace) in protection.excluded or _home_path(workspace, protection):
         workspace = workspace / "workspace"
         workspace.mkdir(exist_ok=True)
-    root = Root("workspace", "Workspace", workspace)
+    if Path(os.path.realpath(workspace)).parent == Path(os.path.realpath(workspace)):
+        raise GuardError("protected", "A filesystem root cannot be exposed.")
+    identity = _identity(workspace)
+    root = Root("workspace", "Workspace", workspace, protection,
+                identity is not None and identity == home_identity)
     _resolve(root, "", for_write=False)
     return [root]
 
@@ -205,19 +230,22 @@ def _inside(path, root):
 
 
 def _home_root(root):
+    if root.is_home is not None:
+        return root.is_home
     identity = _identity(root.path)
     return identity is not None and identity == _identity(Path.home())
 
 
-def _check_protected(target, realroot):
+def _check_protected(target, realroot, protection=None):
     canonical_target, canonical_root = _canonical(target), _canonical(realroot)
-    for home in _hermes_homes():
-        canonical_home = _canonical(home)
+    if protection is None:
+        protection = Protection(tuple(_canonical(home) for home in _hermes_homes()), frozenset(_excluded()))
+    for canonical_home in protection.homes:
         # R1 permits a scoped root strictly inside a home, but never that home itself.
         scoped_inside = canonical_root != canonical_home and _inside(canonical_root, canonical_home)
         if not scoped_inside and _inside(canonical_target, canonical_home):
             raise GuardError("protected", "The Hermes home is protected.")
-    excluded = _excluded()
+    excluded = protection.excluded
     identity = _identity(target)
     if identity is not None and identity in excluded:
         raise GuardError("protected", "The Hermes home is protected.")
@@ -260,7 +288,9 @@ def _resolve(root: Root, rel: str, *, for_write: bool) -> Path:
     resolved = Path(os.path.realpath(candidate))
     if not _inside(resolved, realroot):
         raise GuardError("outside_root", "The path leaves the selected root.")
-    _check_protected(resolved, realroot)
+    _check_protected(resolved, realroot, root.protection)
+    if _home_root(root) and parts and parts[0].startswith("."):
+        raise GuardError("protected", "Hidden entries in the home root are protected.")
     if _home_dot(root, resolved, realroot):
         raise GuardError("protected", "Hidden entries in the home root are protected.")
     if for_write:
@@ -280,6 +310,9 @@ def _rel(root, path):
 def _entry(root, path):
     if not _encodable(str(path)) or TEMP_RE.fullmatch(path.name.lower()):
         return None
+    if _home_root(root) and (_rel(root, path).split("/")[0].startswith(".")
+            or (path.name.startswith(".") and _identity(path.parent) == _identity(root.path))):
+        return None
     try:
         link_info = os.lstat(path)
         link = stat.S_ISLNK(link_info.st_mode)
@@ -287,7 +320,7 @@ def _entry(root, path):
         is_dir = stat.S_ISDIR(info.st_mode)
         realpath = Path(os.path.realpath(path))
         realroot = Path(os.path.realpath(root.path))
-        _check_protected(realpath, realroot)
+        _check_protected(realpath, realroot, root.protection)
         if _home_dot(root, realpath, realroot):
             return None
         outside = link and not _inside(realpath, realroot)
@@ -314,7 +347,9 @@ def _mkdir(root, rel):
         except FileExistsError:
             if not current.is_dir():
                 raise GuardError("exists_file", "A file already occupies the folder path.")
-        _resolve(root, current_rel, for_write=False)
+        # Re-check with live protection, not the request snapshot: a home missing at request start has no
+        # identity in the snapshot, and this folder may have just become it.
+        _resolve(replace(root, protection=None), current_rel, for_write=False)
     final = _resolve(root, rel, for_write=True)
     if not final.is_dir():
         raise GuardError("exists_file", "A file already occupies the folder path.")
@@ -474,7 +509,7 @@ def _sweep(parent):
     cutoff = time.time() - 24 * 3600
     with os.scandir(parent) as scan:
         for item in scan:
-            if TEMP_RE.fullmatch(item.name.lower()):
+            if TEMP_RE.fullmatch(item.name):  # exact case: only names this plugin creates
                 try:
                     info = os.lstat(item.path)
                     if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
