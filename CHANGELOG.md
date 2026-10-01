@@ -17,6 +17,13 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
   and no `stat()` through it beyond the check of where it points. One whose target is missing is now listed (not
   openable) instead of hidden.
 
+## [0.1.1] - 2026-10-01
+
+Presentation-only release: no behaviour changes.
+
+### Changed
+- New banner and social card in the Hermes announcement style.
+
 ## [0.1.0] - 2026-10-01
 
 First release.

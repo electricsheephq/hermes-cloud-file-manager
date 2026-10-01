@@ -1,5 +1,5 @@
 name: hermes-cloud-file-manager
-version: 0.1.0
+version: 0.1.1
 description: "Cloud Files for Hermes Desktop: browse, search, create folders and bulk-upload files and whole folders to the machine your agent runs on, and hand the agent file locations from the chat + menu without re-uploading."
 author: Electric Sheep
 kind: standalone
