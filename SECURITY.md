@@ -43,7 +43,10 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
   1 MiB. Files with more than one hard link are refused: another name could alias a protected Hermes-home file.
 - Accepted race: a writer outside this process (for example the agent) that changes the file between the save's
   current-content hash check and `os.replace` is overwritten. The window is the duration of one local write.
-  Saves within this process use a per-target lock; it does not coordinate with external writers.
+  Saves within this gateway run one at a time; that does not coordinate with external writers.
+- Files with more than one hard link and files that are mount points (for example a Docker bind mount of a single
+  file) are refused by the editor. A bind mount within the same filesystem cannot be told apart from a normal
+  file and is not detected.
 - A save replaces the file with a new one: its permission bits are kept, but its owner becomes the gateway user and
   file-specific ACLs or extended attributes are not carried over. Agent working files normally belong to the
   gateway user already, so this matters only for files someone else created there.

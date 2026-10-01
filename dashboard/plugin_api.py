@@ -57,8 +57,7 @@ _SWEEP_LOCK = Lock()
 _FINISHED: dict = {}
 _FINISHED_LOCK = Lock()
 _FINISH_LOCKS = {}  # upload_id -> [Lock, holders]: a retry racing its in-flight original waits, then replays
-_EDIT_LOCKS = {}  # (st_dev, st_ino) -> [Lock, holders]
-_EDIT_LOCKS_LOCK = Lock()
+_SAVE_LOCK = Lock()  # one save at a time per gateway: saves are rare and short, and no alias or new inode can slip past
 
 
 class GuardError(Exception):
@@ -419,6 +418,8 @@ def _edit_stat(target, *, expected=None):
         raise GuardError("not_a_file", "The selected path is not a regular file.")
     if info.st_nlink > 1:
         raise GuardError("hard_link", "Editing a hard-linked file is not allowed.")
+    if os.path.ismount(target):  # a file mounted in from elsewhere (for example a Docker bind mount)
+        raise GuardError("mount_point", "Editing a mounted file is not allowed.")
     _edit_size(info.st_size)
     return info
 
@@ -474,22 +475,8 @@ def save_file(body: FileSave):
     except UnicodeEncodeError:
         raise GuardError("not_text", "The text cannot be saved as UTF-8.")
     _edit_size(len(data))
-    try:  # one lock per file, whatever spelling reached it (folder links, case variants)
-        identity = os.lstat(target)
-    except FileNotFoundError:
-        raise GuardError("gone", "The file no longer exists.")
-    key = (identity.st_dev, identity.st_ino)
-    with _EDIT_LOCKS_LOCK:
-        slot = _EDIT_LOCKS.setdefault(key, [Lock(), 0])
-        slot[1] += 1
-    try:
-        with slot[0]:
-            return _save_file(root, target, body, data)
-    finally:
-        with _EDIT_LOCKS_LOCK:
-            slot[1] -= 1
-            if not slot[1]:
-                _EDIT_LOCKS.pop(key, None)
+    with _SAVE_LOCK:
+        return _save_file(root, target, body, data)
 
 
 def _sync_dir(path):

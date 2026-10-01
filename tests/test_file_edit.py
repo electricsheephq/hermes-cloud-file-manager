@@ -4,7 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 import stat
-from threading import Barrier, Thread
+from threading import Barrier, Event, Thread
 import time
 
 import pytest
@@ -402,3 +402,50 @@ def test_save_syncs_the_folder(client, api, fs, monkeypatch):
     monkeypatch.setattr(api.os, "fsync", record)
     assert save(client)["ok"] is True
     assert synced == [False, True]  # the temp file, then its folder after the replace
+
+
+@pytest.mark.parametrize("route", ["read", "save"])
+def test_mounted_file_refused(client, api, fs, monkeypatch, route):
+    # A file mounted into the root (a Docker bind mount of a Hermes-home file, say) is refused, not read.
+    target = fs[0] / "note.md"
+    target.write_bytes(b"old")
+    ismount = api.os.path.ismount
+    monkeypatch.setattr(api.os.path, "ismount", lambda path: str(path) == str(target) or ismount(path))
+    body = get(client, "file", root="r0", path="note.md") if route == "read" else save(client)
+    error(body, "mount_point")
+    assert target.read_bytes() == b"old"
+
+
+def test_save_new_inode_generation_still_serialised(client, api, fs, monkeypatch):
+    # A's replace gives the file a new inode while B waits for A's lock. C arrives while B is replacing and
+    # must not slip past on a lock keyed to the new inode: B and C cannot both succeed.
+    target = fs[0] / "note.md"
+    target.write_bytes(b"same")
+    replace, calls, results = api.os.replace, [], {}
+    a_in, a_go, b_in = Event(), Event(), Event()
+
+    def slow_replace(source, destination):
+        calls.append(source)
+        if len(calls) == 1:
+            a_in.set()
+            a_go.wait(timeout=2)
+        elif len(calls) == 2:
+            b_in.set()
+            time.sleep(0.4)
+        return replace(source, destination)
+
+    monkeypatch.setattr(api.os, "replace", slow_replace)
+    run = lambda key, text: results.__setitem__(key, save(client, base=b"same", text=text))
+    a = Thread(target=run, args=("a", "same"), daemon=True)
+    a.start()
+    assert a_in.wait(timeout=2)
+    b = Thread(target=run, args=("b", "from b"), daemon=True)
+    b.start()
+    time.sleep(0.1)  # B is now queued behind A
+    a_go.set()
+    a.join(timeout=3)
+    assert b_in.wait(timeout=2)
+    c = save(client, base=b"same", text="from c")
+    b.join(timeout=3)
+    assert results["a"]["ok"] is True
+    assert len([body for body in (results["b"], c) if body["ok"]]) == 1

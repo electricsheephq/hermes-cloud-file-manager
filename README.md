@@ -9,8 +9,6 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
   never overwrite — a name clash keeps both files.
-- **Open and edit** Markdown and text files: view first, edit on purpose, review the changes, then save.
-  Nothing is saved until you choose Save.
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
   message. Nothing is uploaded again and nothing is copied into the chat; the agent opens the files where they
   are with its own tools.
