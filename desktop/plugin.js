@@ -36,12 +36,18 @@ function registerAvailabilityGate(ctx, onChange) {
       onChange?.(false);
     }
   };
-  const probe = () => ctx.rest("/available").then(
-    () => set(true),
-    (error) => {
-      if (isNotFoundError(error)) set(false);
-    }
-  );
+  let generation = 0;
+  const probe = () => {
+    const mine = ++generation;
+    return ctx.rest("/available").then(
+      () => {
+        if (mine === generation) set(true);
+      },
+      (error) => {
+        if (mine === generation && isNotFoundError(error)) set(false);
+      }
+    );
+  };
   void probe();
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS);
   const unsubscribers = [host.state.profile.subscribe(() => void probe()), host.state.connectionId.subscribe(() => void probe())];

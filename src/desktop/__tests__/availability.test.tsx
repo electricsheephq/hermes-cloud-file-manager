@@ -48,6 +48,20 @@ describe('availability gate', () => {
     t.dispose()
   })
 
+  it('ignores a late answer from a probe for the previous agent', async () => {
+    const pending: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
+    const t = createTestContext({ rest: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) })
+    plugin.register(t.ctx as any)
+    host.state.profile.set('agent-b') // second probe starts while the first is still pending
+    pending[1].resolve({ ok: true }) // newest probe: agent-b has the plugin
+    await flush()
+    expect(t.live.has('nav')).toBe(true)
+    pending[0].reject(ipcError(404)) // stale probe for the previous agent answers late
+    await flush()
+    expect(t.live.has('nav')).toBe(true)
+    t.dispose()
+  })
+
   it('parses 404 out of IPC error text', () => {
     expect(isNotFoundError(ipcError(404))).toBe(true)
     expect(isNotFoundError(ipcError(500))).toBe(false)

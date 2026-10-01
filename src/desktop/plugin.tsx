@@ -46,13 +46,20 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     }
   }
 
-  const probe = () =>
-    ctx.rest('/available').then(
-      () => set(true),
+  // Only the newest probe may change the row: when the agent changes mid-flight, a late answer about the
+  // previous agent must not show or hide the row for the current one.
+  let generation = 0
+  const probe = () => {
+    const mine = ++generation
+    return ctx.rest('/available').then(
+      () => {
+        if (mine === generation) set(true)
+      },
       error => {
-        if (isNotFoundError(error)) set(false)
+        if (mine === generation && isNotFoundError(error)) set(false)
       }
     )
+  }
 
   void probe()
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS)
