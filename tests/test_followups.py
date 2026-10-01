@@ -240,3 +240,35 @@ def test_finish_retry_during_inflight_original_replays(client, api, fs, monkeypa
     assert results["first"]["ok"] is True
     assert results["retry"] == results["first"]
     assert sorted(p.name for p in root.iterdir()) == ["slow.txt"]
+
+
+def test_finish_serialization_is_per_upload(client, api, fs, monkeypatch):
+    # A finish stalled on one upload must not hold up an unrelated upload's finish.
+    import threading
+    root, _ = fs
+    def ready(path):
+        started = post(client, "uploads/start", root="r0", path=path, size=1)
+        upload = {"root": "r0", "path": path, "upload_id": started["upload_id"]}
+        post(client, "uploads/chunk", **upload, offset=0, data=base64.b64encode(b"x").decode())
+        return {**upload, "size": 1}
+    stalled, other = ready("stalled.txt"), ready("other.txt")
+    real_publish, entered, release = api._publish, threading.Event(), threading.Event()
+    def slow_publish(root_, target, temp):
+        if target.name == "stalled.txt":
+            entered.set()
+            assert release.wait(5)
+        return real_publish(root_, target, temp)
+    monkeypatch.setattr(api, "_publish", slow_publish)
+    first = threading.Thread(target=lambda: post(client, "uploads/finish", **stalled))
+    first.start()
+    assert entered.wait(5)
+    done = {}
+    second = threading.Thread(target=lambda: done.__setitem__("other", post(client, "uploads/finish", **other)))
+    second.start()
+    second.join(2)
+    finished_while_stalled = "other" in done
+    release.set()
+    first.join(5)
+    second.join(5)
+    assert finished_while_stalled and done["other"]["ok"] is True
+    assert not api._FINISH_LOCKS  # per-upload locks are dropped when no finish holds them
