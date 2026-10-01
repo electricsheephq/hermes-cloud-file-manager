@@ -12,6 +12,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
   message. Nothing is uploaded again and nothing is copied into the chat; the agent opens the files where they
   are with its own tools.
+- **Google Drive** (optional): if the agent is signed in to Google through its `google-workspace` skill, browse
+  and search its Drive and import files onto the agent's machine, from the page or from **+ → Google Drive**.
 
 ![The Cloud Files page](docs/media/screenshot-page.png)
 
@@ -63,10 +65,41 @@ installing the desktop half is harmless for your other agents.
 - **Find:** type in **Search files** (name contains, or a glob such as `*.pdf`).
 - **Share with the agent:** select files and **Copy path**, or in any chat press **+ → Cloud**, tick files in
   any folders, and **Insert locations**. The message gets a short list of absolute paths the agent can open.
+  If you switch chats or agents while the picker is open, it offers **Copy locations** instead of inserting, so
+  locations don't land in a chat you switched to.
 
 ![Picking files for a chat](docs/media/screenshot-picker.png)
 
 ![The agent opens the inserted locations with its own tools](docs/media/screenshot-chat.png)
+
+## Google Drive (optional)
+
+If the agent can already use Google Drive through its `google-workspace` skill, Cloud File Manager can bring
+files from that Drive onto the agent's machine:
+
+- **On the Cloud Files page:** choose **Google Drive** in the folder menu. Browse or search the agent's Drive,
+  tick files, and choose **Import to Cloud Files**.
+- **In a chat:** choose **+ → Google Drive**, tick files, and choose **Import and insert**. The files are
+  imported, then their locations go into your message, exactly like **+ → Cloud**.
+
+![Google Drive as a source on the Cloud Files page](docs/media/screenshot-drive-page.png)
+
+![+ → Google Drive imports and inserts](docs/media/screenshot-drive-picker.png)
+
+Imports land in `uploads/drive/` in the first shown folder, one file at a time. Google Docs and Slides arrive as
+PDF, Sheets as CSV and Drawings as PNG; other files arrive as they are. A name clash keeps both files, and
+`max_file_mb` applies.
+
+**Setup:** sign the agent in to Google through its `google-workspace` skill, with Drive access. Follow the
+skill's own setup, or ask the agent to do it. Within about a minute, **Google Drive** appears for that agent.
+For agents without it, nothing extra is shown.
+
+**What it can and can't do:**
+- It is read-only toward Google Drive. It only lists, searches and downloads; it never uploads, edits, shares or
+  deletes anything there.
+- It works through the agent's own skill. Cloud File Manager never reads the Google token and never installs
+  anything.
+- It uses the Google account the agent is signed in to, so whoever can use the agent can import from that Drive.
 
 ## Settings
 
@@ -105,6 +138,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.
 - A folder with more than 500 items shows the first 500; use **Search files** to find the rest.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
+- Google Drive is import-only: pick files, not folders, and nothing is ever written back to Drive.
 
 ## Compatibility
 
