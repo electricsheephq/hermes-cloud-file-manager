@@ -16,7 +16,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { useEffect, useRef } from 'react'
 
-import { Breadcrumbs, BrowserSearch, EntryList, RootSelect, useBrowser, useRoots } from './browser'
+import { Breadcrumbs, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
 import { formatInsertText } from './format'
 import { S } from './strings'
 import type { RootsResponse } from './api'
@@ -40,9 +40,10 @@ export const cloudProvider: ComposerAttachmentProvider = {
 /** True when the focused chat belongs to a different agent than the one Cloud Files talks to. */
 export function ownerMismatch(owner: null | { connectionId: null | string; profile: string }, connectionId: null | string, profile: string) {
   if (!owner) return false
-  const a = String(owner.connectionId ?? '').trim()
-  const b = String(connectionId ?? '').trim()
-  return (owner.profile || 'default') !== (profile || 'default') || Boolean(a && b && a !== b)
+  // Nullable connection ids compare directly: a local-owned chat (null) is not a remote agent ("conn-B").
+  // An empty string means "no connection" in the owner fallback, the same as null.
+  const id = (value: null | string) => String(value ?? '').trim() || null
+  return (owner.profile || 'default') !== (profile || 'default') || id(owner.connectionId) !== id(connectionId)
 }
 
 export function PickerHost() {
@@ -103,8 +104,9 @@ function PickerDialog() {
 
 function PickerBody({ profile }: { profile: string }) {
   const roots = useRoots()
-  if (roots.error || (roots.data && (roots.data.supported === false || !roots.data.roots?.length))) {
-    return <EmptyState description={roots.data?.reason ?? (roots.error instanceof Error ? roots.error.message : undefined)} title={S.unsupportedTitle} />
+  if (roots.error) return <LoadError error={roots.error} onRetry={() => void roots.refetch()} />
+  if (roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
+    return <EmptyState description={roots.data.reason} title={S.unsupportedTitle} />
   }
   if (!roots.data) return <div aria-busy="true" style={{ height: 360 }} />
   return <PickerBrowser profile={profile} roots={roots.data} />

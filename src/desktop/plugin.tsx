@@ -9,7 +9,7 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
-import { $available, bindContext } from './api'
+import { $available, bindContext, isNotFoundError } from './api'
 import { CloudFilesPage } from './page'
 import { cloudProvider, PickerHost } from './picker'
 import { S } from './strings'
@@ -18,12 +18,7 @@ export const PLUGIN_ID = 'hermes-cloud-file-manager'
 export const PAGE_PATH = '/cloud-files'
 const PROBE_INTERVAL_MS = 60_000
 
-/** True when `error` is the backend saying "this plugin is not mounted here" (a definite 404).
- *  HTTP status reaches the renderer only inside the IPC error text, e.g. "... Error: 404: {...}". */
-export function isNotFoundError(error: unknown): boolean {
-  const text = error instanceof Error ? error.message : String(error)
-  return /(^|\D)404(\D|$)/.test(text)
-}
+export { isNotFoundError }
 
 /** Sidebar row, "+ → Cloud" provider and the picker host only while the selected agent's backend answers
  *  /available; the route stays registered so a restored /cloud-files never falls through to the session

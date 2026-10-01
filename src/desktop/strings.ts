@@ -1,5 +1,8 @@
 // Every user-facing English string, in one place for later i18n.
 
+/** "<profile>'s machine", or "the agent's machine" when the profile is empty or literally "default". */
+export const machineOf = (profile: string) => (profile && profile !== 'default' ? `${profile}'s machine` : "the agent's machine")
+
 const mb = (bytes: number) => `${Math.max(1, Math.round(bytes / (1024 * 1024)))} MB`
 
 export const S = {
@@ -9,6 +12,9 @@ export const S = {
   notSetUp: (agent: string) =>
     `Cloud Files isn't set up on ${agent} yet. Install the plugin on the agent's gateway, add it to \`plugins.enabled\`, and restart the gateway.`,
   unsupportedTitle: "Cloud Files can't browse this agent's machine",
+  needsUpdateTitle: 'Cloud Files needs an update on this agent',
+  needsUpdateBody:
+    "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there, then restart Hermes on that machine.",
   loadFailed: "Couldn't load files",
   retry: 'Retry',
   root: 'Folder',
@@ -55,7 +61,7 @@ export const S = {
   insert: 'Insert locations',
   ownerMismatch: (owner: string, profile: string) =>
     `This chat belongs to ${owner}. Cloud Files is showing ${profile}'s files — switch to ${owner} in the sidebar first.`,
-  insertHeader: (profile: string) => `Cloud files on ${profile}'s machine:`
+  insertHeader: (profile: string) => `Cloud files on ${machineOf(profile)}:`
 }
 
 /** Server error codes → short human text. */

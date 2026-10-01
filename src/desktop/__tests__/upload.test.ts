@@ -12,6 +12,8 @@ interface Call {
   path: string
   body: any
   timeoutMs?: number
+  /** The agent selected when the request was dispatched (where ctx.rest would send it). */
+  agent: string
 }
 
 /** A fake backend. The injected chunk reader encodes a slice as its byte length, so `data` = length. */
@@ -29,7 +31,7 @@ function harness(handlers: Partial<Record<string, (body: any, n: number) => any>
   }
   const deps: UploadDeps = {
     rest: (async (path: string, opts: any) => {
-      calls.push({ path, body: opts?.body, timeoutMs: opts?.timeoutMs })
+      calls.push({ path, body: opts?.body, timeoutMs: opts?.timeoutMs, agent: state.profile.get() })
       counts[path] = (counts[path] ?? 0) + 1
       const handler = handlers[path]
       const answer = handler ? await handler(opts?.body, counts[path]) : undefined
@@ -195,5 +197,89 @@ describe('upload engine', () => {
     await h.batch.start()
     expect(h.of('/mkdir')[0].body).toEqual({ root: 'home', path: 'docs/empty/inner' })
     expect(h.batch.getSnapshot().items.find(item => !item.isDir)).toMatchObject({ status: 'done', savedAs: 'a (1).txt' })
+  })
+
+  // F1: the pin must be re-checked synchronously right before each dispatch. A listener fired while the batch
+  // resumes stands in for anything that switches agents between the pin check and the request.
+  it('never sends a request to an agent selected after the pin check (F1)', async () => {
+    const h = harness({
+      '/uploads/chunk': (_body, n) => {
+        if (n === 1) h.state.profile.set('other')
+      }
+    })
+    let pausedOnce = false
+    let flipped = false
+    h.batch.subscribe(() => {
+      const snap = h.batch.getSnapshot()
+      if (snap.paused) pausedOnce = true
+      if (pausedOnce && !snap.paused && !flipped && h.state.profile.get() === 'default') {
+        flipped = true
+        h.state.profile.set('other')
+      }
+    })
+    h.batch.add({ files: [{ file: blob(6 * MiB), rel: 'a.bin' }] }, { root: 'home', folder: '' })
+    const done = h.batch.start()
+    await flush()
+    h.state.profile.set('default') // resume; the listener switches away again right after the pin check
+    await flush()
+    expect(h.calls.filter(c => c.agent !== 'default')).toEqual([])
+    expect(h.batch.getSnapshot().paused).toBe(true)
+    h.state.profile.set('default')
+    await done
+    expect(h.calls.every(c => c.agent === 'default')).toBe(true)
+    expect(h.batch.getSnapshot().items[0].status).toBe('done')
+  })
+
+  it('sends nothing after cancel, even when cancel lands between the pin check and the request (F3)', async () => {
+    const h = harness({
+      '/uploads/chunk': (_body, n) => {
+        if (n === 1) h.state.profile.set('other')
+      }
+    })
+    let pausedOnce = false
+    h.batch.subscribe(() => {
+      const snap = h.batch.getSnapshot()
+      if (snap.paused) pausedOnce = true
+      if (pausedOnce && !snap.paused && !snap.canceled) h.batch.cancel()
+    })
+    h.batch.add({ files: [{ file: blob(6 * MiB), rel: 'a.bin' }] }, { root: 'home', folder: '' })
+    void h.batch.start()
+    await flush()
+    h.state.profile.set('default')
+    await flush()
+    const abortAt = h.calls.findIndex(c => c.path === '/uploads/abort')
+    expect(abortAt).toBeGreaterThanOrEqual(0)
+    expect(h.calls.slice(abortAt + 1).map(c => c.path)).toEqual([])
+    expect(h.batch.getSnapshot().items[0].status).toBe('canceled')
+  })
+
+  it('validates newly added files against the current limits, not the batch’s original ones (F4)', async () => {
+    const h = harness({}, { max_file_bytes: 100, chunk_bytes: 4 * MiB })
+    h.batch.add({ files: [{ file: blob(6), rel: 'a.txt' }] }, { root: 'home', folder: '' }, { max_file_bytes: 5, chunk_bytes: 4 * MiB })
+    await h.batch.start()
+    expect(h.of('/uploads/start')).toEqual([])
+    expect(h.batch.getSnapshot().items[0]).toMatchObject({ status: 'failed', retryable: false })
+  })
+
+  it('a batch pinned to another agent starts paused and sends nothing until that agent is selected', async () => {
+    const h = harness()
+    const batch = new UploadBatch({ max_file_bytes: MiB, chunk_bytes: MiB }, {
+      rest: (async (path: string, opts: any) => {
+        h.calls.push({ path, body: opts?.body, agent: h.state.profile.get() })
+        return path === '/uploads/start' ? { ok: true, upload_id: 'u1' } : path === '/uploads/chunk' ? { ok: true, size: opts.body.offset + Number(opts.body.data) } : { ok: true }
+      }) as UploadDeps['rest'],
+      state: h.state,
+      readChunk: async (slice: Blob) => String(slice.size),
+      sleep: async () => undefined
+    }, { connectionId: 'conn-1', profile: 'origin' })
+    batch.add({ files: [{ file: blob(10), rel: 'a.txt' }] }, { root: 'home', folder: '' })
+    const done = batch.start()
+    await flush()
+    expect(batch.getSnapshot()).toMatchObject({ profile: 'origin', paused: true })
+    expect(h.calls).toEqual([])
+    h.state.profile.set('origin')
+    await done
+    expect(h.calls.every(c => c.agent === 'origin')).toBe(true)
+    expect(batch.getSnapshot().items[0].status).toBe('done')
   })
 })

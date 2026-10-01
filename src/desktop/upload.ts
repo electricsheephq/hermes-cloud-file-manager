@@ -62,6 +62,11 @@ export interface Destination {
   folder: string
 }
 
+export interface AgentPin {
+  connectionId: null | string
+  profile: string
+}
+
 export interface Limits {
   max_file_bytes: number
   chunk_bytes: number
@@ -117,20 +122,24 @@ export class UploadBatch {
   private readonly readChunk: (blob: Blob) => Promise<string>
   private readonly sleep: (ms: number) => Promise<void>
 
+  /** `pin` is the agent the files were picked on (default: the agent selected now). A batch pinned to an
+   *  agent that is not selected starts paused and never re-pins. */
   constructor(
-    private readonly limits: Limits,
-    private readonly deps: UploadDeps
+    private limits: Limits,
+    private readonly deps: UploadDeps,
+    pin?: AgentPin
   ) {
     this.readChunk = deps.readChunk ?? readBase64
     this.sleep = deps.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)))
     this.snapshot = {
-      profile: deps.state.profile.get(),
-      connectionId: deps.state.connectionId.get(),
+      profile: pin?.profile ?? deps.state.profile.get(),
+      connectionId: pin ? pin.connectionId : deps.state.connectionId.get(),
       items: [],
       running: false,
       paused: false,
       canceled: false
     }
+    this.snapshot = { ...this.snapshot, paused: !this.matches() }
   }
 
   getSnapshot = (): BatchSnapshot => this.snapshot
@@ -140,8 +149,10 @@ export class UploadBatch {
     return () => this.listeners.delete(listener)
   }
 
-  /** Queue files (and empty dirs) for a destination; oversize files fail before any request. */
-  add(input: UploadInput, dest: Destination): void {
+  /** Queue files (and empty dirs) for a destination; oversize files fail before any request. `limits` are the
+   *  current /roots limits; they replace the batch's for this and later files. */
+  add(input: UploadInput, dest: Destination, limits?: Limits): void {
+    if (limits) this.limits = limits
     const items: UploadItem[] = []
     for (const rel of input.dirs ?? []) {
       items.push({ id: this.nextId++, root: dest.root, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: 'queued', isDir: true })
@@ -301,15 +312,19 @@ export class UploadBatch {
   /** POST with the agent pin, transport retries (1 s / 2 s / 4 s) and — for chunks above the floor — a
    *  Shrink signal on 413/timeout so the caller retries the same offset with half the chunk. */
   private async send(path: string, body: Record<string, unknown>, canShrink: boolean): Promise<Reply> {
-    for (let attempt = 0; ; attempt += 1) {
+    for (let attempt = 0; ; ) {
       await this.ready()
+      // Re-check synchronously, with no await before the dispatch: ctx.rest goes to whichever agent is
+      // selected at call time, and anything may have run while ready() resolved.
+      if (this.snapshot.canceled) throw new Canceled()
+      if (!this.matches()) continue
       try {
         return await this.deps.rest<Reply>(path, { method: 'POST', body, timeoutMs: REQUEST_TIMEOUT_MS })
       } catch (error) {
         if (this.snapshot.canceled) throw new Canceled()
         if (canShrink && isShrinkError(error)) throw new Shrink()
         if (attempt >= BACKOFF_MS.length) throw error
-        await this.sleep(BACKOFF_MS[attempt])
+        await this.sleep(BACKOFF_MS[attempt++])
       }
     }
   }

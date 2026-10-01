@@ -12,6 +12,7 @@ import {
 import { atom } from "@hermes/plugin-sdk";
 
 // src/desktop/strings.ts
+var machineOf = (profile) => profile && profile !== "default" ? `${profile}'s machine` : "the agent's machine";
 var mb = (bytes) => `${Math.max(1, Math.round(bytes / (1024 * 1024)))} MB`;
 var S = {
   title: "Cloud Files",
@@ -19,6 +20,8 @@ var S = {
   providerLabel: "Cloud",
   notSetUp: (agent) => `Cloud Files isn't set up on ${agent} yet. Install the plugin on the agent's gateway, add it to \`plugins.enabled\`, and restart the gateway.`,
   unsupportedTitle: "Cloud Files can't browse this agent's machine",
+  needsUpdateTitle: "Cloud Files needs an update on this agent",
+  needsUpdateBody: "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there, then restart Hermes on that machine.",
   loadFailed: "Couldn't load files",
   retry: "Retry",
   root: "Folder",
@@ -63,7 +66,7 @@ var S = {
   selected: (n) => `${n} selected`,
   insert: "Insert locations",
   ownerMismatch: (owner, profile) => `This chat belongs to ${owner}. Cloud Files is showing ${profile}'s files \u2014 switch to ${owner} in the sidebar first.`,
-  insertHeader: (profile) => `Cloud files on ${profile}'s machine:`
+  insertHeader: (profile) => `Cloud files on ${machineOf(profile)}:`
 };
 var CODE_TEXT = {
   exists_file: "A file with that name already exists",
@@ -104,8 +107,13 @@ function rest(path, opts) {
 }
 async function call(path, opts) {
   const res = await rest(path, opts);
-  if (res && res.ok === false && res.code !== "unsupported_backend") throw new ApiError(res.code ?? "error", codeText(res.code, res.message));
+  const rootsUnsupported = path.split("?")[0] === "/roots" && res?.code === "unsupported_backend";
+  if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? "error", codeText(res.code, res.message));
   return res;
+}
+function isNotFoundError(error) {
+  const text = error instanceof Error ? error.message : String(error);
+  return /(^|\D)404(\D|$)/.test(text);
 }
 var query = (path, params) => `${path}?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()}`;
 var errorText = (error) => error instanceof Error ? error.message : String(error);
@@ -121,7 +129,6 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState as EmptyState2,
-  ErrorState as ErrorState2,
   host as host2,
   Input,
   Skeleton as Skeleton2,
@@ -199,186 +206,6 @@ function entryIcon(entry) {
   return dot > 0 && MEDIA.has(entry.name.slice(dot + 1).toLowerCase()) ? "file-media" : "file";
 }
 
-// src/desktop/browser.tsx
-import { jsx, jsxs } from "react/jsx-runtime";
-var LIST_LIMIT = 500;
-var SEARCH_LIMIT = 200;
-var DEBOUNCE_MS = 300;
-function useScope() {
-  const connectionId = useValue(host.state.connectionId);
-  const profile = useValue(host.state.profile);
-  return [connectionId ?? "local", profile];
-}
-function useRoots() {
-  const scope = useScope();
-  return useQuery({ queryKey: ["hcfm", ...scope, "roots"], queryFn: () => call("/roots"), retry: 1 });
-}
-function useDebounced(value, ms) {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return settled;
-}
-function useBrowser(roots, mode) {
-  const [rootId, setRootId] = useState(roots.roots[0]?.id ?? "");
-  const root = roots.roots.find((r) => r.id === rootId) ?? roots.roots[0];
-  const [path, setPath] = useState("");
-  const [search, setSearch] = useState("");
-  const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
-  const [selected, setSelected] = useState(/* @__PURE__ */ new Map());
-  const navigate = (next) => {
-    setPath(next);
-    setSearch("");
-    if (mode === "page") setSelected(/* @__PURE__ */ new Map());
-  };
-  return {
-    roots,
-    root,
-    path,
-    search,
-    query: search.trim() ? debounced : "",
-    selected,
-    mode,
-    setSearch,
-    navigate,
-    switchRoot: (id) => {
-      setRootId(id);
-      navigate("");
-      setSelected(/* @__PURE__ */ new Map());
-    },
-    toggle: (entry) => setSelected((prev) => {
-      const next = new Map(prev);
-      if (!next.delete(entry.abs)) next.set(entry.abs, entry);
-      return next;
-    }),
-    selectOnly: (entry) => setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]]))
-  };
-}
-var muted = { color: "var(--ui-text-tertiary)" };
-var ellipsis = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-function RootSelect({ b }) {
-  if (b.roots.roots.length < 2) return null;
-  return /* @__PURE__ */ jsxs(Select, { onValueChange: b.switchRoot, value: b.root?.id, children: [
-    /* @__PURE__ */ jsx(SelectTrigger, { "aria-label": S.root, size: "sm", children: /* @__PURE__ */ jsx(SelectValue, {}) }),
-    /* @__PURE__ */ jsx(SelectContent, { children: b.roots.roots.map((root) => /* @__PURE__ */ jsx(SelectItem, { value: root.id, children: root.label }, root.id)) })
-  ] });
-}
-function Breadcrumbs({ b }) {
-  const parts = b.path.split("/").filter(Boolean);
-  const crumbs = [{ label: b.root?.label ?? "", path: "" }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join("/") }))];
-  return /* @__PURE__ */ jsx("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }, children: crumbs.map((crumb, i) => {
-    const last = i === crumbs.length - 1;
-    return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
-      i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: muted }),
-      last && !b.query ? /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.label }) : /* @__PURE__ */ jsx(Button, { onClick: () => b.navigate(crumb.path), size: "inline", variant: "text", children: crumb.label })
-    ] }, crumb.path || "/");
-  }) });
-}
-function BrowserSearch({ b }) {
-  return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": S.search, onChange: b.setSearch, placeholder: S.search, value: b.search }) });
-}
-function sortEntries(entries, highlights, atRoot) {
-  const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
-  return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name));
-}
-function EntryList({ b, height }) {
-  const [connectionId, profile] = useScope();
-  const rootId = b.root?.id ?? "";
-  const searching = Boolean(b.query);
-  const listing = useQuery({
-    queryKey: ["hcfm", connectionId, profile, "list", rootId, b.path],
-    queryFn: () => call(query("/list", { root: rootId, path: b.path, offset: 0, limit: LIST_LIMIT })),
-    enabled: Boolean(rootId) && !searching,
-    retry: 1
-  });
-  const found = useQuery({
-    queryKey: ["hcfm", connectionId, profile, "search", rootId, b.query],
-    queryFn: () => call(query("/search", { root: rootId, q: b.query, limit: SEARCH_LIMIT })),
-    enabled: Boolean(rootId) && searching,
-    retry: 1
-  });
-  const active = searching ? found : listing;
-  const entries = useMemo(() => {
-    if (searching) return found.data?.results ?? [];
-    return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
-  }, [searching, found.data, listing.data, b.roots.highlights, b.path]);
-  const truncated = searching ? found.data?.truncated : listing.data?.truncated;
-  const open = (entry) => {
-    if (!entry.is_dir || entry.link_outside) return;
-    b.navigate(entry.rel);
-  };
-  let body;
-  if (active.error) {
-    body = /* @__PURE__ */ jsx("div", { style: { padding: 32 }, children: /* @__PURE__ */ jsx(ErrorState, { description: errorText(active.error), title: S.loadFailed, children: /* @__PURE__ */ jsx(Button, { onClick: () => void active.refetch(), size: "sm", variant: "secondary", children: S.retry }) }) });
-  } else if (!active.data) {
-    body = /* @__PURE__ */ jsx("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: "8px 12px" }, children: [0, 1, 2, 3, 4].map((i) => /* @__PURE__ */ jsx(Skeleton, { style: { height: 18, opacity: 1 - i * 0.15 } }, i)) });
-  } else if (!entries.length) {
-    body = /* @__PURE__ */ jsx(EmptyState, { title: searching ? S.noResults : S.emptyFolder });
-  } else {
-    body = /* @__PURE__ */ jsxs("div", { role: "list", children: [
-      entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onOpen: open, searching }, entry.abs)),
-      truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.truncated(entries.length) })
-    ] });
-  }
-  return /* @__PURE__ */ jsx("div", { style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, children: body });
-}
-function EntryRow({ b, entry, onOpen, searching }) {
-  const [hover, setHover] = useState(false);
-  const checked = b.selected.has(entry.abs);
-  const note = !searching && b.path === "" ? b.root?.notes?.[entry.rel] ?? b.root?.notes?.[entry.name] : void 0;
-  const secondary = searching ? parentPath(entry.rel) || b.root?.label : note;
-  const click = () => {
-    if (searching && entry.is_dir && !entry.link_outside) return onOpen(entry);
-    if (b.mode === "pick") b.toggle(entry);
-    else b.selectOnly(entry);
-  };
-  return /* @__PURE__ */ jsxs(
-    "div",
-    {
-      "aria-selected": checked,
-      "data-entry": entry.rel,
-      onClick: click,
-      onDoubleClick: () => onOpen(entry),
-      onKeyDown: (event) => {
-        if (event.key === "Enter") onOpen(entry);
-        if (event.key === " ") {
-          event.preventDefault();
-          b.toggle(entry);
-        }
-      },
-      onMouseEnter: () => setHover(true),
-      onMouseLeave: () => setHover(false),
-      role: "listitem",
-      style: {
-        display: "grid",
-        gridTemplateColumns: "16px 16px minmax(0, 1fr) 72px 96px",
-        alignItems: "center",
-        gap: 8,
-        minHeight: 28,
-        padding: "3px 12px",
-        fontSize: 12,
-        cursor: "default",
-        userSelect: "none",
-        opacity: entry.link_outside ? 0.5 : 1,
-        background: checked ? "var(--ui-row-active-background)" : hover ? "var(--ui-row-hover-background)" : void 0
-      },
-      tabIndex: 0,
-      children: [
-        /* @__PURE__ */ jsx("span", { onClick: (event) => event.stopPropagation(), style: { display: "inline-flex" }, children: /* @__PURE__ */ jsx(Checkbox, { "aria-label": entry.name, checked, onCheckedChange: () => b.toggle(entry) }) }),
-        /* @__PURE__ */ jsx(Codicon, { name: entryIcon(entry), size: "0.875rem", style: { color: entry.is_dir ? "var(--ui-accent)" : "var(--ui-text-secondary)" } }),
-        /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }, children: [
-          /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)" }, children: entry.name }),
-          secondary && /* @__PURE__ */ jsx("span", { style: { ...ellipsis, ...muted, fontSize: 11 }, children: secondary })
-        ] }),
-        /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: entry.is_dir ? "" : humanSize(entry.size) }),
-        /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: shortDate(entry.mtime) })
-      ]
-    }
-  );
-}
-
 // src/desktop/upload.ts
 var MIN_CHUNK = 256 * 1024;
 var REQUEST_TIMEOUT_MS = 12e4;
@@ -408,19 +235,22 @@ var Canceled = class extends Error {
 var Shrink = class extends Error {
 };
 var UploadBatch = class {
-  constructor(limits, deps) {
+  /** `pin` is the agent the files were picked on (default: the agent selected now). A batch pinned to an
+   *  agent that is not selected starts paused and never re-pins. */
+  constructor(limits, deps, pin) {
     this.limits = limits;
     this.deps = deps;
     this.readChunk = deps.readChunk ?? readBase64;
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.snapshot = {
-      profile: deps.state.profile.get(),
-      connectionId: deps.state.connectionId.get(),
+      profile: pin?.profile ?? deps.state.profile.get(),
+      connectionId: pin ? pin.connectionId : deps.state.connectionId.get(),
       items: [],
       running: false,
       paused: false,
       canceled: false
     };
+    this.snapshot = { ...this.snapshot, paused: !this.matches() };
   }
   limits;
   deps;
@@ -438,8 +268,10 @@ var UploadBatch = class {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
-  /** Queue files (and empty dirs) for a destination; oversize files fail before any request. */
-  add(input, dest) {
+  /** Queue files (and empty dirs) for a destination; oversize files fail before any request. `limits` are the
+   *  current /roots limits; they replace the batch's for this and later files. */
+  add(input, dest, limits) {
+    if (limits) this.limits = limits;
     const items = [];
     for (const rel of input.dirs ?? []) {
       items.push({ id: this.nextId++, root: dest.root, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: "queued", isDir: true });
@@ -585,15 +417,17 @@ var UploadBatch = class {
   /** POST with the agent pin, transport retries (1 s / 2 s / 4 s) and — for chunks above the floor — a
    *  Shrink signal on 413/timeout so the caller retries the same offset with half the chunk. */
   async send(path, body, canShrink) {
-    for (let attempt = 0; ; attempt += 1) {
+    for (let attempt = 0; ; ) {
       await this.ready();
+      if (this.snapshot.canceled) throw new Canceled();
+      if (!this.matches()) continue;
       try {
         return await this.deps.rest(path, { method: "POST", body, timeoutMs: REQUEST_TIMEOUT_MS });
       } catch (error) {
         if (this.snapshot.canceled) throw new Canceled();
         if (canShrink && isShrinkError(error)) throw new Shrink();
         if (attempt >= BACKOFF_MS.length) throw error;
-        await this.sleep(BACKOFF_MS[attempt]);
+        await this.sleep(BACKOFF_MS[attempt++]);
       }
     }
   }
@@ -647,6 +481,205 @@ function summarize(snapshot) {
   };
 }
 
+// src/desktop/browser.tsx
+import { jsx, jsxs } from "react/jsx-runtime";
+var LIST_LIMIT = 500;
+var SEARCH_LIMIT = 200;
+var DEBOUNCE_MS = 300;
+function useScope() {
+  const connectionId = useValue(host.state.connectionId);
+  const profile = useValue(host.state.profile);
+  return [connectionId ?? "local", profile];
+}
+function useRoots() {
+  const scope = useScope();
+  return useQuery({ queryKey: ["hcfm", ...scope, "roots"], queryFn: () => call("/roots"), retry: 1 });
+}
+function useDebounced(value, ms) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return settled;
+}
+function useBrowser(roots, mode) {
+  const [rootId, setRootId] = useState(roots.roots[0]?.id ?? "");
+  const root = roots.roots.find((r) => r.id === rootId) ?? roots.roots[0];
+  const [path, setPath] = useState("");
+  const [search, setSearch] = useState("");
+  const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
+  const [selected, setSelected] = useState(/* @__PURE__ */ new Map());
+  const navigate = (next) => {
+    setPath(next);
+    setSearch("");
+    if (mode === "page") setSelected(/* @__PURE__ */ new Map());
+  };
+  return {
+    roots,
+    root,
+    path,
+    search,
+    query: search.trim() ? debounced : "",
+    selected,
+    mode,
+    setSearch,
+    navigate,
+    switchRoot: (id) => {
+      setRootId(id);
+      navigate("");
+      setSelected(/* @__PURE__ */ new Map());
+    },
+    toggle: (entry) => setSelected((prev) => {
+      const next = new Map(prev);
+      if (!next.delete(entry.abs)) next.set(entry.abs, entry);
+      return next;
+    }),
+    selectOnly: (entry) => setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]]))
+  };
+}
+var muted = { color: "var(--ui-text-tertiary)" };
+var ellipsis = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+function LoadError({ error, onRetry }) {
+  const retry = /* @__PURE__ */ jsx("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Button, { onClick: onRetry, size: "sm", variant: "secondary", children: S.retry }) });
+  if (isNotFoundError(error)) {
+    return /* @__PURE__ */ jsxs("div", { style: { display: "grid", gap: 8, justifyItems: "center", padding: "8px 32px 32px", textAlign: "center" }, children: [
+      /* @__PURE__ */ jsx(EmptyState, { description: S.needsUpdateBody, title: S.needsUpdateTitle }),
+      /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, maxWidth: 560, overflowWrap: "anywhere" }, children: errorText(error) }),
+      retry
+    ] });
+  }
+  return /* @__PURE__ */ jsx("div", { style: { padding: 32 }, children: /* @__PURE__ */ jsx(ErrorState, { description: error instanceof ApiError ? error.message : transportText(error), title: S.loadFailed, children: retry }) });
+}
+function RootSelect({ b }) {
+  if (b.roots.roots.length < 2) return null;
+  return /* @__PURE__ */ jsxs(Select, { onValueChange: b.switchRoot, value: b.root?.id, children: [
+    /* @__PURE__ */ jsx(SelectTrigger, { "aria-label": S.root, size: "sm", children: /* @__PURE__ */ jsx(SelectValue, {}) }),
+    /* @__PURE__ */ jsx(SelectContent, { children: b.roots.roots.map((root) => /* @__PURE__ */ jsx(SelectItem, { value: root.id, children: root.label }, root.id)) })
+  ] });
+}
+function Breadcrumbs({ b }) {
+  const parts = b.path.split("/").filter(Boolean);
+  const crumbs = [{ label: b.root?.label ?? "", path: "" }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join("/") }))];
+  return /* @__PURE__ */ jsx("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }, children: crumbs.map((crumb, i) => {
+    const last = i === crumbs.length - 1;
+    return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
+      i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: muted }),
+      last && !b.query ? /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.label }) : /* @__PURE__ */ jsx(Button, { onClick: () => b.navigate(crumb.path), size: "inline", variant: "text", children: crumb.label })
+    ] }, crumb.path || "/");
+  }) });
+}
+function BrowserSearch({ b }) {
+  return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": S.search, onChange: b.setSearch, placeholder: S.search, value: b.search }) });
+}
+function sortEntries(entries, highlights, atRoot) {
+  const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
+  return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name));
+}
+function EntryList({ b, height }) {
+  const [connectionId, profile] = useScope();
+  const rootId = b.root?.id ?? "";
+  const searching = Boolean(b.query);
+  const listing = useQuery({
+    queryKey: ["hcfm", connectionId, profile, "list", rootId, b.path],
+    queryFn: () => call(query("/list", { root: rootId, path: b.path, offset: 0, limit: LIST_LIMIT })),
+    enabled: Boolean(rootId) && !searching,
+    retry: 1
+  });
+  const found = useQuery({
+    queryKey: ["hcfm", connectionId, profile, "search", rootId, b.query],
+    queryFn: () => call(query("/search", { root: rootId, q: b.query, limit: SEARCH_LIMIT })),
+    enabled: Boolean(rootId) && searching,
+    retry: 1
+  });
+  const active = searching ? found : listing;
+  const entries = useMemo(() => {
+    if (searching) return found.data?.results ?? [];
+    return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
+  }, [searching, found.data, listing.data, b.roots.highlights, b.path]);
+  const truncated = searching ? found.data?.truncated : listing.data?.truncated;
+  const open = (entry) => {
+    if (!entry.is_dir || entry.link_outside) return;
+    b.navigate(entry.rel);
+  };
+  let body;
+  if (active.error) {
+    body = /* @__PURE__ */ jsx(LoadError, { error: active.error, onRetry: () => void active.refetch() });
+  } else if (!active.data) {
+    body = /* @__PURE__ */ jsx("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: "8px 12px" }, children: [0, 1, 2, 3, 4].map((i) => /* @__PURE__ */ jsx(Skeleton, { style: { height: 18, opacity: 1 - i * 0.15 } }, i)) });
+  } else if (!entries.length) {
+    body = /* @__PURE__ */ jsx(EmptyState, { title: searching ? S.noResults : S.emptyFolder });
+  } else {
+    body = /* @__PURE__ */ jsxs("div", { role: "list", children: [
+      entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onOpen: open, searching }, entry.abs)),
+      truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.truncated(entries.length) })
+    ] });
+  }
+  return /* @__PURE__ */ jsx("div", { style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, children: body });
+}
+function EntryRow({ b, entry, onOpen, searching }) {
+  const [hover, setHover] = useState(false);
+  const checked = b.selected.has(entry.abs);
+  const note = !searching && b.path === "" ? b.root?.notes?.[entry.rel] ?? b.root?.notes?.[entry.name] : void 0;
+  const secondary = searching ? parentPath(entry.rel) || b.root?.label : note;
+  const click = () => {
+    if (searching && entry.is_dir && !entry.link_outside) return onOpen(entry);
+    if (b.mode === "pick") b.toggle(entry);
+    else b.selectOnly(entry);
+  };
+  return /* @__PURE__ */ jsxs(
+    "div",
+    {
+      "aria-selected": checked,
+      "data-entry": entry.rel,
+      onClick: click,
+      onDoubleClick: () => onOpen(entry),
+      onKeyDown: (event) => {
+        if (event.key === "Enter") onOpen(entry);
+        if (event.key === " ") {
+          event.preventDefault();
+          b.toggle(entry);
+        }
+      },
+      onMouseEnter: () => setHover(true),
+      onMouseLeave: () => setHover(false),
+      role: "listitem",
+      style: {
+        display: "grid",
+        gridTemplateColumns: "16px 16px minmax(0, 1fr) 72px 96px",
+        alignItems: "center",
+        gap: 8,
+        minHeight: 28,
+        padding: "3px 12px",
+        fontSize: 12,
+        cursor: "default",
+        userSelect: "none",
+        opacity: entry.link_outside ? 0.5 : 1,
+        background: checked ? "var(--ui-row-active-background)" : hover ? "var(--ui-row-hover-background)" : void 0
+      },
+      tabIndex: 0,
+      children: [
+        /* @__PURE__ */ jsx("span", { onClick: (event) => event.stopPropagation(), style: { display: "inline-flex" }, children: /* @__PURE__ */ jsx(
+          Checkbox,
+          {
+            "aria-label": entry.name,
+            checked,
+            onCheckedChange: () => b.toggle(entry),
+            style: checked ? void 0 : { borderColor: "var(--ui-stroke-secondary)" }
+          }
+        ) }),
+        /* @__PURE__ */ jsx(Codicon, { name: entryIcon(entry), size: "0.875rem", style: { color: entry.is_dir ? "var(--ui-accent)" : "var(--ui-text-secondary)" } }),
+        /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }, children: [
+          /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)" }, children: entry.name }),
+          secondary && /* @__PURE__ */ jsx("span", { style: { ...ellipsis, ...muted, fontSize: 11 }, children: secondary })
+        ] }),
+        /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: entry.is_dir ? "" : humanSize(entry.size) }),
+        /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: shortDate(entry.mtime) })
+      ]
+    }
+  );
+}
+
 // src/desktop/walk.ts
 function collectDropEntries(transfer) {
   const entries = [];
@@ -693,22 +726,21 @@ import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 var muted2 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
 var $batch = atom2(null);
-function enqueueUpload(input, dest, limits) {
+var currentPin = () => ({ connectionId: host2.state.connectionId.get(), profile: host2.state.profile.get() });
+function enqueueUpload(input, dest, limits, pin = currentPin()) {
   if (!input.files.length && !input.dirs?.length) return;
-  const profile = host2.state.profile.get();
-  const connectionId = host2.state.connectionId.get();
   let batch = $batch.get();
   const snap = batch?.getSnapshot();
-  const sameAgent = snap?.profile === profile && snap?.connectionId === connectionId;
+  const sameAgent = snap?.profile === pin.profile && snap?.connectionId === pin.connectionId;
   if (snap?.running && !sameAgent) {
     host2.notify({ kind: "warning", message: S.busyElsewhere });
     return;
   }
   if (!batch || !snap || snap.canceled || !sameAgent) {
-    batch = new UploadBatch(limits, { rest, state: host2.state });
+    batch = new UploadBatch(limits, { rest, state: host2.state }, pin);
     $batch.set(batch);
   }
-  batch.add(input, dest);
+  batch.add(input, dest, limits);
   void batch.start();
 }
 function CloudFilesPage() {
@@ -723,7 +755,7 @@ function CloudFilesPage() {
 function PageBody({ profile }) {
   const roots = useRoots();
   if (roots.error) {
-    return /* @__PURE__ */ jsx2(Frame, { profile, children: /* @__PURE__ */ jsx2("div", { style: { padding: 32 }, children: /* @__PURE__ */ jsx2(ErrorState2, { description: errorText(roots.error), title: S.loadFailed, children: /* @__PURE__ */ jsx2(Button2, { onClick: () => void roots.refetch(), size: "sm", variant: "secondary", children: S.retry }) }) }) });
+    return /* @__PURE__ */ jsx2(Frame, { profile, children: /* @__PURE__ */ jsx2(LoadError, { error: roots.error, onRetry: () => void roots.refetch() }) });
   }
   if (!roots.data) {
     return /* @__PURE__ */ jsx2(Frame, { profile, children: /* @__PURE__ */ jsx2("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx2(Skeleton2, { style: { height: 18 } }, i)) }) });
@@ -746,7 +778,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
     setOver(false);
     if (!onDropInput) return;
     const { entries, files } = collectDropEntries(event.dataTransfer);
-    onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)));
+    onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)), currentPin());
   };
   return /* @__PURE__ */ jsxs2(
     "section",
@@ -805,7 +837,7 @@ function Files({ profile, roots }) {
   const dest = { root: rootId, folder: b.path };
   const fromInput = (input) => {
     if (!input?.files) return;
-    enqueueUpload(filesFromInput(input.files), dest, limits);
+    enqueueUpload(filesFromInput(input.files), dest, limits, currentPin());
     input.value = "";
   };
   const copyPaths = () => {
@@ -817,7 +849,10 @@ function Files({ profile, roots }) {
     {
       controls: /* @__PURE__ */ jsx2(RootSelect, { b }),
       dropLabel: S.dropTo(here),
-      onDropInput: (pending) => void pending.then((input) => enqueueUpload(input, dest, limits), (error) => host2.notify({ kind: "error", message: errorText(error) })),
+      onDropInput: (pending, pin) => void pending.then(
+        (input) => enqueueUpload(input, dest, limits, pin),
+        (error) => host2.notify({ kind: "error", message: errorText(error) })
+      ),
       profile,
       children: [
         /* @__PURE__ */ jsxs2("div", { style: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: "0 20px 8px", borderBottom: "1px solid var(--ui-stroke-tertiary)" }, children: [
@@ -904,8 +939,19 @@ var noop = () => () => void 0;
 function useBatch(batch) {
   return useSyncExternalStore(batch?.subscribe ?? noop, batch?.getSnapshot ?? (() => EMPTY), batch?.getSnapshot ?? (() => EMPTY));
 }
-function Bar({ value, height = 3 }) {
-  return /* @__PURE__ */ jsx2("div", { style: { height, borderRadius: height, background: "var(--ui-stroke-tertiary)", overflow: "hidden" }, children: /* @__PURE__ */ jsx2("div", { style: { height: "100%", width: `${Math.min(100, Math.max(0, value * 100))}%`, background: "var(--ui-accent)", transition: "width 150ms" } }) });
+function Bar({ value, style }) {
+  const pct = Math.round(Math.min(100, Math.max(0, value * 100)));
+  return /* @__PURE__ */ jsx2(
+    "div",
+    {
+      "aria-valuemax": 100,
+      "aria-valuemin": 0,
+      "aria-valuenow": pct,
+      role: "progressbar",
+      style: { height: 2, borderRadius: 2, background: "var(--ui-stroke-tertiary)", overflow: "hidden", ...style },
+      children: /* @__PURE__ */ jsx2("div", { style: { height: "100%", width: `${pct}%`, background: "var(--ui-accent)", transition: "width 150ms" } })
+    }
+  );
 }
 function UploadDrawer({ onSettled }) {
   const batch = useValue2($batch);
@@ -925,7 +971,7 @@ function UploadDrawer({ onSettled }) {
       /* @__PURE__ */ jsx2("span", { style: { flex: 1, minWidth: 0 }, children: headline }),
       snap.running ? /* @__PURE__ */ jsx2(Button2, { onClick: () => batch.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx2(Button2, { onClick: () => $batch.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
-    /* @__PURE__ */ jsx2(Bar, { value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
+    snap.running && /* @__PURE__ */ jsx2(Bar, { value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
     !collapsed && /* @__PURE__ */ jsx2("div", { style: { maxHeight: 180, overflowY: "auto", display: "grid", gap: 4 }, children: snap.items.map((item) => /* @__PURE__ */ jsx2(UploadRow, { item, onRetry: () => batch.retry(item.id) }, item.id)) })
   ] });
 }
@@ -943,7 +989,7 @@ function UploadRow({ item, onRetry }) {
       statusText(item),
       item.status === "failed" && item.retryable !== false && /* @__PURE__ */ jsx2(Button2, { onClick: onRetry, size: "micro", variant: "textStrong", children: S.retry })
     ] }),
-    !item.isDir && /* @__PURE__ */ jsx2(Bar, { height: 2, value: item.size ? item.sent / item.size : item.status === "done" ? 1 : 0 })
+    item.status === "uploading" && /* @__PURE__ */ jsx2(Bar, { style: { gridColumn: "1 / -1", marginTop: 3 }, value: item.size ? item.sent / item.size : 0 })
   ] });
 }
 
@@ -976,9 +1022,8 @@ var cloudProvider = {
 };
 function ownerMismatch(owner, connectionId, profile) {
   if (!owner) return false;
-  const a = String(owner.connectionId ?? "").trim();
-  const b = String(connectionId ?? "").trim();
-  return (owner.profile || "default") !== (profile || "default") || Boolean(a && b && a !== b);
+  const id = (value) => String(value ?? "").trim() || null;
+  return (owner.profile || "default") !== (profile || "default") || id(owner.connectionId) !== id(connectionId);
 }
 function PickerHost() {
   const me = useRef2({}).current;
@@ -1015,8 +1060,9 @@ function PickerDialog() {
 }
 function PickerBody({ profile }) {
   const roots = useRoots();
-  if (roots.error || roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
-    return /* @__PURE__ */ jsx3(EmptyState3, { description: roots.data?.reason ?? (roots.error instanceof Error ? roots.error.message : void 0), title: S.unsupportedTitle });
+  if (roots.error) return /* @__PURE__ */ jsx3(LoadError, { error: roots.error, onRetry: () => void roots.refetch() });
+  if (roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
+    return /* @__PURE__ */ jsx3(EmptyState3, { description: roots.data.reason, title: S.unsupportedTitle });
   }
   if (!roots.data) return /* @__PURE__ */ jsx3("div", { "aria-busy": "true", style: { height: 360 } });
   return /* @__PURE__ */ jsx3(PickerBrowser, { profile, roots: roots.data });
@@ -1048,10 +1094,6 @@ import { jsx as jsx4 } from "react/jsx-runtime";
 var PLUGIN_ID = "hermes-cloud-file-manager";
 var PAGE_PATH = "/cloud-files";
 var PROBE_INTERVAL_MS = 6e4;
-function isNotFoundError(error) {
-  const text = error instanceof Error ? error.message : String(error);
-  return /(^|\D)404(\D|$)/.test(text);
-}
 function registerAvailabilityGate(ctx, onChange) {
   let removers = null;
   let known = null;

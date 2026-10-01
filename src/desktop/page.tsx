@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
-  ErrorState,
   host,
   Input,
   Skeleton,
@@ -19,10 +18,10 @@ import {
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { $available, ApiError, call, errorText, pluginCtx, rest, type RootsResponse } from './api'
-import { Breadcrumbs, type Browser, BrowserSearch, EntryList, RootSelect, useBrowser, useRoots } from './browser'
+import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
 import { baseName, humanSize, joinPath } from './format'
 import { codeText, S } from './strings'
-import { type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
+import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
 import { collectDropEntries, filesFromInput, walkEntries } from './walk'
 
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
@@ -31,22 +30,26 @@ const pad = '0 20px'
 /** The current upload batch outlives the page, so leaving and coming back keeps the drawer. */
 export const $batch = atom<null | UploadBatch>(null)
 
-export function enqueueUpload(input: UploadInput, dest: Destination, limits: Limits): void {
+/** The agent selected right now. Read it synchronously in the event handler that picked the files: a folder
+ *  walk is async, and the files belong to the agent they were picked on even if the user switches meanwhile. */
+export const currentPin = (): AgentPin => ({ connectionId: host.state.connectionId.get(), profile: host.state.profile.get() })
+
+/** Queue files on the batch for `pin`'s agent. A batch for another agent pauses until it is selected again;
+ *  it is never re-pinned. `limits` are the current /roots limits. */
+export function enqueueUpload(input: UploadInput, dest: Destination, limits: Limits, pin: AgentPin = currentPin()): void {
   if (!input.files.length && !input.dirs?.length) return
-  const profile = host.state.profile.get()
-  const connectionId = host.state.connectionId.get()
   let batch = $batch.get()
   const snap = batch?.getSnapshot()
-  const sameAgent = snap?.profile === profile && snap?.connectionId === connectionId
+  const sameAgent = snap?.profile === pin.profile && snap?.connectionId === pin.connectionId
   if (snap?.running && !sameAgent) {
     host.notify({ kind: 'warning', message: S.busyElsewhere })
     return
   }
   if (!batch || !snap || snap.canceled || !sameAgent) {
-    batch = new UploadBatch(limits, { rest, state: host.state })
+    batch = new UploadBatch(limits, { rest, state: host.state }, pin)
     $batch.set(batch)
   }
-  batch.add(input, dest)
+  batch.add(input, dest, limits)
   void batch.start()
 }
 
@@ -70,13 +73,7 @@ function PageBody({ profile }: { profile: string }) {
   if (roots.error) {
     return (
       <Frame profile={profile}>
-        <div style={{ padding: 32 }}>
-          <ErrorState description={errorText(roots.error)} title={S.loadFailed}>
-            <Button onClick={() => void roots.refetch()} size="sm" variant="secondary">
-              {S.retry}
-            </Button>
-          </ErrorState>
-        </div>
+        <LoadError error={roots.error} onRetry={() => void roots.refetch()} />
       </Frame>
     )
   }
@@ -106,7 +103,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
   children: ReactNode
   profile: string
   controls?: ReactNode
-  onDropInput?: (input: Promise<UploadInput>) => void
+  onDropInput?: (input: Promise<UploadInput>, pin: AgentPin) => void
   dropLabel?: string
 }) {
   const [over, setOver] = useState(false)
@@ -122,7 +119,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
     setOver(false)
     if (!onDropInput) return
     const { entries, files } = collectDropEntries(event.dataTransfer) // synchronous: the list dies after this handler
-    onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)))
+    onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)), currentPin())
   }
   return (
     <section
@@ -181,7 +178,7 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
 
   const fromInput = (input: HTMLInputElement | null) => {
     if (!input?.files) return
-    enqueueUpload(filesFromInput(input.files), dest, limits)
+    enqueueUpload(filesFromInput(input.files), dest, limits, currentPin())
     input.value = ''
   }
 
@@ -196,7 +193,12 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
     <Frame
       controls={<RootSelect b={b} />}
       dropLabel={S.dropTo(here)}
-      onDropInput={pending => void pending.then(input => enqueueUpload(input, dest, limits), error => host.notify({ kind: 'error', message: errorText(error) }))}
+      onDropInput={(pending, pin) =>
+        void pending.then(
+          input => enqueueUpload(input, dest, limits, pin),
+          error => host.notify({ kind: 'error', message: errorText(error) })
+        )
+      }
       profile={profile}
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '0 20px 8px', borderBottom: '1px solid var(--ui-stroke-tertiary)' }}>
@@ -302,10 +304,18 @@ function useBatch(batch: null | UploadBatch): BatchSnapshot {
   return useSyncExternalStore(batch?.subscribe ?? noop, batch?.getSnapshot ?? (() => EMPTY), batch?.getSnapshot ?? (() => EMPTY))
 }
 
-function Bar({ value, height = 3 }: { value: number; height?: number }) {
+/** Thin progress line: muted track, accent fill. Shown only while something is uploading. */
+function Bar({ value, style }: { value: number; style?: CSSProperties }) {
+  const pct = Math.round(Math.min(100, Math.max(0, value * 100)))
   return (
-    <div style={{ height, borderRadius: height, background: 'var(--ui-stroke-tertiary)', overflow: 'hidden' }}>
-      <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, value * 100))}%`, background: 'var(--ui-accent)', transition: 'width 150ms' }} />
+    <div
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={pct}
+      role="progressbar"
+      style={{ height: 2, borderRadius: 2, background: 'var(--ui-stroke-tertiary)', overflow: 'hidden', ...style }}
+    >
+      <div style={{ height: '100%', width: `${pct}%`, background: 'var(--ui-accent)', transition: 'width 150ms' }} />
     </div>
   )
 }
@@ -347,7 +357,7 @@ function UploadDrawer({ onSettled }: { onSettled: () => void }) {
           </Button>
         )}
       </div>
-      <Bar value={sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0} />
+      {snap.running && <Bar value={sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0} />}
       {!collapsed && (
         <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4 }}>
           {snap.items.map(item => (
@@ -379,7 +389,9 @@ function UploadRow({ item, onRetry }: { item: UploadItem; onRetry: () => void })
           </Button>
         )}
       </span>
-      {!item.isDir && <Bar height={2} value={item.size ? item.sent / item.size : item.status === 'done' ? 1 : 0} />}
+      {item.status === 'uploading' && (
+        <Bar style={{ gridColumn: '1 / -1', marginTop: 3 }} value={item.size ? item.sent / item.size : 0} />
+      )}
     </div>
   )
 }

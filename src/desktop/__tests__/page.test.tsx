@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
-import { createTestContext, resetHost, resetQueryCache } from './sdk-mock'
+import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
 import { fakeBackend } from './fake-backend'
 import { $available, bindContext } from '../api'
 import { $batch, CloudFilesPage } from '../page'
@@ -11,6 +11,11 @@ function setup(overrides?: Parameters<typeof fakeBackend>[0]) {
   bindContext(t.ctx as any)
   render(<CloudFilesPage />)
   return { ...backend, ctx: t.ctx }
+}
+
+const ipcError = (status: number) => new Error(`Error invoking remote method 'hermes:api': Error: ${status}: {"detail":"No such API endpoint"}`)
+const flush = async (rounds = 10) => {
+  for (let i = 0; i < rounds; i++) await act(() => new Promise(resolve => setTimeout(resolve, 0)))
 }
 
 const rows = () => screen.getAllByRole('listitem').map(row => row.getAttribute('data-entry'))
@@ -118,6 +123,7 @@ describe('Cloud Files page', () => {
     expect(calls.find(c => c.path === '/uploads/start')?.opts.body).toEqual({ root: 'home', path: 'docs/a.txt', size: 5 })
     expect(calls.find(c => c.path === '/uploads/chunk')?.opts.body).toMatchObject({ offset: 0, data: btoa('hello') })
     expect(await screen.findByText('Uploaded 1 of 1')).toBeTruthy()
+    expect(screen.queryAllByRole('progressbar')).toHaveLength(0) // finished rows carry no bar (E3)
     await waitFor(() => expect(calls.filter(c => c.path === '/list' && c.params.path === 'docs').length).toBeGreaterThan(1))
   })
 
@@ -143,5 +149,71 @@ describe('Cloud Files page', () => {
     fail = false
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('This folder is empty — drop files here or use Upload')).toBeTruthy()
+  })
+
+  it('keeps a drop pinned to the agent it was dropped on, even if the agent changes during the folder walk (F2)', async () => {
+    const { calls } = setup({
+      '/uploads/start': () => ({ ok: true, upload_id: 'u1', chunk_bytes: 4 * 1024 * 1024 }),
+      '/uploads/chunk': (opts: any) => ({ ok: true, size: opts.body.offset + atob(opts.body.data).length }),
+      '/uploads/finish': () => ({ ok: true, renamed: false, entry: { name: 'a.txt', rel: 'pics/a.txt' } })
+    })
+    await screen.findByText('docs')
+    let release!: () => void
+    const walked = new Promise<void>(resolve => (release = resolve))
+    const file = new File(['hi'], 'a.txt')
+    const child = { name: 'a.txt', isFile: true, isDirectory: false, file: (ok: (f: File) => void) => ok(file) }
+    let read = false
+    const dir = {
+      name: 'pics',
+      isFile: false,
+      isDirectory: true,
+      createReader: () => ({
+        readEntries: (ok: (entries: unknown[]) => void) => {
+          if (read) return ok([])
+          read = true
+          void walked.then(() => ok([child]))
+        }
+      })
+    }
+    const page = screen.getByText('Cloud Files').closest('section')!
+    fireEvent.drop(page, { dataTransfer: { types: ['Files'], items: [{ kind: 'file', webkitGetAsEntry: () => dir }], files: [] } })
+    act(() => host.state.profile.set('other'))
+    release()
+    await flush()
+    expect(calls.filter(c => c.path.startsWith('/uploads')).map(c => c.profile)).toEqual([])
+    expect(await screen.findByText('Switch back to default to continue uploading')).toBeTruthy()
+    act(() => host.state.profile.set('default'))
+    expect(await screen.findByText('Uploaded 1 of 1')).toBeTruthy()
+    const uploads = calls.filter(c => c.path.startsWith('/uploads'))
+    expect(uploads.every(c => c.profile === 'default')).toBe(true)
+    expect(uploads[0].opts.body).toMatchObject({ root: 'home', path: 'pics/a.txt' })
+  })
+
+  it('treats unsupported_backend as a failure everywhere except /roots (F5)', async () => {
+    setup({ '/mkdir': () => ({ ok: false, code: 'unsupported_backend', message: 'nope' }) })
+    await screen.findByText('docs')
+    fireEvent.click(screen.getByRole('button', { name: 'New folder' }))
+    fireEvent.change(screen.getByLabelText('Folder name'), { target: { value: 'reports' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    expect(await screen.findByText('This agent’s storage is not supported')).toBeTruthy()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('shows a listing failure with unsupported_backend as an error, not an empty folder (F5)', async () => {
+    setup({ '/list': () => ({ ok: false, code: 'unsupported_backend', message: 'nope' }) })
+    expect(await screen.findByText('This agent’s storage is not supported')).toBeTruthy()
+    expect(screen.queryByText('This folder is empty — drop files here or use Upload')).toBeNull()
+  })
+
+  it('explains a 404 from an older or disabled gateway plugin instead of showing raw IPC text (E1)', async () => {
+    setup({ '/roots': () => Promise.reject(ipcError(404)) })
+    expect(await screen.findByText('Cloud Files needs an update on this agent')).toBeTruthy()
+    expect(
+      screen.getByText(
+        "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there, then restart Hermes on that machine."
+      )
+    ).toBeTruthy()
+    expect(screen.queryByText("Couldn't load files")).toBeNull()
+    expect(screen.getByText(/404/)).toBeTruthy() // raw error kept as a small details line
   })
 })

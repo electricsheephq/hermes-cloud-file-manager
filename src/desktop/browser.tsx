@@ -20,9 +20,10 @@ import {
 } from '@hermes/plugin-sdk'
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react'
 
-import { call, type Entry, errorText, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
+import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { entryIcon, humanSize, parentPath, shortDate } from './format'
 import { S } from './strings'
+import { transportText } from './upload'
 
 export const LIST_LIMIT = 500
 const SEARCH_LIMIT = 200
@@ -96,6 +97,34 @@ export type Browser = ReturnType<typeof useBrowser>
 
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+
+/** A failed load. A 404 on our own route means the agent's gateway half is missing, disabled or older than
+ *  this Desktop half: say so plainly and keep the raw error as a small details line. */
+export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const retry = (
+    <div style={{ display: 'flex', justifyContent: 'center' }}>
+      <Button onClick={onRetry} size="sm" variant="secondary">
+        {S.retry}
+      </Button>
+    </div>
+  )
+  if (isNotFoundError(error)) {
+    return (
+      <div style={{ display: 'grid', gap: 8, justifyItems: 'center', padding: '8px 32px 32px', textAlign: 'center' }}>
+        <EmptyState description={S.needsUpdateBody} title={S.needsUpdateTitle} />
+        <div style={{ ...muted, fontSize: 11, maxWidth: 560, overflowWrap: 'anywhere' }}>{errorText(error)}</div>
+        {retry}
+      </div>
+    )
+  }
+  return (
+    <div style={{ padding: 32 }}>
+      <ErrorState description={error instanceof ApiError ? error.message : transportText(error)} title={S.loadFailed}>
+        {retry}
+      </ErrorState>
+    </div>
+  )
+}
 
 export function RootSelect({ b }: { b: Browser }) {
   if (b.roots.roots.length < 2) return null
@@ -183,15 +212,7 @@ export function EntryList({ b, height }: { b: Browser; height?: number }) {
 
   let body: ReactNode
   if (active.error) {
-    body = (
-      <div style={{ padding: 32 }}>
-        <ErrorState description={errorText(active.error)} title={S.loadFailed}>
-          <Button onClick={() => void active.refetch()} size="sm" variant="secondary">
-            {S.retry}
-          </Button>
-        </ErrorState>
-      </div>
-    )
+    body = <LoadError error={active.error} onRetry={() => void active.refetch()} />
   } else if (!active.data) {
     body = (
       <div aria-busy="true" style={{ display: 'grid', gap: 6, padding: '8px 12px' }}>
@@ -264,7 +285,13 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
       tabIndex={0}
     >
       <span onClick={event => event.stopPropagation()} style={{ display: 'inline-flex' }}>
-        <Checkbox aria-label={entry.name} checked={checked} onCheckedChange={() => b.toggle(entry)} />
+        {/* The kit's unchecked border token can match the page background; give it a visible stroke. */}
+        <Checkbox
+          aria-label={entry.name}
+          checked={checked}
+          onCheckedChange={() => b.toggle(entry)}
+          style={checked ? undefined : { borderColor: 'var(--ui-stroke-secondary)' }}
+        />
       </span>
       <Codicon name={entryIcon(entry)} size="0.875rem" style={{ color: entry.is_dir ? 'var(--ui-accent)' : 'var(--ui-text-secondary)' }} />
       <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>

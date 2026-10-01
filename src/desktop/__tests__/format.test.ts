@@ -13,6 +13,11 @@ describe('insert text', () => {
     )
   })
 
+  it('says "the agent\'s machine" when the profile is empty or literally "default" (E5)', () => {
+    expect(formatInsertText('default', [{ abs: '/a', is_dir: false }])).toBe(`\nCloud files on the agent's machine:\n- ${TICK}/a${TICK}`)
+    expect(formatInsertText('', [{ abs: '/a', is_dir: false }]).split('\n')[1]).toBe("Cloud files on the agent's machine:")
+  })
+
   it('does not double a trailing slash on folders', () => {
     expect(formatLocation({ abs: '/srv/', is_dir: true })).toBe(`- ${TICK}/srv/${TICK}`)
   })

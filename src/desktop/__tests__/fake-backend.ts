@@ -1,3 +1,5 @@
+import { host } from './sdk-mock'
+
 // A fake Cloud File Manager backend for the UI tests, answering ctx.rest(path, opts) like the real API.
 const MiB = 1024 * 1024
 const entry = (rel: string, is_dir = false, size = 1200) => ({
@@ -29,6 +31,8 @@ export interface Recorded {
   path: string
   params: Record<string, string>
   opts?: any
+  /** The agent selected when the request was made (where ctx.rest routes it). */
+  profile: string
 }
 
 export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}) {
@@ -36,7 +40,7 @@ export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {})
   const rest = async (full: string, opts?: any) => {
     const [path, qs = ''] = full.split('?')
     const params = Object.fromEntries(new URLSearchParams(qs))
-    calls.push({ path, params, opts })
+    calls.push({ path, params, opts, profile: host.state.profile.get() })
     if (overrides[path]) return overrides[path](opts)
     if (path === '/available') return { ok: true, plugin: 'hermes-cloud-file-manager', version: '0.1.0' }
     if (path === '/roots') return ROOTS

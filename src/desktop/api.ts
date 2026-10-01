@@ -72,11 +72,20 @@ export function rest<T>(path: string, opts?: PluginRestOptions): Promise<T> {
   return pluginCtx().rest<T>(path, opts)
 }
 
-/** GET/POST that turns an in-band failure into a thrown ApiError. */
+/** GET/POST that turns an in-band failure into a thrown ApiError. Only /roots may answer
+ *  `unsupported_backend` in-band: the page renders that as its own "can't browse" state. */
 export async function call<T extends { ok: boolean }>(path: string, opts?: PluginRestOptions): Promise<T> {
   const res = await rest<T & { code?: string; message?: string }>(path, opts)
-  if (res && res.ok === false && res.code !== 'unsupported_backend') throw new ApiError(res.code ?? 'error', codeText(res.code, res.message))
+  const rootsUnsupported = path.split('?')[0] === '/roots' && res?.code === 'unsupported_backend'
+  if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? 'error', codeText(res.code, res.message))
   return res
+}
+
+/** True when `error` is the backend saying "this plugin route is not mounted here" (a definite 404).
+ *  HTTP status reaches the renderer only inside the IPC error text, e.g. "... Error: 404: {...}". */
+export function isNotFoundError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error)
+  return /(^|\D)404(\D|$)/.test(text)
 }
 
 export const query = (path: string, params: Record<string, number | string>) =>
