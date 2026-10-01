@@ -1,9 +1,9 @@
 {
   "name": "hermes-cloud-file-manager",
   "label": "Cloud Files",
-  "description": "Browse, search and bulk-upload files on the machine your agent runs on.",
+  "description": "Browse, search, upload and edit files on the machine your agent runs on.",
   "icon": "Cloud",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "tab": { "path": "/cloud-files", "hidden": true },
   "entry": "dist/index.js",
   "api": "plugin_api.py"

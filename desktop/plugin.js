@@ -2087,7 +2087,7 @@ function registerAvailabilityGate(ctx, onChange) {
 var plugin = {
   id: PLUGIN_ID,
   name: "Cloud File Manager",
-  description: "Browse, search and bulk-upload files on the machine your agent runs on, and hand the agent file locations from the chat + menu.",
+  description: "Browse, search, upload and edit files on the machine your agent runs on, and hand the agent file locations from the chat + menu.",
   register(ctx) {
     bindContext(ctx);
     ctx.register({
