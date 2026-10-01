@@ -1,6 +1,6 @@
 // Test double for Hermes Desktop's '@hermes/plugin-sdk' (aliased in vitest.config.ts).
 // Only what the plugin uses; behaviour mirrors the real SDK where tests depend on it.
-import { createElement, type ReactNode, useEffect, useReducer, useRef, useSyncExternalStore } from 'react'
+import { createContext, createElement, type ReactNode, useContext, useEffect, useReducer, useRef, useSyncExternalStore } from 'react'
 
 type Listener<T> = (value: T) => void
 
@@ -132,9 +132,15 @@ export const DialogContent = (props: any) => createElement('div', { role: 'dialo
 export const DialogHeader = passthrough('div')
 export const DialogFooter = passthrough('div')
 export const DialogTitle = passthrough('h2')
-export const Select = passthrough('div')
+// Select: every item is a clickable option that reports its value to the Select's onValueChange.
+const SelectCtx = createContext<{ value?: string; onValueChange?: (value: string) => void }>({})
+export const Select = ({ value, onValueChange, children }: any) =>
+  createElement(SelectCtx.Provider, { value: { value, onValueChange } }, createElement('div', { 'data-select': value }, children))
 export const SelectContent = passthrough('div')
-export const SelectItem = passthrough('div')
+export const SelectItem = ({ value, children }: any) => {
+  const ctx = useContext(SelectCtx)
+  return createElement('div', { role: 'option', 'aria-selected': ctx.value === value, onClick: () => ctx.onValueChange?.(value) }, children)
+}
 export const SelectTrigger = passthrough('div')
 export const SelectValue = passthrough('span')
 
