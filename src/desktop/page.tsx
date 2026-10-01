@@ -246,7 +246,8 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
       controls={<RootSelect b={rootSelect} drive={driveOn ? { active: inDrive, choose: chooseSource } : undefined} />}
       dropLabel={S.dropTo(here)}
       onDropInput={
-        inDrive
+        // No uploads while a file is open: the folder tools are hidden, and the shown folder is the file's.
+        inDrive || doc
           ? undefined
           : (pending, pin) =>
               void pending.then(

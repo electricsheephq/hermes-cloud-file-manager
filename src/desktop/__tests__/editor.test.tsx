@@ -209,6 +209,25 @@ describe('editor: typing while a Save is in flight', () => {
     fireEvent.click(button('Review & save'))
     expect(within(dialog()).getByText('+1 −0 lines')).toBeTruthy() // diffed against the saved text
   })
+
+  it('shows the saved text when the edits were discarded before a pending Save succeeded', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    const { saves } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    await editTo('readme.md', 'first\n')
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await flush(2)
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Back to editing' }))
+    fireEvent.click(button('Cancel'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    await act(async () => answer({ ok: true, sha256: fakeSha('first\n') }))
+    expect(saves()).toHaveLength(1)
+    expect(textarea()).toBeNull()
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    fireEvent.click(button('Edit'))
+    expect(textarea()?.value).toBe('first\n') // the saved text, not the discarded pre-save one
+    expect(button('Review & save').disabled).toBe(true)
+  })
 })
 
 describe('editor: text fidelity', () => {
@@ -470,6 +489,20 @@ describe('editor: leaving', () => {
     expect(screen.getByLabelText('Search files')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Upload files' })).toBeTruthy()
     expect(screen.getByText('Up to 100 MB per file')).toBeTruthy()
+  })
+
+  it('ignores a drop while a file is open, so nothing uploads to a folder other than the one shown', async () => {
+    const { calls } = setup()
+    await openFile('readme.md')
+    const file = new File(['hello'], 'a.txt')
+    const dataTransfer = { types: ['Files'], items: [{ kind: 'file', webkitGetAsEntry: () => ({ name: 'a.txt', isFile: true, isDirectory: false, file: (ok: (f: File) => void) => ok(file) }) }], files: [file] }
+    const page = screen.getByText('Cloud Files').closest('section')!
+    fireEvent.dragEnter(page, { dataTransfer })
+    expect(screen.queryByText(/Drop to upload/)).toBeNull()
+    fireEvent.drop(page, { dataTransfer })
+    await flush()
+    expect(calls.some(c => c.path.startsWith('/uploads'))).toBe(false)
+    expect($batch.get()).toBeNull()
   })
 
   it.each(['Close', 'docs'])('%s after an agent switch leaves the new agent at its own list, even with the same root id', async control => {

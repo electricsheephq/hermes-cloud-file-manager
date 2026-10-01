@@ -87,10 +87,11 @@ function setDraft(doc: Doc, keep: boolean) {
 }
 
 /** `doc` after the server saved `sent` as `sha`: that text is the new base (all CRLF if it was mixed). A draft
- *  still equal to it is clean and goes back to View; anything typed since stays a dirty draft on the new base. */
+ *  still equal to it is clean and goes back to View; anything typed since stays a dirty draft on the new base.
+ *  A doc back in View (edits discarded while the save was pending) has no draft to keep: it shows the saved text. */
 function savedAs(doc: Doc, sent: string, sha: string): Doc {
   const next = { ...doc, base: sent, sha, mixed: false }
-  return doc.draft === sent ? { ...next, mode: 'view' } : next
+  return doc.draft === sent || doc.mode === 'view' ? { ...next, draft: sent, mode: 'view' } : next
 }
 
 /** A save that succeeds after the page unmounted: rebase the draft parked meanwhile (from the same base sha). */

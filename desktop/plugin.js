@@ -1141,7 +1141,7 @@ function setDraft(doc, keep) {
 }
 function savedAs(doc, sent, sha) {
   const next = { ...doc, base: sent, sha, mixed: false };
-  return doc.draft === sent ? { ...next, mode: "view" } : next;
+  return doc.draft === sent || doc.mode === "view" ? { ...next, draft: sent, mode: "view" } : next;
 }
 function settleParked(sent, sha) {
   const parked = $drafts.get().get(draftKey(sent));
@@ -1589,9 +1589,12 @@ function Files({ profile, roots, doc, setDoc }) {
     {
       controls: /* @__PURE__ */ jsx4(RootSelect, { b: rootSelect, drive: driveOn ? { active: inDrive, choose: chooseSource } : void 0 }),
       dropLabel: S.dropTo(here),
-      onDropInput: inDrive ? void 0 : (pending, pin) => void pending.then(
-        (input) => enqueueUpload(input, dest, limits, pin),
-        (error) => host3.notify({ kind: "error", message: errorText(error) })
+      onDropInput: (
+        // No uploads while a file is open: the folder tools are hidden, and the shown folder is the file's.
+        inDrive || doc ? void 0 : (pending, pin) => void pending.then(
+          (input) => enqueueUpload(input, dest, limits, pin),
+          (error) => host3.notify({ kind: "error", message: errorText(error) })
+        )
       ),
       profile,
       children: [
