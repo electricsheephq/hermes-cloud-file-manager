@@ -1104,6 +1104,9 @@ function Files({ profile, roots }) {
   const driveOn = useValue2($driveAvailable) === true;
   const [source, setSource] = useState3("cloud");
   const inDrive = driveOn && source === "drive";
+  useEffect2(() => {
+    if (!driveOn) setSource("cloud");
+  }, [driveOn]);
   const showImports = () => {
     setSource("cloud");
     b.switchRoot(roots.roots[0].id);
@@ -1583,7 +1586,15 @@ function registerAvailabilityGate(ctx, onChange) {
   };
   void probe();
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS);
-  const unsubscribers = [host4.state.profile.listen(() => void probe()), host4.state.connectionId.listen(() => void probe())];
+  const onAgentChange = () => {
+    if (!disposed) {
+      if ($driveAvailable.get() === true) $driveAvailable.set(null);
+      driveRemover?.();
+      driveRemover = null;
+    }
+    void probe();
+  };
+  const unsubscribers = [host4.state.profile.listen(onAgentChange), host4.state.connectionId.listen(onAgentChange)];
   ctx.onDispose(() => {
     disposed = true;
     unsubscribers.forEach((stop) => stop());

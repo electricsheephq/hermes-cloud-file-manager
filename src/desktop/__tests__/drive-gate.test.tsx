@@ -117,6 +117,29 @@ describe('Google Drive availability gate', () => {
     t.dispose()
   })
 
+  it('never carries one agent\'s Drive answer over to another while the new agent\'s probe is pending or fails', async () => {
+    const { t, state } = gate(async () => ({ ok: true, available: true }))
+    await flush()
+    expect(t.live.has('attach-drive')).toBe(true)
+    let answer: (value: unknown) => void = () => undefined
+    state.drive = () => new Promise(resolve => (answer = resolve))
+    host.state.profile.set('other')
+    await flush()
+    expect($driveAvailable.get()).not.toBe(true)
+    expect(t.live.has('attach-drive')).toBe(false)
+    answer({ ok: true, available: true })
+    await flush()
+    expect(t.live.has('attach-drive')).toBe(true)
+    state.drive = async () => {
+      throw new Error('socket hang up')
+    }
+    host.state.connectionId.set('conn-2')
+    await flush()
+    expect($driveAvailable.get()).not.toBe(true)
+    expect(t.live.has('attach-drive')).toBe(false)
+    t.dispose()
+  })
+
   it('re-probes Drive when the selected agent or connection changes', async () => {
     const { t, paths } = gate(async () => ({ ok: true, available: true }))
     await flush()

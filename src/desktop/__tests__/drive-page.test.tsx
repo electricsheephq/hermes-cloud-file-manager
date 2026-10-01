@@ -121,6 +121,17 @@ describe('Cloud Files page: Google Drive source', () => {
     expect($batch.get()).toBeNull()
   })
 
+  it('stays on the cloud source when Drive comes back after an outage', async () => {
+    setup()
+    await openDrive()
+    act(() => $driveAvailable.set(false))
+    await screen.findByText('notes.txt')
+    act(() => $driveAvailable.set(true))
+    await flush()
+    expect(screen.queryByText('notes.txt')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Upload files' })).toBeTruthy()
+  })
+
   it('switches back to the cloud root when Drive becomes unavailable', async () => {
     setup()
     await openDrive()

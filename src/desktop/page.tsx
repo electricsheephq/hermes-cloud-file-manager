@@ -182,6 +182,10 @@ function Files({ profile, roots }: { profile: string; roots: RootsResponse }) {
   const driveOn = useValue($driveAvailable) === true
   const [source, setSource] = useState<'cloud' | 'drive'>('cloud')
   const inDrive = driveOn && source === 'drive'
+  // When Drive goes away, the page falls back to Cloud for good: Drive coming back later never pulls it away.
+  useEffect(() => {
+    if (!driveOn) setSource('cloud')
+  }, [driveOn])
   const showImports = () => {
     setSource('cloud')
     b.switchRoot(roots.roots[0].id)

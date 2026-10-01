@@ -97,7 +97,18 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   void probe()
   ctx.setInterval(() => void probe(), PROBE_INTERVAL_MS)
   // listen, not subscribe: Nano Stores' subscribe also fires at once, which would triple the first probe.
-  const unsubscribers = [host.state.profile.listen(() => void probe()), host.state.connectionId.listen(() => void probe())]
+  // A new agent starts without Drive until its own probe answers: one agent's Drive answer never carries over
+  // to another, even when the new probe is slow or fails in transport. An open Drive picker stays (pinned and
+  // paused) until the new answer says Drive is unavailable.
+  const onAgentChange = () => {
+    if (!disposed) {
+      if ($driveAvailable.get() === true) $driveAvailable.set(null)
+      driveRemover?.()
+      driveRemover = null
+    }
+    void probe()
+  }
+  const unsubscribers = [host.state.profile.listen(onAgentChange), host.state.connectionId.listen(onAgentChange)]
   ctx.onDispose(() => {
     disposed = true
     unsubscribers.forEach(stop => stop())
