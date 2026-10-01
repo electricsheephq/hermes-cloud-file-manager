@@ -87,7 +87,8 @@ All optional, under `plugins.entries.hermes-cloud-file-manager.settings` in the 
   - Symlinks that point outside the shown folders are not followed. An upload never writes its final file
     through a link.
   - **The agent's Hermes home (its settings and API keys) can never be listed or written**, even when it sits
-    inside a shown folder. The only exception is a sub-folder of it that you explicitly set in `roots`. When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
+    inside a shown folder. The only exception is a sub-folder of it that you explicitly set in `roots`.
+  - When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
   are hidden and refused.
 - Uploads never overwrite, rename or delete existing files. There is no delete in this version.
 - Everyone who can use the agent can see its files — the same access the agent itself has.
