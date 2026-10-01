@@ -35,3 +35,33 @@ def client(api):
     app = FastAPI()
     app.include_router(api.router, prefix=PREFIX)
     return TestClient(app)
+
+
+@pytest.fixture
+def fs(api, monkeypatch, tmp_path):
+    root = tmp_path / "files"
+    root.mkdir()
+    cfg = {"plugins": {"entries": {"hermes-cloud-file-manager": {
+        "settings": {"roots": [str(root)]}
+    }}}}
+    monkeypatch.setattr(api, "_load_config", lambda: cfg, raising=False)
+    monkeypatch.setattr(api, "_hermes_homes", lambda: set(), raising=False)
+    return root, cfg
+
+
+def get(client, route, **params):
+    response = client.get(f"{PREFIX}/{route}", params=params)
+    assert response.status_code == 200
+    return response.json()
+
+
+def post(client, route, **body):
+    response = client.post(f"{PREFIX}/{route}", json=body)
+    assert response.status_code == 200
+    return response.json()
+
+
+def error(body, code):
+    assert body["ok"] is False
+    assert body["code"] == code
+    assert body["message"]
