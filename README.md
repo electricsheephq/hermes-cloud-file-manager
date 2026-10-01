@@ -1,6 +1,6 @@
 # Cloud File Manager for Hermes
 
-![Cloud File Manager: browse, upload and attach files on the machine your agent runs on](docs/media/banner.png)
+![Cloud File Manager: browse, upload and attach files on the machine your agent runs on, and import from Google Drive](docs/media/banner.png)
 
 When your Hermes agent runs somewhere else — a VPS, a home server, a hosted agent — its files live on that
 machine, not yours. Cloud File Manager puts that machine's files one click away in Hermes Desktop.
