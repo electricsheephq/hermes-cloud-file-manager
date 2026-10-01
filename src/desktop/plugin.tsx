@@ -11,7 +11,7 @@ import {
 
 import { $available, bindContext, isNotFoundError } from './api'
 import { CloudFilesPage } from './page'
-import { cloudProvider, PickerHost } from './picker'
+import { $insertText, $pickerOpen, cloudProvider, PickerHost } from './picker'
 import { S } from './strings'
 
 export const PLUGIN_ID = 'hermes-cloud-file-manager'
@@ -46,6 +46,10 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
         ctx.register({ id: 'picker-host', area: COMPOSER_AREAS.underside, render: () => <PickerHost /> })
       ]
     } else if (!available && removers) {
+      // Close the picker and forget the old composer's insertText first: otherwise the stale picker
+      // would reopen on the next available flip and could insert into a composer that is gone.
+      $pickerOpen.set(false)
+      $insertText.set(null)
       removers.forEach(remove => remove())
       removers = null
     }

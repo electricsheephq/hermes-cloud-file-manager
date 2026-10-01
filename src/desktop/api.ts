@@ -84,8 +84,15 @@ export async function call<T extends { ok: boolean }>(path: string, opts?: Plugi
 /** True when `error` is the backend saying "this plugin route is not mounted here" (a definite 404).
  *  HTTP status reaches the renderer only inside the IPC error text, e.g. "... Error: 404: {...}". */
 export function isNotFoundError(error: unknown): boolean {
+  return httpStatus(error) === 404
+}
+
+/** The HTTP status in the IPC error format (`... Error: <status>: <body>`, first occurrence) or a bare
+ *  leading `<status>:`; null when the text has neither. Never read from the body. */
+export function httpStatus(error: unknown): null | number {
   const text = error instanceof Error ? error.message : String(error)
-  return /(^|\D)404(\D|$)/.test(text)
+  const match = /Error: (\d{3}):/.exec(text) ?? /^(\d{3}):/.exec(text)
+  return match ? Number(match[1]) : null
 }
 
 export const query = (path: string, params: Record<string, number | string>) =>

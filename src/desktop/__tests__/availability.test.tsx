@@ -1,5 +1,6 @@
 import { createTestContext, host } from './sdk-mock'
 import { $available } from '../api'
+import { $insertText, $pickerOpen } from '../picker'
 import plugin, { isNotFoundError } from '../plugin'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -94,5 +95,47 @@ describe('availability gate', () => {
     expect(isNotFoundError(ipcError(404))).toBe(true)
     expect(isNotFoundError(ipcError(500))).toBe(false)
     expect(isNotFoundError(new Error('timeout after 4040ms'))).toBe(false)
+  })
+
+  it('takes the status from the IPC format only, never from "404" inside a body (N1)', () => {
+    const ipc = (text: string) => new Error(`Error invoking remote method 'hermes:api': Error: ${text}`)
+    expect(isNotFoundError(ipc('500: {"detail":"cannot list docs/404/report"}'))).toBe(false)
+    expect(isNotFoundError(ipc('403: {"detail":"forbidden: see 404 page"}'))).toBe(false)
+    expect(isNotFoundError(ipc('404: {"detail":"No such API endpoint"}'))).toBe(true)
+    expect(isNotFoundError(new Error('404: Not Found'))).toBe(true)
+    expect(isNotFoundError(new Error('connect ECONNREFUSED 10.0.0.1:404'))).toBe(false)
+  })
+
+  it('keeps the row when a non-404 error mentions 404 in its body (N1)', async () => {
+    let answer: () => Promise<unknown> = async () => ({ ok: true })
+    const t = createTestContext({ rest: () => answer() })
+    plugin.register(t.ctx as any)
+    await flush()
+    answer = async () => {
+      throw new Error(`Error invoking remote method 'hermes:api': Error: 500: {"detail":"cannot list docs/404/report"}`)
+    }
+    t.tickIntervals()
+    await flush()
+    expect(t.live.has('nav')).toBe(true)
+    t.dispose()
+  })
+
+  it('closes the picker and drops the stored composer callback when the backend goes away (bot 4152168379)', async () => {
+    let answer: () => Promise<unknown> = async () => ({ ok: true })
+    const t = createTestContext({ rest: () => answer() })
+    plugin.register(t.ctx as any)
+    await flush()
+    const insertText = vi.fn()
+    await t.live.get('attach-cloud').data.run({ insertText })
+    expect($pickerOpen.get()).toBe(true)
+    answer = async () => {
+      throw ipcError(404)
+    }
+    t.tickIntervals()
+    await flush()
+    expect(t.live.has('picker-host')).toBe(false)
+    expect($pickerOpen.get()).toBe(false)
+    expect($insertText.get()).toBeNull()
+    t.dispose()
   })
 })

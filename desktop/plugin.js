@@ -112,8 +112,12 @@ async function call(path, opts) {
   return res;
 }
 function isNotFoundError(error) {
+  return httpStatus(error) === 404;
+}
+function httpStatus(error) {
   const text = error instanceof Error ? error.message : String(error);
-  return /(^|\D)404(\D|$)/.test(text);
+  const match = /Error: (\d{3}):/.exec(text) ?? /^(\d{3}):/.exec(text);
+  return match ? Number(match[1]) : null;
 }
 var query = (path, params) => `${path}?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()}`;
 var errorText = (error) => error instanceof Error ? error.message : String(error);
@@ -159,10 +163,20 @@ import { useEffect, useMemo, useState } from "react";
 
 // src/desktop/format.ts
 var TICK = "`";
+function longestTickRun(text) {
+  let longest = 0;
+  let run = 0;
+  for (const ch of text) {
+    run = ch === TICK ? run + 1 : 0;
+    longest = Math.max(longest, run);
+  }
+  return longest;
+}
 function formatLocation({ abs, is_dir }) {
   const path = is_dir && !abs.endsWith("/") ? `${abs}/` : abs;
-  const [open, close2] = path.includes(TICK) ? [`${TICK}${TICK} `, ` ${TICK}${TICK}`] : [TICK, TICK];
-  return `- ${open}${path}${close2}`;
+  const fence = TICK.repeat(longestTickRun(path) + 1);
+  const pad2 = path.startsWith(TICK) || path.endsWith(TICK) ? " " : "";
+  return `- ${fence}${pad2}${path}${pad2}${fence}`;
 }
 function formatInsertText(profile, items) {
   return `
@@ -1116,6 +1130,8 @@ function registerAvailabilityGate(ctx, onChange) {
         ctx.register({ id: "picker-host", area: COMPOSER_AREAS.underside, render: () => /* @__PURE__ */ jsx4(PickerHost, {}) })
       ];
     } else if (!available && removers) {
+      $pickerOpen.set(false);
+      $insertText.set(null);
       removers.forEach((remove) => remove());
       removers = null;
     }

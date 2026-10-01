@@ -22,8 +22,16 @@ describe('insert text', () => {
     expect(formatLocation({ abs: '/srv/', is_dir: true })).toBe(`- ${TICK}/srv/${TICK}`)
   })
 
-  it('wraps a path containing a backtick in double backticks with spaces', () => {
-    expect(formatLocation({ abs: `/x/we${TICK}ird.txt`, is_dir: false })).toBe(`- ${TICK}${TICK} /x/we${TICK}ird.txt ${TICK}${TICK}`)
+  it('fences a path containing a backtick with a longer backtick run', () => {
+    expect(formatLocation({ abs: `/x/we${TICK}ird.txt`, is_dir: false })).toBe(`- ${TICK}${TICK}/x/we${TICK}ird.txt${TICK}${TICK}`)
+  })
+
+  it('uses a fence longer than the longest backtick run, padding when the path starts or ends with one (bot 4152168374)', () => {
+    const two = TICK + TICK
+    const three = two + TICK
+    expect(formatLocation({ abs: `/x/a${two}b`, is_dir: false })).toBe(`- ${three}/x/a${two}b${three}`)
+    expect(formatLocation({ abs: `${TICK}odd`, is_dir: false })).toBe(`- ${two} ${TICK}odd ${two}`)
+    expect(formatLocation({ abs: `/d/x${two}`, is_dir: true })).toBe(`- ${three}/d/x${two}/${three}`)
   })
 })
 

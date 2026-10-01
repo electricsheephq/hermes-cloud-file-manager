@@ -9,12 +9,25 @@ export interface Location {
   is_dir: boolean
 }
 
-/** One markdown bullet per location; folders end in `/`. A path containing a backtick is wrapped in
- *  double backticks with inner spaces so the code span still closes. */
+/** Length of the longest run of consecutive backticks in `text`. */
+function longestTickRun(text: string): number {
+  let longest = 0
+  let run = 0
+  for (const ch of text) {
+    run = ch === TICK ? run + 1 : 0
+    longest = Math.max(longest, run)
+  }
+  return longest
+}
+
+/** One markdown bullet per location; folders end in `/`. The code-span fence is one backtick longer than
+ *  the longest backtick run in the path (CommonMark), padded with a space when the path starts or ends with
+ *  a backtick so the fence and the path don't merge. */
 export function formatLocation({ abs, is_dir }: Location): string {
   const path = is_dir && !abs.endsWith('/') ? `${abs}/` : abs
-  const [open, close] = path.includes(TICK) ? [`${TICK}${TICK} `, ` ${TICK}${TICK}`] : [TICK, TICK]
-  return `- ${open}${path}${close}`
+  const fence = TICK.repeat(longestTickRun(path) + 1)
+  const pad = path.startsWith(TICK) || path.endsWith(TICK) ? ' ' : ''
+  return `- ${fence}${pad}${path}${pad}${fence}`
 }
 
 export function formatInsertText(profile: string, items: Location[]): string {
