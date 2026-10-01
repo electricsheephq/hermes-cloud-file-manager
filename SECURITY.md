@@ -28,11 +28,16 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
   - A symlink that stays inside the shown folders works like the folder it points to.
   - The file an upload finally writes is never a symlink, and a name taken by a symlink is refused rather than
     written through.
-- Uploads never overwrite, rename or delete an existing file. The one reserved name pattern,
-  `.cfm-<32 lowercase hex>.part`, is the plugin's own temporary-file name:
-  - an upload is never stored under it;
-  - regular files with exactly that name that are older than 24 hours are removed from a folder when a new
-    upload starts there.
+- Uploads and Drive imports never overwrite, rename or delete an existing file. Two reserved name patterns are
+  the plugin's own temporary names: `.cfm-<32 lowercase hex>.part` (an upload in progress) and
+  `.cfm-<32 lowercase hex>.dir` (a Drive import in progress):
+  - a file is never stored under either name;
+  - regular files with exactly the `.part` name that are older than 24 hours are removed from a folder when a new
+    upload starts there;
+  - a `.dir` folder is removed when its import finishes or fails.
+- Google Drive access is read-only and goes through the agent's own `google-workspace` skill. The plugin never
+  reads the agent's Google token. It runs only that skill's sign-in check (and only when the Google libraries are
+  already installed, so the check never installs anything) and its Drive search, get and download commands.
 - It adds no authentication of its own: access is exactly the gateway's existing dashboard authentication.
 
 A way to break any of these is a vulnerability we want to hear about.

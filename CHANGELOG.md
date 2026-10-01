@@ -4,6 +4,12 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 
 ## Unreleased
 
+### Added
+- Gateway API for a read-only **Google Drive** source, using the agent's own Google sign-in through its
+  `google-workspace` skill: check availability, list a folder or search by name, and import one file at a time
+  into `uploads/drive/` (Google Docs and Slides as PDF, Sheets as CSV, Drawings as PNG). Imports keep both files
+  on a name clash, like uploads. The Desktop screens for it follow.
+
 ## [0.1.0] - 2026-10-01
 
 First release.
