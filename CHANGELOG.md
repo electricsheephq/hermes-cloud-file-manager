@@ -2,6 +2,25 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.1] - 2026-10-02
+
+Search that works on large agent workspaces. After updating, restart the agent's gateway once so the new search
+code loads.
+
+### Fixed
+- **Search** no longer gives up early on large workspaces. It checks names first and runs the full path checks
+  only on folders and on matches, so it covers far more of a big workspace in the same 5 seconds. It returns
+  shallower matches first and searches the folder you are in and its subfolders. What it can return is unchanged.
+- When a search stops early, Cloud Files now says how many items it checked and that some matches may be missing.
+  This includes searches with no matches so far, which used to show a bare "No matching files". The result-limit
+  note asks you to type more, and the folder-size note no longer says "Showing the first 1 items".
+
+### Changed
+- Requires Hermes **0.21.5 or newer** (`requires_hermes: ">=0.21.5"`, previously 0.21.1): the oldest release this
+  plugin is tested against.
+- `GET /search` takes an optional `path` (the folder to search under) and returns a `reason` (`results`, `time`,
+  `visits` or `null`) next to `truncated`.
+
 ## [0.3.0] - 2026-10-02
 
 Read and edit Markdown and text files, with an explicit Save. After updating, restart the agent's gateway once so

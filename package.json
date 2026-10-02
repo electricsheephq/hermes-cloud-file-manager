@@ -1,7 +1,7 @@
 {
   "name": "hermes-cloud-file-manager-desktop",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Desktop half of the Hermes Cloud File Manager plugin (built into desktop/plugin.js).",
   "license": "MIT",
   "type": "module",

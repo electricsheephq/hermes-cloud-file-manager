@@ -42,6 +42,8 @@ export interface SearchResponse {
   ok: boolean
   results: Entry[]
   truncated: boolean
+  reason?: 'results' | 'time' | 'visits' | null
+  visited?: number
 }
 
 /** An in-band `{ok:false, code}` answer, raised so queries surface it as an error. */

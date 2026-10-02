@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections import deque
 from dataclasses import dataclass, replace
 import errno
 import fnmatch
@@ -33,7 +34,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, StrictInt
 
 PLUGIN_NAME = "hermes-cloud-file-manager"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 router = APIRouter()
 
@@ -42,7 +43,7 @@ MAX_CHUNK_BYTES = 8 * 1024 * 1024
 EDIT_MAX_BYTES = 1024 * 1024
 EDIT_EXTS = {".md", ".markdown", ".txt"}
 SCAN_LIMIT = 20000
-SEARCH_VISIT_LIMIT = 50000
+SEARCH_VISIT_LIMIT = 1_000_000
 SEARCH_SECONDS = 5.0
 TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.part$")
 DRIVE_TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.dir$")
@@ -624,37 +625,64 @@ def list_files(root: str, path: str = "", offset: int = Query(0, ge=0), limit: i
 
 @router.get("/search")
 @_protocol
-def search(root: str, q: str, limit: int = Query(100, ge=1, le=200)):
+def search(root: str, q: str, limit: int = Query(100, ge=1, le=200), path: str = ""):
     selected, _ = _request_root(root)
     q = q.strip()
     if not q or len(q) > 200:
         raise GuardError("bad_query", "Use a search query between 1 and 200 characters.")
-    stack, results, visited, skipped = [_resolve(selected, "", for_write=False)], [], 0, 0
+    folder = _resolve(selected, path, for_write=False)
+    if not folder.is_dir():
+        raise GuardError("not_a_dir", "Search a folder.")
+    queue, results, visited, skipped = deque([folder]), [], 0, 0
     started = time.monotonic()
     pattern, lower = "*" in q or "?" in q, q.lower()
-    while stack:
-        folder = stack.pop()
+    home = _home_root(selected)
+    root_identity = _identity(selected.path) if home else None
+
+    def done(reason):
+        return {"ok": True, "results": results, "truncated": reason is not None, "reason": reason,
+                "visited": visited, "skipped": skipped}
+
+    while queue:
+        folder = queue.popleft()
         try:
             folder = _resolve(selected, _rel(selected, folder), for_write=False)
+            at_root = home and (_rel(selected, folder) == "" or _identity(folder) == root_identity)
             with os.scandir(folder) as scan:
                 for item in scan:
-                    if visited >= SEARCH_VISIT_LIMIT or time.monotonic() - started >= SEARCH_SECONDS:
-                        return {"ok": True, "results": results, "truncated": True, "visited": visited, "skipped": skipped}
+                    if visited >= SEARCH_VISIT_LIMIT:
+                        return done("visits")
+                    if time.monotonic() - started >= SEARCH_SECONDS:
+                        return done("time")
                     visited += 1
-                    entry = _entry(selected, Path(item.path))
-                    if entry is None:
+                    name = item.name
+                    # Mirror _entry's name exclusions without metadata work.
+                    if not _encodable(item.path) or TEMP_RE.fullmatch(name.lower()) or DRIVE_TEMP_RE.fullmatch(name):
                         continue
-                    if entry["is_dir"] and (item.name in SEARCH_SKIP or (item.name.startswith(".") and not q.startswith("."))):
+                    hidden = name.startswith(".")
+                    if hidden and at_root:
                         continue
-                    if fnmatch.fnmatch(item.name.lower(), lower) if pattern else lower in item.name.lower():
-                        results.append(entry)
-                        if len(results) >= limit:
-                            return {"ok": True, "results": results, "truncated": True, "visited": visited, "skipped": skipped}
-                    if entry["is_dir"] and not item.is_symlink():
-                        stack.append(Path(item.path))
-        except (GuardError, OSError):
+                    excluded = name in SEARCH_SKIP or (hidden and not q.startswith("."))
+                    if fnmatch.fnmatch(name.lower(), lower) if pattern else lower in name.lower():
+                        entry = _entry(selected, Path(item.path))
+                        if entry is not None and not (entry["is_dir"] and excluded):
+                            results.append(entry)
+                            if len(results) >= limit:
+                                return done("results")
+                    if not excluded:
+                        try:
+                            descend = item.is_dir(follow_symlinks=False)
+                        except OSError:
+                            descend = False
+                        # Each queued folder is fully guarded on pop; symlinks are never queued.
+                        if descend:
+                            queue.append(Path(item.path))
+        except GuardError as exc:
+            if exc.code != "protected":
+                skipped += 1
+        except OSError:
             skipped += 1
-    return {"ok": True, "results": results, "truncated": visited >= SEARCH_VISIT_LIMIT, "visited": visited, "skipped": skipped}
+    return done("visits" if visited >= SEARCH_VISIT_LIMIT else None)
 
 
 @router.post("/mkdir")
