@@ -56,6 +56,8 @@ DRIVE_ENV = frozenset({
     "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTPLIB2_CA_CERTS",
     # Python's own settings, so the scripts import and print as the gateway's library check expects.
     "PYTHONPATH", "PYTHONHOME", "PYTHONUTF8", "PYTHONIOENCODING",
+    # Windows: its temp folders, and the system root that sockets need.
+    "TEMP", "TMP", "SYSTEMROOT",
 })
 _DRIVE_CACHE = {}
 _DRIVE_LOCK = Lock()
@@ -897,7 +899,8 @@ def _drive_home():
 
 
 def _drive_skill(skills):
-    path = skills / "productivity/google-workspace/scripts"
+    # Absolute, so a relative override still names the script once its folder is the working directory.
+    path = (skills / "productivity/google-workspace/scripts").absolute()
     if (path / "setup.py").is_file() and (path / "google_api.py").is_file():
         return path / "setup.py", path / "google_api.py"
     return None

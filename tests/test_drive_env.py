@@ -13,7 +13,7 @@ PINNED_ENV = frozenset({
     "PATH", "HOME", "TMPDIR", "LANG", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "HERMES_GWS_BIN",
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
     "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTPLIB2_CA_CERTS",
-    "PYTHONPATH", "PYTHONHOME", "PYTHONUTF8", "PYTHONIOENCODING",
+    "PYTHONPATH", "PYTHONHOME", "PYTHONUTF8", "PYTHONIOENCODING", "TEMP", "TMP", "SYSTEMROOT",
 })
 BLOCKED_ENV = {"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "GOOGLE_WORKSPACE_CLI_TOKEN",
                "GH_TOKEN", "FOO"}
@@ -155,3 +155,15 @@ def test_incomplete_agent_copy_falls_back(api, drive, missing):
     expected = copy_skill(drive, Path(sys.modules["hermes_constants"].__file__).parent / "skills")
     (drive.scripts / missing).unlink()
     assert api._drive_scripts() == expected
+
+
+def test_relative_bundle_override_runs(client, api, drive, monkeypatch):
+    constants = sys.modules["hermes_constants"]
+    monkeypatch.chdir(drive.home.parent)
+    copy_skill(drive, drive.home.parent / "relative-skills")
+    monkeypatch.setattr(constants, "get_bundled_skills_dir", lambda default: "relative-skills", raising=False)
+    remove_agent_copy(drive)
+    setup, google = api._drive_scripts()
+    assert setup.is_absolute() and google.is_absolute()
+    assert get(client, "drive/available")["available"]
+    assert [c["script"] for c in drive.calls()] == ["setup.py"]
