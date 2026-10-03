@@ -4,6 +4,8 @@ import { S } from './strings'
 
 const TICK = '`'
 
+export const hasLineBreak = (abs: string) => abs.includes('\n') || abs.includes('\r')
+
 export interface Location {
   abs: string
   is_dir: boolean

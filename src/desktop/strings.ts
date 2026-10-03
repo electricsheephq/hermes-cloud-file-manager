@@ -28,6 +28,10 @@ export const S = {
   emptyFolder: 'This folder is empty — drop files here or use Upload',
   noResults: 'No matching files',
   truncated: (n: number) => n === 1 ? 'Showing the first item' : `Showing the first ${n} items`,
+  showingOf: (n: number, total: number) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
+  loadMore: 'Load more',
+  agentChanged: 'The selected agent changed while this folder was loading.',
+  firstOnly: (n: number) => `Showing the first ${n.toLocaleString()} items. Search finds the rest.`,
   searchMore: (n: number) => `Showing the first ${n === 1 ? 'match' : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited: number) =>
     `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : 'early'}, so some matches may be missing. Open a folder to search inside it.`,
@@ -64,6 +68,7 @@ export const S = {
   pickerTitle: 'Attach from Cloud Files',
   selected: (n: number) => `${n} selected`,
   insert: 'Insert locations',
+  lineBreakSkipped: (n: number) => n === 1 ? 'A selected name has a line break, so it won’t be inserted.' : `${n} selected names have a line break, so they won’t be inserted.`,
   ownerMismatch: (owner: string, profile: string) =>
     `This chat belongs to ${owner}. Cloud Files is showing ${profile}'s files — switch to ${owner} in the sidebar first.`,
   insertHeader: (profile: string) => `Cloud files on ${machineOf(profile)}:`,

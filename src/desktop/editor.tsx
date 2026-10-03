@@ -95,15 +95,20 @@ function savedAs(doc: Doc, sent: string, sha: string): Doc {
 }
 
 // The open-file setters of mounted pages, so a late Save answer reaches the page shown now.
-const mounted = new Set<SetDoc>()
+const mounted = new Map<SetDoc, () => Doc | null>()
 
 /** A Save of `sent` answered as `sha`: settle that same opened file (same load id, still on the sent sha) on the
  *  Editor that sent it, on any page mounted now, and in a draft parked meanwhile. */
 function settleSave(sent: Doc, sha: string, own: SetDoc) {
   const settle = (d: Doc | null) => (d && d.id === sent.id && d.sha === sent.sha ? savedAs(d, sent.draft, sha) : d)
-  for (const set of new Set([own, ...mounted])) set(settle)
+  for (const set of new Set([own, ...mounted.keys()])) set(settle)
   const parked = $drafts.get().get(draftKey(sent))
   if (parked && parked.id === sent.id && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true)
+}
+
+/** The draft of this load still exists: open on a mounted page, or parked. */
+function stillThere(doc: Doc): boolean {
+  return [...mounted.values()].some(get => get()?.id === doc.id) || $drafts.get().get(draftKey(doc))?.id === doc.id
 }
 
 function findParked(pin: AgentPin): Doc | null {
@@ -119,7 +124,7 @@ export function useOpenDoc(): [Doc | null, SetDoc] {
   const latest = useRef(doc)
   latest.current = doc
   useEffect(() => {
-    mounted.add(setDoc)
+    mounted.set(setDoc, () => latest.current)
     const restored = latest.current
     if (restored) {
       // A Save that answered after the first render settled the parked copy, not this page: show that copy.
@@ -268,6 +273,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
     } catch (error) {
       // Edits discarded while the save was pending: there is nothing left to save, so a late refusal is moot.
       if (latest.current.id === doc.id && latest.current.mode === 'view') return
+      if (!live.current && !stillThere(doc)) return // discarded while pending: a late refusal is moot
       // The page was left before a conflict or gone answer: its dialog can't show, so say it here. The draft stays.
       if (error instanceof ApiError && error.code === 'conflict') {
         setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } })

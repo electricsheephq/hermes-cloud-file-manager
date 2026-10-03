@@ -35,6 +35,10 @@ var S = {
   emptyFolder: "This folder is empty \u2014 drop files here or use Upload",
   noResults: "No matching files",
   truncated: (n) => n === 1 ? "Showing the first item" : `Showing the first ${n} items`,
+  showingOf: (n, total) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
+  loadMore: "Load more",
+  agentChanged: "The selected agent changed while this folder was loading.",
+  firstOnly: (n) => `Showing the first ${n.toLocaleString()} items. Search finds the rest.`,
   searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: "No matches found so far",
@@ -69,6 +73,7 @@ var S = {
   pickerTitle: "Attach from Cloud Files",
   selected: (n) => `${n} selected`,
   insert: "Insert locations",
+  lineBreakSkipped: (n) => n === 1 ? "A selected name has a line break, so it won\u2019t be inserted." : `${n} selected names have a line break, so they won\u2019t be inserted.`,
   ownerMismatch: (owner, profile) => `This chat belongs to ${owner}. Cloud Files is showing ${profile}'s files \u2014 switch to ${owner} in the sidebar first.`,
   insertHeader: (profile) => `Cloud files on ${machineOf(profile)}:`,
   // Google Drive
@@ -208,7 +213,7 @@ var errorText = (error) => error instanceof Error ? error.message : String(error
 
 // src/desktop/page.tsx
 import {
-  atom as atom4,
+  atom as atom5,
   Button as Button4,
   Codicon as Codicon4,
   Dialog as Dialog2,
@@ -220,13 +225,14 @@ import {
   host as host3,
   Input,
   Skeleton as Skeleton4,
-  useQueryClient,
+  useQueryClient as useQueryClient2,
   useValue as useValue3
 } from "@hermes/plugin-sdk";
 import { useEffect as useEffect3, useRef as useRef2, useState as useState4, useSyncExternalStore as useSyncExternalStore2 } from "react";
 
 // src/desktop/browser.tsx
 import {
+  atom as atom2,
   Button,
   Checkbox,
   Codicon,
@@ -241,12 +247,14 @@ import {
   SelectValue,
   Skeleton,
   useQuery,
+  useQueryClient,
   useValue
 } from "@hermes/plugin-sdk";
 import { useEffect, useMemo, useState } from "react";
 
 // src/desktop/format.ts
 var TICK = "`";
+var hasLineBreak = (abs) => abs.includes("\n") || abs.includes("\r");
 function longestTickRun(text) {
   let longest = 0;
   let run = 0;
@@ -590,6 +598,7 @@ function summarize(snapshot) {
 // src/desktop/browser.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
 var LIST_LIMIT = 500;
+var LIST_PAGE_MAX = 2e3;
 var SEARCH_LIMIT = 200;
 var DEBOUNCE_MS = 300;
 function useScope() {
@@ -609,13 +618,34 @@ function useDebounced(value, ms) {
   }, [value, ms]);
   return settled;
 }
+var $pickState = atom2(null);
 function useBrowser(roots, mode) {
-  const [rootId, setRootId] = useState(roots.roots[0]?.id ?? "");
+  const [localRootId, setLocalRootId] = useState(roots.roots[0]?.id ?? "");
+  const [localPath, setLocalPath] = useState("");
+  const [localSearch, setLocalSearch] = useState("");
+  const [localSelected, setLocalSelected] = useState(/* @__PURE__ */ new Map());
+  const scope = useScope().join("::");
+  const picked = useValue($pickState);
+  const fresh = () => ({ scope, rootId: roots.roots[0]?.id ?? "", path: "", search: "", selected: /* @__PURE__ */ new Map() });
+  const pick = picked?.scope === scope ? picked : fresh();
+  useEffect(() => {
+    if (mode === "pick" && picked?.scope !== scope) $pickState.set(fresh());
+  }, [mode, picked, scope, roots]);
+  const write = (key, value) => {
+    const current = $pickState.get();
+    const prev = current?.scope === scope ? current : fresh();
+    $pickState.set({ ...prev, [key]: typeof value === "function" ? value(prev[key]) : value });
+  };
+  const rootId = mode === "pick" ? pick.rootId : localRootId;
+  const path = mode === "pick" ? pick.path : localPath;
+  const search = mode === "pick" ? pick.search : localSearch;
+  const selected = mode === "pick" ? pick.selected : localSelected;
+  const setRootId = mode === "pick" ? (id) => write("rootId", id) : setLocalRootId;
+  const setPath = mode === "pick" ? (path2) => write("path", path2) : setLocalPath;
+  const setSearch = mode === "pick" ? (text) => write("search", text) : setLocalSearch;
+  const setSelected = mode === "pick" ? (value) => write("selected", value) : setLocalSelected;
   const root = roots.roots.find((r) => r.id === rootId) ?? roots.roots[0];
-  const [path, setPath] = useState("");
-  const [search, setSearch] = useState("");
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
-  const [selected, setSelected] = useState(/* @__PURE__ */ new Map());
   const navigate = (next) => {
     setPath(next);
     setSearch("");
@@ -697,13 +727,53 @@ function sortEntries(entries, highlights, atRoot) {
   const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name));
 }
+async function listUpTo([connectionId, profile], root, path, count, shown) {
+  const read = (offset, limit) => {
+    if ((host.state.connectionId.get() ?? "local") !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged);
+    return call(query("/list", { root, path, offset, limit }));
+  };
+  const have = shown?.entries.length ?? 0;
+  if (shown && have && have < count && count - have < LIST_PAGE_MAX) {
+    const next = await read(have - 1, count - have + 1);
+    if (next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
+      const seen2 = new Set(shown.entries.map((entry) => entry.abs));
+      return { ...next, entries: [...shown.entries, ...next.entries.filter((entry) => !seen2.has(entry.abs))] };
+    }
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const entries = [];
+  let last;
+  for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
+    last = await read(offset, Math.min(LIST_PAGE_MAX, count - offset));
+    for (const entry of last.entries) if (!seen.has(entry.abs)) {
+      seen.add(entry.abs);
+      entries.push(entry);
+    }
+    if (offset + last.entries.length >= last.total) break;
+  }
+  return { ...last, entries };
+}
 function EntryList({ b, height, onOpenFile }) {
   const [connectionId, profile] = useScope();
   const rootId = b.root?.id ?? "";
+  const folder = `${connectionId}|${profile}|${rootId}|${b.path}`;
+  const [range, setRange] = useState({ folder, count: LIST_LIMIT });
+  const count = range.folder === folder ? range.count : LIST_LIMIT;
+  if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT });
+  const listingKey = ["hcfm", connectionId, profile, "list", rootId, b.path, count];
+  const client = useQueryClient();
   const searching = Boolean(b.query);
   const listing = useQuery({
-    queryKey: ["hcfm", connectionId, profile, "list", rootId, b.path],
-    queryFn: () => call(query("/list", { root: rootId, path: b.path, offset: 0, limit: LIST_LIMIT })),
+    queryKey: listingKey,
+    // A first read of this count is a Load more: hand it the listing on screen (the previous count).
+    queryFn: () => listUpTo(
+      [connectionId, profile],
+      rootId,
+      b.path,
+      count,
+      client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 6), count - LIST_LIMIT]) : void 0
+    ),
+    placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
     retry: 1
   });
@@ -737,7 +807,10 @@ function EntryList({ b, height, onOpenFile }) {
   } else {
     body = /* @__PURE__ */ jsxs("div", { role: "list", children: [
       entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onOpen: open, searching }, entry.abs)),
-      truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: truncationNote })
+      searching ? truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: truncationNote }) : (listing.data?.total ?? 0) > entries.length ? /* @__PURE__ */ jsxs("div", { style: { ...muted, fontSize: 11, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }, children: [
+        /* @__PURE__ */ jsx("span", { children: S.showingOf(entries.length, listing.data.total) }),
+        /* @__PURE__ */ jsx(Button, { disabled: listing.isFetching, onClick: () => setRange({ folder, count: count + LIST_LIMIT }), size: "sm", variant: "text", children: S.loadMore })
+      ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
     ] });
   }
   return /* @__PURE__ */ jsx("div", { style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, children: body });
@@ -807,7 +880,7 @@ function EntryRow({ b, entry, onOpen, searching }) {
 }
 
 // src/desktop/drive.ts
-import { atom as atom2 } from "@hermes/plugin-sdk";
+import { atom as atom3 } from "@hermes/plugin-sdk";
 var DRIVE_DEST = "uploads/drive";
 var IMPORT_TIMEOUT_MS = 33e4;
 var GOOGLE = "application/vnd.google-apps.";
@@ -892,7 +965,7 @@ var DriveImport = class {
     this.listeners.forEach((listener) => listener());
   }
 };
-var $driveJob = atom2(null);
+var $driveJob = atom3(null);
 
 // src/desktop/drive-browser.tsx
 import { Button as Button2, Checkbox as Checkbox2, Codicon as Codicon2, EmptyState as EmptyState2, Skeleton as Skeleton2, useQuery as useQuery2 } from "@hermes/plugin-sdk";
@@ -1024,7 +1097,7 @@ function ImportFailures({ failures }) {
 
 // src/desktop/editor.tsx
 import {
-  atom as atom3,
+  atom as atom4,
   Button as Button3,
   Codicon as Codicon3,
   Dialog,
@@ -1151,7 +1224,7 @@ function decodeText(raw) {
 var encodeText = (text, { bom, crlf }) => (bom ? BOM : "") + (crlf ? text.replaceAll("\n", "\r\n") : text);
 var isDirty = (doc) => Boolean(doc && doc.status === "ready" && doc.draft !== doc.base);
 var isCurrent = (pin) => pin.connectionId === host2.state.connectionId.get() && pin.profile === host2.state.profile.get();
-var $drafts = atom3(/* @__PURE__ */ new Map());
+var $drafts = atom4(/* @__PURE__ */ new Map());
 var draftKey = (doc) => [doc.pin.connectionId ?? "local", doc.pin.profile, doc.root, doc.path].join("|");
 function setDraft(doc, keep) {
   const next = new Map($drafts.get());
@@ -1163,12 +1236,15 @@ function savedAs(doc, sent, sha) {
   const next = { ...doc, base: sent, sha, mixed: false };
   return doc.draft === sent || doc.mode === "view" ? { ...next, draft: sent, mode: "view" } : next;
 }
-var mounted = /* @__PURE__ */ new Set();
+var mounted = /* @__PURE__ */ new Map();
 function settleSave(sent, sha, own) {
   const settle = (d) => d && d.id === sent.id && d.sha === sent.sha ? savedAs(d, sent.draft, sha) : d;
-  for (const set of /* @__PURE__ */ new Set([own, ...mounted])) set(settle);
+  for (const set of /* @__PURE__ */ new Set([own, ...mounted.keys()])) set(settle);
   const parked = $drafts.get().get(draftKey(sent));
   if (parked && parked.id === sent.id && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true);
+}
+function stillThere(doc) {
+  return [...mounted.values()].some((get) => get()?.id === doc.id) || $drafts.get().get(draftKey(doc))?.id === doc.id;
 }
 function findParked(pin) {
   return [...$drafts.get().values()].find((d) => d.pin.connectionId === pin.connectionId && d.pin.profile === pin.profile) ?? null;
@@ -1180,7 +1256,7 @@ function useOpenDoc() {
   const latest = useRef(doc);
   latest.current = doc;
   useEffect2(() => {
-    mounted.add(setDoc);
+    mounted.set(setDoc, () => latest.current);
     const restored = latest.current;
     if (restored) {
       const parked = $drafts.get().get(draftKey(restored));
@@ -1303,6 +1379,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
       setSaved(true);
     } catch (error) {
       if (latest.current.id === doc.id && latest.current.mode === "view") return;
+      if (!live.current && !stillThere(doc)) return;
       if (error instanceof ApiError && error.code === "conflict") {
         setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
         if (!live.current) host2.notify({ kind: "error", message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) });
@@ -1490,7 +1567,7 @@ function filesFromInput(list) {
 import { Fragment as Fragment2, jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
 var muted4 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
-var $batch = atom4(null);
+var $batch = atom5(null);
 var currentPin = () => ({ connectionId: host3.state.connectionId.get(), profile: host3.state.profile.get() });
 function enqueueUpload(input, dest, limits, pin = currentPin()) {
   if (!input.files.length && !input.dirs?.length) return;
@@ -1594,7 +1671,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
 function Files({ profile, roots, doc, setDoc }) {
   const b = useBrowser(roots, "page");
   const guard = useLeaveGuard(doc);
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient2();
   const [newFolder, setNewFolder] = useState4(false);
   const filesInput = useRef2(null);
   const folderInput = useRef2(null);
@@ -1854,7 +1931,7 @@ function UploadRow({ item, onRetry }) {
 
 // src/desktop/picker.tsx
 import {
-  atom as atom5,
+  atom as atom6,
   Button as Button5,
   Dialog as Dialog3,
   DialogContent as DialogContent3,
@@ -1867,17 +1944,17 @@ import {
 } from "@hermes/plugin-sdk";
 import { useEffect as useEffect4, useRef as useRef3 } from "react";
 import { Fragment as Fragment3, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
-var $pickerOpen = atom5(false);
-var $insertText = atom5(null);
-var $hostClaim = atom5(null);
-var $pickerSource = atom5("cloud");
-var $pickerJob = atom5(null);
-var NO_OWNER = atom5(null);
-var $finished = atom5(null);
-var NO_SESSION = atom5(null);
+var $pickerOpen = atom6(false);
+var $insertText = atom6(null);
+var $hostClaim = atom6(null);
+var $pickerSource = atom6("cloud");
+var $pickerJob = atom6(null);
+var NO_OWNER = atom6(null);
+var $finished = atom6(null);
+var NO_SESSION = atom6(null);
 var focusedOwner = () => (host4.state.focusedSessionOwner ?? NO_OWNER).get();
 var pinReady = (pin) => host4.state.profile.get() === pin.profile && host4.state.connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
-var $touched = atom5(false);
+var $touched = atom6(false);
 var openPin = null;
 var stopWatching = () => void 0;
 function watchOpen() {
@@ -1957,6 +2034,7 @@ function closePicker() {
   stopImport();
   unwatch();
   $pickerOpen.set(false);
+  $pickState.set(null);
   $insertText.set(null);
 }
 function PickerDialog() {
@@ -1993,7 +2071,9 @@ function PickerBody({ profile, source }) {
 function PickerBrowser({ profile, roots }) {
   const b = useBrowser(roots, "pick");
   const touched = useValue4($touched);
-  const text = () => formatInsertText(profile, [...b.selected.values()]);
+  const insertable = [...b.selected.values()].filter((entry) => !hasLineBreak(entry.abs));
+  const skipped = b.selected.size - insertable.length;
+  const text = () => formatInsertText(profile, insertable);
   const insert = () => {
     if (!canInsert(openPin)) return;
     $insertText.get()?.(text());
@@ -2009,8 +2089,9 @@ function PickerBrowser({ profile, roots }) {
     touched && /* @__PURE__ */ jsx5("div", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.chatChanged }),
     /* @__PURE__ */ jsxs5(DialogFooter3, { style: { alignItems: "center" }, children: [
       /* @__PURE__ */ jsx5("span", { style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: S.selected(b.selected.size) }),
+      skipped > 0 && /* @__PURE__ */ jsx5("span", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.lineBreakSkipped(skipped) }),
       /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
-      touched ? /* @__PURE__ */ jsx5(Button5, { disabled: !b.selected.size, onClick: () => copyLocations(text()), children: S.copyLocations }) : /* @__PURE__ */ jsx5(Button5, { disabled: !b.selected.size, onClick: insert, children: S.insert })
+      touched ? /* @__PURE__ */ jsx5(Button5, { disabled: !insertable.length, onClick: () => copyLocations(text()), children: S.copyLocations }) : /* @__PURE__ */ jsx5(Button5, { disabled: !insertable.length, onClick: insert, children: S.insert })
     ] })
   ] });
 }

@@ -81,7 +81,7 @@ export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {},
     if (path === '/roots') return ROOTS
     if (path === '/list') {
       const entries = FOLDERS[params.path] ?? []
-      return { ok: true, root: params.root, path: params.path, entries, total: entries.length, truncated: false }
+      return { ok: true, root: params.root, path: params.path, entries: entries.slice(Number(params.offset ?? 0), Number(params.offset ?? 0) + Number(params.limit ?? 500)), total: entries.length, truncated: false }
     }
     if (path === '/search') {
       const results = Object.values(FOLDERS)
