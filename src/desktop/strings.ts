@@ -98,6 +98,8 @@ export const S = {
   backToEditing: 'Back to editing',
   saved: 'Saved',
   notSaved: (name: string, reason: string) => `${name} wasn't saved. ${reason}`,
+  changedSince: (profile: string) => `It changed on ${machineOf(profile)} since you opened it.`,
+  movedOrDeleted: (profile: string) => `It was moved or deleted on ${machineOf(profile)}.`,
   loadingFile: 'Opening…',
   noChanges: 'No changes',
   diffSummary: (added: number, removed: number) => `+${added} −${removed} lines`,

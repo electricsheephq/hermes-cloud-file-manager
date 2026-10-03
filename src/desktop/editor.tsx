@@ -16,7 +16,7 @@ import {
   Textarea,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, isNotFoundError, pluginCtx, query, type Root } from './api'
 import { type LineDiff, lineDiff } from './diff'
@@ -120,7 +120,13 @@ export function useOpenDoc(): [Doc | null, SetDoc] {
   latest.current = doc
   useEffect(() => {
     mounted.add(setDoc)
-    if (latest.current) setDraft(latest.current, false)
+    const restored = latest.current
+    if (restored) {
+      // A Save that answered after the first render settled the parked copy, not this page: show that copy.
+      const parked = $drafts.get().get(draftKey(restored))
+      if (parked && parked !== restored && parked.id === restored.id) setDoc(parked)
+      setDraft(restored, false)
+    }
     return () => {
       mounted.delete(setDoc)
       const last = latest.current
@@ -217,7 +223,8 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
   const popupRef = useRef(popup)
   popupRef.current = popup
   const live = useRef(true)
-  useEffect(() => {
+  // A layout cleanup runs as the page is removed; a passive one can run after a late answer has already arrived.
+  useLayoutEffect(() => {
     live.current = true
     return () => { live.current = false }
   }, [])
@@ -261,9 +268,14 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
     } catch (error) {
       // Edits discarded while the save was pending: there is nothing left to save, so a late refusal is moot.
       if (latest.current.id === doc.id && latest.current.mode === 'view') return
-      if (error instanceof ApiError && error.code === 'conflict') setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } })
-      else if (error instanceof ApiError && error.code === 'gone') setPopup('gone')
-      else {
+      // The page was left before a conflict or gone answer: its dialog can't show, so say it here. The draft stays.
+      if (error instanceof ApiError && error.code === 'conflict') {
+        setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } })
+        if (!live.current) host.notify({ kind: 'error', message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) })
+      } else if (error instanceof ApiError && error.code === 'gone') {
+        setPopup('gone')
+        if (!live.current) host.notify({ kind: 'error', message: S.notSaved(doc.name, S.movedOrDeleted(doc.pin.profile)) })
+      } else {
         const message = error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error)
         setSaveError(message)
         // Review closed (Back to editing, or the page was left) before the answer: say it where it can be seen.

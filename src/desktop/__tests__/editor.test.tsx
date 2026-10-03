@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
 
 import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
 import { DRIVE, fakeBackend, fakeSha, TEXTS } from './fake-backend'
@@ -682,6 +682,74 @@ describe('editor: follow-up timing', () => {
     expect(screen.getByText('Unsaved changes')).toBeTruthy()
     expect($drafts.get().size).toBe(0)
     expect(calls.filter(c => c.path === '/file')).toHaveLength(1)
+  })
+
+  it.each([
+    ['conflict', { ok: false, code: 'conflict', sha256: 'sha-other' }, "readme.md wasn't saved. It changed on the agent's machine since you opened it."],
+    ['gone', { ok: false, code: 'gone' }, "readme.md wasn't saved. It was moved or deleted on the agent's machine."]
+  ] as const)('D7: a %s answer after the page was left is notified, and the draft stays parked', async (_code, body, message) => {
+    let answer: (value: unknown) => void = () => undefined
+    const { view } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    const notify = vi.spyOn(host, 'notify')
+    try {
+      await editTo('readme.md', 'keep my draft\n')
+      fireEvent.click(button('Review & save'))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+      await flush(2)
+      view.unmount()
+      await act(async () => answer(body))
+      await flush(2)
+      expect(notify).toHaveBeenCalledExactlyOnceWith({ kind: 'error', message })
+      expect([...$drafts.get().values()][0]).toMatchObject({ draft: 'keep my draft\n', sha: fakeSha(TEXTS['readme.md']), mode: 'edit' })
+    } finally {
+      notify.mockRestore()
+    }
+  })
+
+  it('D7: a conflict while the page is shown opens its dialog, with no notification', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    const notify = vi.spyOn(host, 'notify')
+    try {
+      await editTo('readme.md', 'mine\n')
+      fireEvent.click(button('Review & save'))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+      await flush(2)
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Back to editing' }))
+      await act(async () => answer({ ok: false, code: 'conflict', sha256: 'sha-other' }))
+      await screen.findByText("readme.md changed on the agent's machine since you opened it.")
+      expect(notify).not.toHaveBeenCalled()
+    } finally {
+      notify.mockRestore()
+    }
+  })
+
+  it('D8: a Save answered between the remount’s first render and its effects lands on the remounted page', async () => {
+    const { view, saves, files } = setup()
+    await editTo('readme.md', 'saved text\n')
+    view.unmount()
+    const [[key, parked]] = [...$drafts.get().entries()]
+    // What settleSave leaves when the answer arrives in that window: the parked copy, saved. A layout effect runs
+    // after the remount's first render and before its passive effects, so it stands in for that answer.
+    files.set('readme.md', 'saved text\n')
+    const settled: Doc = { ...parked, base: 'saved text\n', draft: 'saved text\n', sha: fakeSha('saved text\n'), mode: 'view' }
+    function AnswerInWindow() {
+      useLayoutEffect(() => {
+        $drafts.set(new Map([[key, settled]]))
+      }, [])
+      return null
+    }
+    render(<><CloudFilesPage /><AnswerInWindow /></>)
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toBe('saved text\n'))
+    expect(textarea()).toBeNull()
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    expect($drafts.get().size).toBe(0)
+    fireEvent.click(button('Edit'))
+    fireEvent.change(textarea()!, { target: { value: 'next text\n' } })
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await screen.findByText('Saved')
+    expect(saves().map(c => c.opts.body.base_sha256)).toEqual([fakeSha('saved text\n')])
   })
 
   it('D6: switching to an agent with a parked draft does not replace an open file', async () => {

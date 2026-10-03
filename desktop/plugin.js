@@ -102,6 +102,8 @@ var S = {
   backToEditing: "Back to editing",
   saved: "Saved",
   notSaved: (name, reason) => `${name} wasn't saved. ${reason}`,
+  changedSince: (profile) => `It changed on ${machineOf(profile)} since you opened it.`,
+  movedOrDeleted: (profile) => `It was moved or deleted on ${machineOf(profile)}.`,
   loadingFile: "Opening\u2026",
   noChanges: "No changes",
   diffSummary: (added, removed) => `+${added} \u2212${removed} lines`,
@@ -1036,7 +1038,7 @@ import {
   Textarea,
   useValue as useValue2
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect2, useMemo as useMemo2, useRef, useState as useState3 } from "react";
+import { useEffect as useEffect2, useLayoutEffect, useMemo as useMemo2, useRef, useState as useState3 } from "react";
 
 // src/desktop/diff.ts
 var MAX_DIFF_LINES = 2e4;
@@ -1179,7 +1181,12 @@ function useOpenDoc() {
   latest.current = doc;
   useEffect2(() => {
     mounted.add(setDoc);
-    if (latest.current) setDraft(latest.current, false);
+    const restored = latest.current;
+    if (restored) {
+      const parked = $drafts.get().get(draftKey(restored));
+      if (parked && parked !== restored && parked.id === restored.id) setDoc(parked);
+      setDraft(restored, false);
+    }
     return () => {
       mounted.delete(setDoc);
       const last = latest.current;
@@ -1255,7 +1262,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
   const popupRef = useRef(popup);
   popupRef.current = popup;
   const live = useRef(true);
-  useEffect2(() => {
+  useLayoutEffect(() => {
     live.current = true;
     return () => {
       live.current = false;
@@ -1296,9 +1303,13 @@ function Editor({ doc, setDoc, onClose, leave }) {
       setSaved(true);
     } catch (error) {
       if (latest.current.id === doc.id && latest.current.mode === "view") return;
-      if (error instanceof ApiError && error.code === "conflict") setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
-      else if (error instanceof ApiError && error.code === "gone") setPopup("gone");
-      else {
+      if (error instanceof ApiError && error.code === "conflict") {
+        setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
+        if (!live.current) host2.notify({ kind: "error", message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) });
+      } else if (error instanceof ApiError && error.code === "gone") {
+        setPopup("gone");
+        if (!live.current) host2.notify({ kind: "error", message: S.notSaved(doc.name, S.movedOrDeleted(doc.pin.profile)) });
+      } else {
         const message = error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error);
         setSaveError(message);
         if (!live.current || popupRef.current !== "review") host2.notify({ kind: "error", message: S.notSaved(doc.name, message) });
