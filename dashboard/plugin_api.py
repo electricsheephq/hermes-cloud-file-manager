@@ -643,17 +643,23 @@ def search(root: str, q: str, limit: int = Query(100, ge=1, le=200), path: str =
         return {"ok": True, "results": results, "truncated": reason is not None, "reason": reason,
                 "visited": visited, "skipped": skipped}
 
+    def cap():
+        # Visits before time, as in v0.3.0; also between folders, since empty or unreadable ones have no entries.
+        if visited >= SEARCH_VISIT_LIMIT:
+            return "visits"
+        return "time" if time.monotonic() - started >= SEARCH_SECONDS else None
+
     while queue:
+        if reason := cap():
+            return done(reason)
         folder = queue.popleft()
         try:
             folder = _resolve(selected, _rel(selected, folder), for_write=False)
             at_root = home and (_rel(selected, folder) == "" or _identity(folder) == root_identity)
             with os.scandir(folder) as scan:
                 for item in scan:
-                    if visited >= SEARCH_VISIT_LIMIT:
-                        return done("visits")
-                    if time.monotonic() - started >= SEARCH_SECONDS:
-                        return done("time")
+                    if reason := cap():
+                        return done(reason)
                     visited += 1
                     name = item.name
                     # Mirror _entry's name exclusions without metadata work.

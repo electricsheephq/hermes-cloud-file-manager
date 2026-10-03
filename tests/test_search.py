@@ -187,7 +187,7 @@ def test_i6_caps_before_increment_and_reason(client, api, fs, monkeypatch, reaso
 def test_i6_end_of_walk_visit_cap_precedes_time(client, api, fs, monkeypatch):
     (fs[0] / "one").touch()
     monkeypatch.setattr(api, "SEARCH_VISIT_LIMIT", 1)
-    ticks = iter([0.0, 0.0])
+    ticks = iter([0.0, 0.0, 0.0])  # start, before the root folder, before its one entry
     monkeypatch.setattr(api, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     assert get(client, "search", root="r0", q="absent")["reason"] == "visits"
     monkeypatch.setattr(api, "SEARCH_VISIT_LIMIT", 0)
@@ -238,12 +238,29 @@ def test_i3_home_root_dot_names_cost_nothing(client, api, fs, monkeypatch, path)
     assert resolutions == [path, path, f"{prefix}docs"]  # and no dot folder is queued
 
 
-def test_i6_time_cap_is_inclusive(client, api, fs, monkeypatch):
+@pytest.mark.parametrize("ticks", [[0.0, 5.0], [0.0, 0.0, 5.0]], ids=["between-folders", "per-entry"])
+def test_i6_time_cap_is_inclusive(client, api, fs, monkeypatch, ticks):
     (fs[0] / "one").touch()
-    ticks = iter([0.0, 5.0])
-    monkeypatch.setattr(api, "time", SimpleNamespace(monotonic=lambda: next(ticks, 5.0)))
+    clock = iter(ticks)
+    monkeypatch.setattr(api, "time", SimpleNamespace(monotonic=lambda: next(clock, 0.0)))
     body = get(client, "search", root="r0", q="absent")
     assert body["reason"] == "time" and body["visited"] == 0
+
+
+def test_i6_deadline_holds_while_draining_empty_folders(client, api, fs, monkeypatch):
+    root, _ = fs
+    for n in range(50):
+        (root / f"empty{n}").mkdir()
+    clock = iter([0.0] * 52)  # start, before the root folder, and one check per root entry; later reads are late
+    monkeypatch.setattr(api, "time", SimpleNamespace(monotonic=lambda: next(clock, 6.0)))
+    scan, scans = api.os.scandir, []
+    def observed(folder):
+        scans.append(Path(folder))
+        return scan(folder)
+    monkeypatch.setattr(api.os, "scandir", observed)
+    body = get(client, "search", root="r0", q="absent")
+    assert body["reason"] == "time" and body["visited"] == 50
+    assert scans == [root]  # the 50 queued empty folders are not drained after the deadline
 
 
 def test_i2_unreadable_entry_type_is_not_descended(client, api, fs, monkeypatch):
