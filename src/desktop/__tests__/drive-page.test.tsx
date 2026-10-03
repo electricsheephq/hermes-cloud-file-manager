@@ -99,7 +99,7 @@ describe('Cloud Files page: Google Drive source', () => {
     setup({ '/drive/list': () => ({ ok: true, items: [{ id: 'x1', name: 'x.txt', mime: 'text/plain', is_folder: false, size: 1, mtime: null }], truncated: true }) })
     await screen.findByText('notes.txt')
     fireEvent.click(option('Google Drive')!)
-    expect(await screen.findByText('Showing the first 1 items')).toBeTruthy()
+    expect(await screen.findByText('Showing the first item')).toBeTruthy()
   })
 
   it('hides upload and new folder and ignores drops in Drive mode', async () => {

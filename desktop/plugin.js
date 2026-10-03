@@ -26,6 +26,7 @@ var S = {
   retry: "Retry",
   root: "Folder",
   search: "Search files",
+  searchIn: (folder) => `Search in ${folder}`,
   newFolder: "New folder",
   uploadFiles: "Upload files",
   uploadFolder: "Upload folder",
@@ -33,7 +34,10 @@ var S = {
   maxPerFile: (bytes) => `Up to ${mb(bytes)} per file`,
   emptyFolder: "This folder is empty \u2014 drop files here or use Upload",
   noResults: "No matching files",
-  truncated: (n) => `Showing the first ${n} items`,
+  truncated: (n) => n === 1 ? "Showing the first item" : `Showing the first ${n} items`,
+  searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
+  searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
+  noResultsYet: "No matches found so far",
   dropTo: (folder) => `Drop to upload to ${folder}`,
   copied: (n) => n === 1 ? "Path copied" : `${n} paths copied`,
   copyFailed: "Couldn't copy to the clipboard",
@@ -683,7 +687,8 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
   ] });
 }
 function BrowserSearch({ b, label = S.search }) {
-  return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": label, onChange: b.setSearch, placeholder: label, value: b.search }) });
+  const folder = b.path?.split("/").pop();
+  return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": label, onChange: b.setSearch, placeholder: folder ? S.searchIn(folder) : label, value: b.search }) });
 }
 function sortEntries(entries, highlights, atRoot) {
   const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
@@ -700,8 +705,8 @@ function EntryList({ b, height, onOpenFile }) {
     retry: 1
   });
   const found = useQuery({
-    queryKey: ["hcfm", connectionId, profile, "search", rootId, b.query],
-    queryFn: () => call(query("/search", { root: rootId, q: b.query, limit: SEARCH_LIMIT })),
+    queryKey: ["hcfm", connectionId, profile, "search", rootId, b.path, b.query],
+    queryFn: () => call(query("/search", { root: rootId, path: b.path, q: b.query, limit: SEARCH_LIMIT })),
     enabled: Boolean(rootId) && searching,
     retry: 1
   });
@@ -711,6 +716,9 @@ function EntryList({ b, height, onOpenFile }) {
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
   }, [searching, found.data, listing.data, b.roots.highlights, b.path]);
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
+  const reason = searching ? found.data?.reason : void 0;
+  const stopped = reason === "time" || reason === "visits";
+  const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === "results" ? S.searchMore(entries.length) : S.truncated(entries.length);
   const open = (entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry);
     if (!entry.is_dir || entry.link_outside) return;
@@ -722,11 +730,11 @@ function EntryList({ b, height, onOpenFile }) {
   } else if (!active.data) {
     body = /* @__PURE__ */ jsx("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: "8px 12px" }, children: [0, 1, 2, 3, 4].map((i) => /* @__PURE__ */ jsx(Skeleton, { style: { height: 18, opacity: 1 - i * 0.15 } }, i)) });
   } else if (!entries.length) {
-    body = /* @__PURE__ */ jsx(EmptyState, { title: searching ? S.noResults : S.emptyFolder });
+    body = /* @__PURE__ */ jsx(EmptyState, { description: stopped ? truncationNote : void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : S.emptyFolder });
   } else {
     body = /* @__PURE__ */ jsxs("div", { role: "list", children: [
       entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onOpen: open, searching }, entry.abs)),
-      truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.truncated(entries.length) })
+      truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: truncationNote })
     ] });
   }
   return /* @__PURE__ */ jsx("div", { style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, children: body });

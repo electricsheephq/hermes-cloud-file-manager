@@ -190,10 +190,12 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
   )
 }
 
-export function BrowserSearch({ b, label = S.search }: { b: { search: string; setSearch: (text: string) => void }; label?: string }) {
+export function BrowserSearch({ b, label = S.search }: { b: { search: string; setSearch: (text: string) => void; path?: string }; label?: string }) {
+  // Search covers the folder shown, so the placeholder names it below the root.
+  const folder = b.path?.split('/').pop()
   return (
     <span onKeyDown={event => event.key === 'Escape' && b.setSearch('')}>
-      <SearchField aria-label={label} onChange={b.setSearch} placeholder={label} value={b.search} />
+      <SearchField aria-label={label} onChange={b.setSearch} placeholder={folder ? S.searchIn(folder) : label} value={b.search} />
     </span>
   )
 }
@@ -216,8 +218,8 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
     retry: 1
   })
   const found = useQuery({
-    queryKey: ['hcfm', connectionId, profile, 'search', rootId, b.query],
-    queryFn: () => call<SearchResponse>(query('/search', { root: rootId, q: b.query, limit: SEARCH_LIMIT })),
+    queryKey: ['hcfm', connectionId, profile, 'search', rootId, b.path, b.query],
+    queryFn: () => call<SearchResponse>(query('/search', { root: rootId, path: b.path, q: b.query, limit: SEARCH_LIMIT })),
     enabled: Boolean(rootId) && searching,
     retry: 1
   })
@@ -227,6 +229,9 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
   }, [searching, found.data, listing.data, b.roots.highlights, b.path])
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
+  const reason = searching ? found.data?.reason : undefined
+  const stopped = reason === 'time' || reason === 'visits'
+  const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
 
   const open = (entry: Entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
@@ -246,14 +251,14 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
       </div>
     )
   } else if (!entries.length) {
-    body = <EmptyState title={searching ? S.noResults : S.emptyFolder} />
+    body = <EmptyState description={stopped ? truncationNote : undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : S.emptyFolder} />
   } else {
     body = (
       <div role="list">
         {entries.map(entry => (
           <EntryRow b={b} entry={entry} key={entry.abs} onOpen={open} searching={searching} />
         ))}
-        {truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.truncated(entries.length)}</div>}
+        {truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div>}
       </div>
     )
   }

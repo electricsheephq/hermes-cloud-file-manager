@@ -86,8 +86,8 @@ export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {},
     if (path === '/search') {
       const results = Object.values(FOLDERS)
         .flat()
-        .filter(e => e.name.includes(params.q))
-      return { ok: true, results, truncated: false, visited: 7 }
+        .filter(e => (!params.path || e.rel.startsWith(`${params.path}/`)) && e.name.includes(params.q))
+      return { ok: true, results, truncated: false, reason: null, visited: 7 }
     }
     if (path === '/drive/available') return { ok: true, available: true }
     if (path === '/drive/list') {

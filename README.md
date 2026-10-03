@@ -23,7 +23,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 
 ## Requirements
 
-- Hermes Desktop **0.21.1 or newer**, connected to an agent (local, remote with a token, or remote with sign-in).
+- Hermes **0.21.5 or newer** with Hermes Desktop, connected to an agent (local, remote with a token, or remote
+  with sign-in).
 - The agent's terminal runs **locally on the gateway machine** (`terminal.backend: local`, the default). Agents
   that run their tools in Docker, over SSH or in another sandbox see a different filesystem; the tab says so
   instead of showing the wrong files.
@@ -64,7 +65,9 @@ installing the desktop half is harmless for your other agents.
   **Upload folder**. Progress, retries and failures show in the drawer at the bottom; the batch keeps going if
   you leave the page. Switching to another agent mid-upload pauses the batch until you switch back — files never
   land on the wrong machine.
-- **Find:** type in **Search files** (name contains, or a glob such as `*.pdf`).
+- **Find:** type in **Search files** (name contains, or a glob such as `*.pdf`) to search the folder you are in
+  and its subfolders. On a very large folder, search stops after 5 seconds and says that some matches may be
+  missing; open a subfolder to search inside it.
 - **Read and edit Markdown:** double-click a `.md`, `.markdown` or `.txt` file (or select it and choose
   **Open**). It opens read-only, rendered like chat. Choose **Edit** to change the source, **Changes** to see
   your edits line by line, and **Review & save** to check the diff before **Save**. Nothing is written until you
@@ -167,7 +170,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Compatibility
 
-Requires Hermes and Hermes Desktop **0.21.1 or newer** (`requires_hermes: ">=0.21.1"`). CI checks every change
+Requires Hermes **0.21.5 or newer**, with its Desktop (`requires_hermes: ">=0.21.5"`). CI checks every change
 against pinned builds of upstream [Hermes Agent](https://github.com/NousResearch/hermes-agent) and one downstream
 Desktop fork (see `HERMES_*_SHA` in `.github/workflows/ci.yml`). Those pins are bumped deliberately, after the
 suite passes against the new builds.
