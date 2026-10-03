@@ -101,6 +101,9 @@ var S = {
   save: "Save",
   backToEditing: "Back to editing",
   saved: "Saved",
+  notSaved: (name, reason) => `${name} wasn't saved. ${reason}`,
+  changedSince: (profile) => `It changed on ${machineOf(profile)} since you opened it.`,
+  movedOrDeleted: (profile) => `It was moved or deleted on ${machineOf(profile)}.`,
   loadingFile: "Opening\u2026",
   noChanges: "No changes",
   diffSummary: (added, removed) => `+${added} \u2212${removed} lines`,
@@ -1035,7 +1038,7 @@ import {
   Textarea,
   useValue as useValue2
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect2, useMemo as useMemo2, useRef, useState as useState3 } from "react";
+import { useEffect as useEffect2, useLayoutEffect, useMemo as useMemo2, useRef, useState as useState3 } from "react";
 
 // src/desktop/diff.ts
 var MAX_DIFF_LINES = 2e4;
@@ -1160,24 +1163,44 @@ function savedAs(doc, sent, sha) {
   const next = { ...doc, base: sent, sha, mixed: false };
   return doc.draft === sent || doc.mode === "view" ? { ...next, draft: sent, mode: "view" } : next;
 }
-function settleParked(sent, sha) {
+var mounted = /* @__PURE__ */ new Set();
+function settleSave(sent, sha, own) {
+  const settle = (d) => d && d.id === sent.id && d.sha === sent.sha ? savedAs(d, sent.draft, sha) : d;
+  for (const set of /* @__PURE__ */ new Set([own, ...mounted])) set(settle);
   const parked = $drafts.get().get(draftKey(sent));
-  if (parked && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true);
+  if (parked && parked.id === sent.id && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true);
+}
+function findParked(pin) {
+  return [...$drafts.get().values()].find((d) => d.pin.connectionId === pin.connectionId && d.pin.profile === pin.profile) ?? null;
 }
 function useOpenDoc() {
-  const [doc, setDoc] = useState3(() => {
-    const pin = { connectionId: host2.state.connectionId.get(), profile: host2.state.profile.get() };
-    return [...$drafts.get().values()].find((d) => d.pin.connectionId === pin.connectionId && d.pin.profile === pin.profile) ?? null;
-  });
+  const connectionId = useValue2(host2.state.connectionId);
+  const profile = useValue2(host2.state.profile);
+  const [doc, setDoc] = useState3(() => findParked({ connectionId, profile }));
   const latest = useRef(doc);
   latest.current = doc;
   useEffect2(() => {
-    if (latest.current) setDraft(latest.current, false);
+    mounted.add(setDoc);
+    const restored = latest.current;
+    if (restored) {
+      const parked = $drafts.get().get(draftKey(restored));
+      if (parked && parked !== restored && parked.id === restored.id) setDoc(parked);
+      setDraft(restored, false);
+    }
     return () => {
+      mounted.delete(setDoc);
       const last = latest.current;
       if (last && last.mode === "edit" && isDirty(last)) setDraft(last, true);
     };
   }, []);
+  useEffect2(() => {
+    if (latest.current) return;
+    const parked = findParked({ connectionId, profile });
+    if (parked) {
+      setDraft(parked, false);
+      setDoc(parked);
+    }
+  }, [connectionId, profile]);
   return [doc, setDoc];
 }
 var generation = 0;
@@ -1236,6 +1259,15 @@ function Editor({ doc, setDoc, onClose, leave }) {
   const [saved, setSaved] = useState3(false);
   const latest = useRef(doc);
   latest.current = doc;
+  const popupRef = useRef(popup);
+  popupRef.current = popup;
+  const live = useRef(true);
+  useLayoutEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const dirty = isDirty(doc);
   const editing = doc.mode === "edit";
   const diff = useMemo2(() => popup === "review" || changes ? lineDiff(doc.base, doc.draft) : null, [popup, changes, doc.base, doc.draft]);
@@ -1265,16 +1297,23 @@ function Editor({ doc, setDoc, onClose, leave }) {
         method: "POST",
         body: { root: doc.root, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
       });
-      setDoc((d) => d?.id === doc.id ? savedAs(d, sent, res.sha256) : d);
-      settleParked(doc, res.sha256);
+      settleSave(doc, res.sha256, setDoc);
       setPopup(null);
       setChanges(false);
       setSaved(true);
     } catch (error) {
       if (latest.current.id === doc.id && latest.current.mode === "view") return;
-      if (error instanceof ApiError && error.code === "conflict") setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
-      else if (error instanceof ApiError && error.code === "gone") setPopup("gone");
-      else setSaveError(error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error));
+      if (error instanceof ApiError && error.code === "conflict") {
+        setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
+        if (!live.current) host2.notify({ kind: "error", message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) });
+      } else if (error instanceof ApiError && error.code === "gone") {
+        setPopup("gone");
+        if (!live.current) host2.notify({ kind: "error", message: S.notSaved(doc.name, S.movedOrDeleted(doc.pin.profile)) });
+      } else {
+        const message = error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error);
+        setSaveError(message);
+        if (!live.current || popupRef.current !== "review") host2.notify({ kind: "error", message: S.notSaved(doc.name, message) });
+      }
     } finally {
       setBusy(false);
     }

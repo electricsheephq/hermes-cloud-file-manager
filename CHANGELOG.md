@@ -2,6 +2,20 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.3] - 2026-10-03
+
+Editor fixes. None of these lost text before; each left you with a wrong or missing signal. After updating, restart
+the agent's gateway once.
+
+### Fixed
+- A Save that finishes while you briefly leave Cloud Files now lands on the page you come back to. Before, the file
+  showed as unsaved against the old version, and the next Save was refused as a conflict.
+- A save that fails after you chose **Back to editing**, or left the page, now shows a notification. Before, the error
+  was only kept for the closed Review dialog.
+- Switching agents while no file is open brings back that agent's unsaved draft, as reopening the page does.
+- A file that changes while it is being opened or saved is refused as changed, so you never see a torn mix of the
+  two versions.
+
 ## [0.3.2] - 2026-10-03
 
 Google Drive gives the agent's skill only what it needs. After updating, restart the agent's gateway once.

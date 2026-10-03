@@ -16,7 +16,7 @@ import {
   Textarea,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, isNotFoundError, pluginCtx, query, type Root } from './api'
 import { type LineDiff, lineDiff } from './diff'
@@ -94,28 +94,54 @@ function savedAs(doc: Doc, sent: string, sha: string): Doc {
   return doc.draft === sent || doc.mode === 'view' ? { ...next, draft: sent, mode: 'view' } : next
 }
 
-/** A save that succeeds after the page unmounted: rebase the draft parked meanwhile (from the same base sha). */
-function settleParked(sent: Doc, sha: string) {
+// The open-file setters of mounted pages, so a late Save answer reaches the page shown now.
+const mounted = new Set<SetDoc>()
+
+/** A Save of `sent` answered as `sha`: settle that same opened file (same load id, still on the sent sha) on the
+ *  Editor that sent it, on any page mounted now, and in a draft parked meanwhile. */
+function settleSave(sent: Doc, sha: string, own: SetDoc) {
+  const settle = (d: Doc | null) => (d && d.id === sent.id && d.sha === sent.sha ? savedAs(d, sent.draft, sha) : d)
+  for (const set of new Set([own, ...mounted])) set(settle)
   const parked = $drafts.get().get(draftKey(sent))
-  if (parked && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true)
+  if (parked && parked.id === sent.id && parked.sha === sent.sha) setDraft(savedAs(parked, sent.draft, sha), true)
+}
+
+function findParked(pin: AgentPin): Doc | null {
+  return [...$drafts.get().values()].find(d => d.pin.connectionId === pin.connectionId && d.pin.profile === pin.profile) ?? null
 }
 
 /** The open file, owned above the per-agent page so an agent switch keeps it (with a banner). Mounting the
  *  page restores a draft left for the current agent; unmounting it keeps an unsaved Edit for later. */
 export function useOpenDoc(): [Doc | null, SetDoc] {
-  const [doc, setDoc] = useState<Doc | null>(() => {
-    const pin = { connectionId: host.state.connectionId.get(), profile: host.state.profile.get() }
-    return [...$drafts.get().values()].find(d => d.pin.connectionId === pin.connectionId && d.pin.profile === pin.profile) ?? null
-  })
+  const connectionId = useValue(host.state.connectionId)
+  const profile = useValue(host.state.profile)
+  const [doc, setDoc] = useState<Doc | null>(() => findParked({ connectionId, profile }))
   const latest = useRef(doc)
   latest.current = doc
   useEffect(() => {
-    if (latest.current) setDraft(latest.current, false)
+    mounted.add(setDoc)
+    const restored = latest.current
+    if (restored) {
+      // A Save that answered after the first render settled the parked copy, not this page: show that copy.
+      const parked = $drafts.get().get(draftKey(restored))
+      if (parked && parked !== restored && parked.id === restored.id) setDoc(parked)
+      setDraft(restored, false)
+    }
     return () => {
+      mounted.delete(setDoc)
       const last = latest.current
       if (last && last.mode === 'edit' && isDirty(last)) setDraft(last, true)
     }
   }, [])
+  useEffect(() => {
+    // An agent switch with no file open brings back that agent's parked draft, as reopening the page would.
+    if (latest.current) return
+    const parked = findParked({ connectionId, profile })
+    if (parked) {
+      setDraft(parked, false)
+      setDoc(parked)
+    }
+  }, [connectionId, profile])
   return [doc, setDoc]
 }
 
@@ -194,6 +220,14 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
   const [saved, setSaved] = useState(false)
   const latest = useRef(doc)
   latest.current = doc
+  const popupRef = useRef(popup)
+  popupRef.current = popup
+  const live = useRef(true)
+  // A layout cleanup runs as the page is removed; a passive one can run after a late answer has already arrived.
+  useLayoutEffect(() => {
+    live.current = true
+    return () => { live.current = false }
+  }, [])
   const dirty = isDirty(doc)
   const editing = doc.mode === 'edit'
   const diff = useMemo(() => (popup === 'review' || changes ? lineDiff(doc.base, doc.draft) : null), [popup, changes, doc.base, doc.draft])
@@ -227,17 +261,26 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
         method: 'POST',
         body: { root: doc.root, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
       })
-      setDoc(d => (d?.id === doc.id ? savedAs(d, sent, res.sha256) : d))
-      settleParked(doc, res.sha256)
+      settleSave(doc, res.sha256, setDoc)
       setPopup(null)
       setChanges(false)
       setSaved(true)
     } catch (error) {
       // Edits discarded while the save was pending: there is nothing left to save, so a late refusal is moot.
       if (latest.current.id === doc.id && latest.current.mode === 'view') return
-      if (error instanceof ApiError && error.code === 'conflict') setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } })
-      else if (error instanceof ApiError && error.code === 'gone') setPopup('gone')
-      else setSaveError(error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error))
+      // The page was left before a conflict or gone answer: its dialog can't show, so say it here. The draft stays.
+      if (error instanceof ApiError && error.code === 'conflict') {
+        setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } })
+        if (!live.current) host.notify({ kind: 'error', message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) })
+      } else if (error instanceof ApiError && error.code === 'gone') {
+        setPopup('gone')
+        if (!live.current) host.notify({ kind: 'error', message: S.notSaved(doc.name, S.movedOrDeleted(doc.pin.profile)) })
+      } else {
+        const message = error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error)
+        setSaveError(message)
+        // Review closed (Back to editing, or the page was left) before the answer: say it where it can be seen.
+        if (!live.current || popupRef.current !== 'review') host.notify({ kind: 'error', message: S.notSaved(doc.name, message) })
+      }
     } finally {
       setBusy(false)
     }

@@ -34,7 +34,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, StrictInt
 
 PLUGIN_NAME = "hermes-cloud-file-manager"
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 
 router = APIRouter()
 
@@ -453,6 +453,10 @@ def _edit_read(target):
             chunks.append(chunk)
             remaining -= len(chunk)
         raw = b"".join(chunks)
+        after = os.fstat(fd)
+        # A writer that changed the file in place during the read would leave a torn text.
+        if (after.st_size, after.st_mtime_ns) != (info.st_size, info.st_mtime_ns):
+            raise GuardError("changed", "The file changed while it was being read.")
         _edit_size(len(raw))
         return raw, info
     finally:
