@@ -117,6 +117,7 @@ declare module '@hermes/plugin-sdk' {
     enabled?: boolean
     retry?: boolean | number
     staleTime?: number
+    placeholderData?: (previousData: T | undefined, previousQuery: { queryKey: readonly unknown[] } | undefined) => T | undefined
   }): UseQueryResult<T>
   export function useQueryClient(): { invalidateQueries(filters: { queryKey: readonly unknown[] }): Promise<void> }
 

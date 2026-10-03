@@ -87,7 +87,11 @@ function fetchEntry(entry: CacheEntry): Promise<void> {
 export function resetQueryCache() {
   cache.clear()
 }
-export function useQuery({ queryKey, queryFn, enabled = true }: { queryKey: readonly unknown[]; queryFn: () => Promise<unknown>; enabled?: boolean }) {
+export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData }: {
+  queryKey: readonly unknown[]; queryFn: () => Promise<T>; enabled?: boolean
+  placeholderData?: (previousData: T | undefined, previousQuery: { queryKey: readonly unknown[] } | undefined) => T | undefined
+}) {
+  const last = useRef<{ data: T; queryKey: readonly unknown[] } | undefined>(undefined)
   const key = JSON.stringify(queryKey)
   const [, force] = useReducer((n: number) => n + 1, 0)
   const fn = useRef(queryFn)
@@ -100,8 +104,10 @@ export function useQuery({ queryKey, queryFn, enabled = true }: { queryKey: read
     return () => void entry.listeners.delete(force)
   }, [key, enabled])
   const entry = cache.get(key)
+  if (enabled && entry?.data !== undefined) last.current = { data: entry.data as T, queryKey }
+  const data = entry?.data as T | undefined
   return {
-    data: enabled ? entry?.data : undefined,
+    data: enabled ? data ?? placeholderData?.(last.current?.data, last.current && { queryKey: last.current.queryKey }) : undefined,
     error: enabled ? entry?.error : undefined,
     isFetching: Boolean(entry?.pending),
     refetch: () => fetchEntry(entryFor(key))

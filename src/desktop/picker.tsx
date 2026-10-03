@@ -16,10 +16,10 @@ import {
 } from '@hermes/plugin-sdk'
 import { useEffect, useRef } from 'react'
 
-import { Breadcrumbs, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
+import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
 import { DriveImport, type ImportHold } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
-import { formatInsertText } from './format'
+import { formatInsertText, hasLineBreak } from './format'
 import { currentPin } from './page'
 import { S } from './strings'
 import type { AgentPin } from './upload'
@@ -156,6 +156,7 @@ export function closePicker() {
   stopImport()
   unwatch()
   $pickerOpen.set(false)
+  $pickState.set(null)
   $insertText.set(null)
 }
 
@@ -210,7 +211,9 @@ function PickerBody({ profile, source }: { profile: string; source: 'cloud' | 'd
 function PickerBrowser({ profile, roots }: { profile: string; roots: RootsResponse }) {
   const b = useBrowser(roots, 'pick')
   const touched = useValue($touched)
-  const text = () => formatInsertText(profile, [...b.selected.values()])
+  const insertable = [...b.selected.values()].filter(entry => !hasLineBreak(entry.abs))
+  const skipped = b.selected.size - insertable.length
+  const text = () => formatInsertText(profile, insertable)
   const insert = () => {
     if (!canInsert(openPin)) return // touched: the footer offers Copy locations instead
     $insertText.get()?.(text())
@@ -227,15 +230,16 @@ function PickerBrowser({ profile, roots }: { profile: string; roots: RootsRespon
       {touched && <div style={{ fontSize: 12, color: 'var(--ui-text-secondary)' }}>{S.chatChanged}</div>}
       <DialogFooter style={{ alignItems: 'center' }}>
         <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{S.selected(b.selected.size)}</span>
+        {skipped > 0 && <span style={{ fontSize: 12, color: 'var(--ui-text-secondary)' }}>{S.lineBreakSkipped(skipped)}</span>}
         <Button onClick={closePicker} variant="text">
           {S.cancel}
         </Button>
         {touched ? (
-          <Button disabled={!b.selected.size} onClick={() => copyLocations(text())}>
+          <Button disabled={!insertable.length} onClick={() => copyLocations(text())}>
             {S.copyLocations}
           </Button>
         ) : (
-          <Button disabled={!b.selected.size} onClick={insert}>
+          <Button disabled={!insertable.length} onClick={insert}>
             {S.insert}
           </Button>
         )}

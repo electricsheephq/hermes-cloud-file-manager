@@ -766,3 +766,36 @@ describe('editor: follow-up timing', () => {
     expect([...$drafts.get().values()][0]).toMatchObject({ name: 'readme.md', draft: 'agent A draft\n' })
   })
 })
+
+
+describe('E1: pending Save after Close + Discard', () => {
+  it.each(['network', 'conflict', 'gone', 'parked'] as const)('%s late refusal only notifies a surviving draft', async kind => {
+    let answer!: (value: unknown) => void
+    let fail!: (error: unknown) => void
+    const { view } = setup({ '/file/save': () => new Promise((resolve, reject) => { answer = resolve; fail = reject }) })
+    const notify = vi.spyOn(host, 'notify')
+    try {
+      await editTo('readme.md', 'pending draft\n')
+      fireEvent.click(button('Review & save'))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+      await flush(2)
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Back to editing' }))
+      if (kind === 'parked') view.unmount()
+      else {
+        fireEvent.click(button('Close'))
+        fireEvent.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+        expect(document.querySelector('textarea')).toBeNull()
+        expect($drafts.get().size).toBe(0)
+      }
+      await act(async () => {
+        if (kind === 'network' || kind === 'parked') fail(new Error('Connection lost'))
+        else answer({ ok: false, code: kind, sha256: 'sha-other' })
+      })
+      await flush(2)
+      if (kind === 'parked') {
+        expect(notify).toHaveBeenCalledExactlyOnceWith({ kind: 'error', message: "readme.md wasn't saved. Connection lost" })
+        expect([...$drafts.get().values()][0].draft).toBe('pending draft\n')
+      } else expect(notify).not.toHaveBeenCalled()
+    } finally { notify.mockRestore() }
+  })
+})

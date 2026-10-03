@@ -2,6 +2,7 @@
 // entry list with selection. Styling is inline with theme variables only (a runtime plugin cannot rely on the
 // app's compiled utility classes).
 import {
+  atom,
   Button,
   Checkbox,
   Codicon,
@@ -18,7 +19,7 @@ import {
   useQuery,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react'
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
@@ -26,6 +27,7 @@ import { S } from './strings'
 import { transportText } from './upload'
 
 export const LIST_LIMIT = 500
+const LIST_PAGE_MAX = 2000
 const SEARCH_LIMIT = 200
 export const DEBOUNCE_MS = 300
 
@@ -51,16 +53,44 @@ export function useDebounced<T>(value: T, ms: number): T {
 }
 
 export type Mode = 'page' | 'pick'
+interface PickState {
+  scope: string
+  rootId: string
+  path: string
+  search: string
+  selected: ReadonlyMap<string, Entry>
+}
+export const $pickState = atom<PickState | null>(null)
 
 /** Browser state: root, folder, search text and selection (keyed by absolute path). In page mode the
  *  selection belongs to the folder; in pick mode it persists across folders. */
 export function useBrowser(roots: RootsResponse, mode: Mode) {
-  const [rootId, setRootId] = useState(roots.roots[0]?.id ?? '')
+  const [localRootId, setLocalRootId] = useState(roots.roots[0]?.id ?? '')
+  const [localPath, setLocalPath] = useState('')
+  const [localSearch, setLocalSearch] = useState('')
+  const [localSelected, setLocalSelected] = useState<ReadonlyMap<string, Entry>>(new Map())
+  const scope = useScope().join('::')
+  const picked = useValue($pickState)
+  const fresh = (): PickState => ({ scope, rootId: roots.roots[0]?.id ?? '', path: '', search: '', selected: new Map() })
+  const pick = picked?.scope === scope ? picked : fresh()
+  useEffect(() => {
+    if (mode === 'pick' && picked?.scope !== scope) $pickState.set(fresh())
+  }, [mode, picked, scope, roots])
+  const write = <K extends keyof PickState>(key: K, value: SetStateAction<PickState[K]>) => {
+    const current = $pickState.get()
+    const prev = current?.scope === scope ? current : fresh()
+    $pickState.set({ ...prev, [key]: typeof value === 'function' ? value(prev[key]) : value })
+  }
+  const rootId = mode === 'pick' ? pick.rootId : localRootId
+  const path = mode === 'pick' ? pick.path : localPath
+  const search = mode === 'pick' ? pick.search : localSearch
+  const selected = mode === 'pick' ? pick.selected : localSelected
+  const setRootId = mode === 'pick' ? (id: string) => write('rootId', id) : setLocalRootId
+  const setPath = mode === 'pick' ? (path: string) => write('path', path) : setLocalPath
+  const setSearch = mode === 'pick' ? (text: string) => write('search', text) : setLocalSearch
+  const setSelected = mode === 'pick' ? (value: SetStateAction<ReadonlyMap<string, Entry>>) => write('selected', value) : setLocalSelected
   const root: Root | undefined = roots.roots.find(r => r.id === rootId) ?? roots.roots[0]
-  const [path, setPath] = useState('')
-  const [search, setSearch] = useState('')
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS)
-  const [selected, setSelected] = useState<ReadonlyMap<string, Entry>>(new Map())
 
   const navigate = (next: string) => {
     setPath(next)
@@ -205,15 +235,34 @@ function sortEntries(entries: Entry[], highlights: string[], atRoot: boolean): E
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
 }
 
+/** The first count entries, deduplicated by abs if a folder changes between capped chunks. */
+async function listUpTo(root: string, path: string, count: number): Promise<ListResponse> {
+  const seen = new Set<string>()
+  const entries: Entry[] = []
+  let last: ListResponse | undefined
+  for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
+    last = await call<ListResponse>(query('/list', { root, path, offset, limit: Math.min(LIST_PAGE_MAX, count - offset) }))
+    for (const entry of last.entries) if (!seen.has(entry.abs)) { seen.add(entry.abs); entries.push(entry) }
+    if (offset + last.entries.length >= last.total) break
+  }
+  return { ...last!, entries }
+}
+
 /** The scrolling list: folder listing, or search results while a query is active. With `onOpenFile`, opening
  *  an editable file (double-click / Enter) hands it to the editor; other files stay inert. */
 export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: number; onOpenFile?: (entry: Entry) => void }) {
   const [connectionId, profile] = useScope()
   const rootId = b.root?.id ?? ''
+  const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
+  const [range, setRange] = useState({ folder, count: LIST_LIMIT })
+  const count = range.folder === folder ? range.count : LIST_LIMIT
+  if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT })
+  const listingKey = ['hcfm', connectionId, profile, 'list', rootId, b.path, count]
   const searching = Boolean(b.query)
   const listing = useQuery({
-    queryKey: ['hcfm', connectionId, profile, 'list', rootId, b.path],
-    queryFn: () => call<ListResponse>(query('/list', { root: rootId, path: b.path, offset: 0, limit: LIST_LIMIT })),
+    queryKey: listingKey,
+    queryFn: () => listUpTo(rootId, b.path, count),
+    placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
     retry: 1
   })
@@ -258,7 +307,13 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
         {entries.map(entry => (
           <EntryRow b={b} entry={entry} key={entry.abs} onOpen={open} searching={searching} />
         ))}
-        {truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div>}
+        {searching ? truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div> :
+          (listing.data?.total ?? 0) > entries.length ? (
+            <div style={{ ...muted, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>{S.showingOf(entries.length, listing.data!.total)}</span>
+              <Button disabled={listing.isFetching} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
+            </div>
+          ) : truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.firstOnly(entries.length)}</div>}
       </div>
     )
   }
