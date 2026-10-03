@@ -15,10 +15,10 @@ FOLDER_MIME = "application/vnd.google-apps.folder"
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 FAKE = '''import json, os, sys, time
 from pathlib import Path
-c = json.loads(Path(os.environ["FAKE_CONTROL"]).read_text())
-with open(os.environ["FAKE_LOG"], "a") as log:
+c = json.loads(Path(__CONTROL__).read_text())
+with open(__LOG__, "a") as log:
     log.write(json.dumps({"script": Path(__file__).name, "argv": sys.argv[1:],
-                          "home": os.environ.get("HERMES_HOME")}) + "\\n")
+                          "home": os.environ.get("HERMES_HOME"), "env": sorted(os.environ)}) + "\\n")
 op = "setup" if Path(__file__).name == "setup.py" else sys.argv[2]
 v = c.get(op, {})
 time.sleep(v.get("sleep", 0))
@@ -26,7 +26,7 @@ if op == "download" and not v.get("exit", 0):
     out = Path(sys.argv[sys.argv.index("--output") + 1])
     mode = v.get("mode", "one")
     if mode == "link":
-        out.symlink_to(os.environ["FAKE_CONTROL"])
+        out.symlink_to(__CONTROL__)
     elif mode != "zero":
         out.write_bytes(v.get("bytes", "hello drive").encode() * v.get("repeat", 1))
         if mode == "two":
@@ -41,9 +41,10 @@ def drive(api, fs, monkeypatch, tmp_path):
     home = tmp_path / "hermes"
     scripts = home / "skills/productivity/google-workspace/scripts"
     scripts.mkdir(parents=True)
-    for name in ("setup.py", "google_api.py"):
-        (scripts / name).write_text(FAKE)
     control, log = tmp_path / "control.json", tmp_path / "argv.jsonl"
+    for name in ("setup.py", "google_api.py"):
+        (scripts / name).write_text(FAKE.replace("__CONTROL__", repr(str(control)))
+                                   .replace("__LOG__", repr(str(log))))
     state = {"setup": {"raw": "AUTHENTICATED"}, "search": {"output": []},
              "get": {"output": {"id": FILE_ID, "name": "report.txt", "mimeType": "text/plain"}}}
     def save():

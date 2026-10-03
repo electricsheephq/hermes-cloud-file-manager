@@ -7,7 +7,7 @@ def test_available_reports_plugin_and_version(client, api):
     assert response.json() == {"ok": True, "plugin": "hermes-cloud-file-manager", "version": api.VERSION}
 
 
-def test_versions_agree():
+def test_versions_agree(api):
     import json
     from pathlib import Path
 
@@ -17,3 +17,4 @@ def test_versions_agree():
     package = json.loads((root / "package.json").read_text())
     assert f"version: {manifest['version']}" in plugin_yaml
     assert package["version"] == manifest["version"]
+    assert api.VERSION == manifest["version"]  # reported by /available

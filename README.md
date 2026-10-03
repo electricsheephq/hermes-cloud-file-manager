@@ -120,6 +120,9 @@ For agents without it, nothing extra is shown.
   deletes anything there.
 - It works through the agent's own skill. Cloud File Manager never reads the Google token and never installs
   anything.
+- It runs the skill's scripts from `skills/productivity/google-workspace/scripts` in the agent's Hermes home, else
+  from the copy bundled with Hermes. It passes them only the environment they need (paths, locale, proxy and
+  CA-bundle settings), never the agent's keys or tokens.
 - It uses the Google account the agent is signed in to, so whoever can use the agent can import from that Drive.
 
 ## Settings
