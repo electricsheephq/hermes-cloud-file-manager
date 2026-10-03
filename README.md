@@ -167,7 +167,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - The editor opens `.md`, `.markdown` and `.txt` files up to 1 MB, as UTF-8. A file that mixes line endings is
   saved with CRLF throughout once edited; the review says so. Images in a rendered file load from their links,
   as in Hermes's own file preview. Unsaved drafts live in memory only and are lost when Hermes quits.
-- A folder with more than 500 items shows the first 500; use **Search files** to find the rest.
+- A folder shows 500 items at a time; **Load more** adds the next 500. A folder with more than 20,000 items lists
+  only the first 20,000; use **Search files** to find the rest.
+- A name that contains a line break can be browsed but not inserted into a chat; the picker says so.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
 - Google Drive is import-only: pick files, not folders, and nothing is ever written back to Drive.
 

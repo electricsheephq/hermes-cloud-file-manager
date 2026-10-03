@@ -2,6 +2,23 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.4] - 2026-10-03
+
+Big folders and the **+ → Cloud** picker. Only the Desktop half changed: reopen Hermes after updating. The agent's
+gateway needs no restart.
+
+### Fixed
+- A folder with more than 500 items now says how many it holds, for example "Showing 500 of 812 items", and offers
+  **Load more**, which adds the next 500. Before, it showed the first 500 with no sign of the rest. This works in
+  Cloud Files and in the **+ → Cloud** picker. A folder with more than 20,000 items still lists only the first 20,000,
+  and the notice points to **Search files**.
+- The **+ → Cloud** picker keeps its folder, search and selection when Hermes moves the chat composer while the picker
+  is open. Before, they were reset. Closing the picker or switching agents still starts fresh.
+- The picker leaves out a name that contains a line break, because a chat message can't show it exactly. It says
+  how many it left out; with nothing else selected, **Insert locations** and **Copy locations** stay off.
+- A save that fails after you closed the file and chose **Discard** no longer shows a "wasn't saved" notification.
+  There is nothing left to save.
+
 ## [0.3.3] - 2026-10-03
 
 Editor fixes. None of these lost text before; each left you with a wrong or missing signal. After updating, restart
