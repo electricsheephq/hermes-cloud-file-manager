@@ -34,7 +34,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, StrictInt
 
 PLUGIN_NAME = "hermes-cloud-file-manager"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 router = APIRouter()
 
@@ -48,6 +48,15 @@ SEARCH_SECONDS = 5.0
 TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.part$")
 DRIVE_TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.dir$")
 DRIVE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{10,200}$")
+# The Drive scripts, Google's client libraries and the gws CLI need only these. The gateway's own environment also
+# holds the agent's provider keys and tokens.
+DRIVE_ENV = frozenset({
+    "PATH", "HOME", "TMPDIR", "LANG", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "HERMES_GWS_BIN",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "HTTPLIB2_CA_CERTS",
+    # Python's own settings, so the scripts import and print as the gateway's library check expects.
+    "PYTHONPATH", "PYTHONHOME", "PYTHONUTF8", "PYTHONIOENCODING",
+})
 _DRIVE_CACHE = {}
 _DRIVE_LOCK = Lock()
 UPLOAD_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -887,22 +896,23 @@ def _drive_home():
     return Path(get_hermes_home())
 
 
-def _drive_scripts():
-    skills = _drive_home() / "skills"
-    for directory, dirs, files in os.walk(skills):
-        path = Path(directory)
-        depth = len(path.relative_to(skills).parts)
-        if depth >= 3:
-            dirs[:] = []  # scripts at depth 3, files at depth 4
-        if (path.name == "scripts" and path.parent.name == "google-workspace"
-                and {"setup.py", "google_api.py"} <= set(files)):
-            return path / "setup.py", path / "google_api.py"
-    import hermes_constants
-    for parent in list(Path(hermes_constants.__file__).resolve().parents)[:3]:
-        path = parent / "skills/productivity/google-workspace/scripts"
-        if (path / "setup.py").is_file() and (path / "google_api.py").is_file():
-            return path / "setup.py", path / "google_api.py"
+def _drive_skill(skills):
+    path = skills / "productivity/google-workspace/scripts"
+    if (path / "setup.py").is_file() and (path / "google_api.py").is_file():
+        return path / "setup.py", path / "google_api.py"
     return None
+
+
+def _drive_scripts():
+    # A fixed order: the agent's own copy, then the copy bundled with Hermes. Never a search under skills/.
+    found = _drive_skill(_drive_home() / "skills")
+    if found is None:
+        import hermes_constants
+        bundled = Path(hermes_constants.__file__).resolve().parent / "skills"
+        if hasattr(hermes_constants, "get_bundled_skills_dir"):  # newer Hermes honours package-manager overrides
+            bundled = Path(hermes_constants.get_bundled_skills_dir(bundled))
+        found = _drive_skill(bundled)
+    return found
 
 
 def _drive_run(args, timeout):
@@ -914,7 +924,7 @@ def _drive_run(args, timeout):
             or (script == scripts[1] and len(command) >= 2 and command[0] == "drive"
                 and command[1] in {"search", "get", "download"})):
         raise GuardError("drive_error", "The Drive command is not allowed.")
-    env = os.environ.copy()
+    env = {key: value for key, value in os.environ.items() if key in DRIVE_ENV or key.startswith("LC_")}
     env["HERMES_HOME"] = str(_drive_home())
     # File-backed capture keeps a noisy CLI from filling process memory.
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:

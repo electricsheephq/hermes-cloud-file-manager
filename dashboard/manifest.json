@@ -3,7 +3,7 @@
   "label": "Cloud Files",
   "description": "Browse, search, upload and edit files on the machine your agent runs on.",
   "icon": "Cloud",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "tab": { "path": "/cloud-files", "hidden": true },
   "entry": "dist/index.js",
   "api": "plugin_api.py"

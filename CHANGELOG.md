@@ -2,6 +2,17 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.2] - 2026-10-03
+
+Google Drive gives the agent's skill only what it needs. After updating, restart the agent's gateway once.
+
+### Changed
+- The `google-workspace` scripts now get only the environment they need: the path, home and temp folders, locale,
+  proxy and CA-bundle settings, and Python's own settings. Before, they got the gateway's whole environment, which
+  also holds the agent's keys and tokens.
+- The scripts come from `skills/productivity/google-workspace/scripts` in the agent's Hermes home, else from the
+  copy bundled with Hermes. A copy anywhere else under `skills/`, or another profile's copy, is no longer used.
+
 ## [0.3.1] - 2026-10-02
 
 Search that works on large agent workspaces. After updating, restart the agent's gateway once so the new search
