@@ -190,10 +190,12 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
   )
 }
 
-export function BrowserSearch({ b, label = S.search }: { b: { search: string; setSearch: (text: string) => void }; label?: string }) {
+export function BrowserSearch({ b, label = S.search }: { b: { search: string; setSearch: (text: string) => void; path?: string }; label?: string }) {
+  // Search covers the folder shown, so the placeholder names it below the root.
+  const folder = b.path?.split('/').pop()
   return (
     <span onKeyDown={event => event.key === 'Escape' && b.setSearch('')}>
-      <SearchField aria-label={label} onChange={b.setSearch} placeholder={label} value={b.search} />
+      <SearchField aria-label={label} onChange={b.setSearch} placeholder={folder ? S.searchIn(folder) : label} value={b.search} />
     </span>
   )
 }

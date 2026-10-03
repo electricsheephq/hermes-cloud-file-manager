@@ -10,7 +10,8 @@ code loads.
 ### Fixed
 - **Search** no longer gives up early on large workspaces. It checks names first and runs the full path checks
   only on folders and on matches, so it covers far more of a big workspace in the same 5 seconds. It returns
-  shallower matches first and searches the folder you are in and its subfolders. What it can return is unchanged.
+  shallower matches first and searches the folder you are in and its subfolders; below the root, the search box
+  names that folder. What it can return is unchanged.
 - When a search stops early, Cloud Files now says how many items it checked and that some matches may be missing.
   This includes searches with no matches so far, which used to show a bare "No matching files". The result-limit
   note asks you to type more, and the folder-size note no longer says "Showing the first 1 items".

@@ -200,3 +200,69 @@ def test_i6_end_of_walk_visit_cap_precedes_time(client, api, fs, monkeypatch):
 def test_i8_search_budget_constants(api):
     assert api.SEARCH_VISIT_LIMIT == 1_000_000
     assert api.SEARCH_SECONDS == 5.0
+
+
+def test_i5_scope_through_an_internal_link(client, api, fs):
+    root, _ = fs
+    (root / "docs/inner").mkdir(parents=True)
+    (root / "docs/inner/needle.txt").touch()
+    (root / "alias").symlink_to(root / "docs", target_is_directory=True)
+    body = get(client, "search", root="r0", path="alias", q="needle")
+    assert [e["rel"] for e in body["results"]] == ["alias/inner/needle.txt"]
+    assert body["skipped"] == 0
+
+
+@pytest.mark.parametrize("path", ["", "me"])
+def test_i3_home_root_dot_names_cost_nothing(client, api, fs, monkeypatch, path):
+    root, _ = fs
+    for name in (".config", ".ssh", "docs"):
+        (root / name).mkdir()
+    (root / "a.txt").touch()
+    (root / "me").symlink_to(root, target_is_directory=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: root))
+    selected = api._roots()[0]
+    monkeypatch.setattr(api, "_request_root", lambda _: (selected, {}))
+    entry, resolve, calls, resolutions = api._entry, api._resolve, [], []
+    def counted_entry(selected, item):
+        calls.append(item.name)
+        return entry(selected, item)
+    def counted_resolve(selected, rel, **kwargs):
+        resolutions.append(rel)
+        return resolve(selected, rel, **kwargs)
+    monkeypatch.setattr(api, "_entry", counted_entry)
+    monkeypatch.setattr(api, "_resolve", counted_resolve)
+    body = get(client, "search", root="r0", path=path, q=".")
+    prefix = f"{path}/" if path else ""
+    assert [e["rel"] for e in body["results"]] == [f"{prefix}a.txt"]
+    assert calls == ["a.txt"]  # home-root dot names never reach _entry, also through a link to the root
+    assert resolutions == [path, path, f"{prefix}docs"]  # and no dot folder is queued
+
+
+def test_i6_time_cap_is_inclusive(client, api, fs, monkeypatch):
+    (fs[0] / "one").touch()
+    ticks = iter([0.0, 5.0])
+    monkeypatch.setattr(api, "time", SimpleNamespace(monotonic=lambda: next(ticks, 5.0)))
+    body = get(client, "search", root="r0", q="absent")
+    assert body["reason"] == "time" and body["visited"] == 0
+
+
+def test_i2_unreadable_entry_type_is_not_descended(client, api, fs, monkeypatch):
+    root, _ = fs
+    (root / "folder").mkdir()
+    (root / "folder/needle.txt").touch()
+    scan = api.os.scandir
+
+    class Unreadable:
+        def __init__(self, item):
+            self.name, self.path = item.name, item.path
+
+        def is_dir(self, follow_symlinks=True):
+            raise PermissionError("fixture: type unreadable")
+
+    @contextmanager
+    def failing(folder):
+        with scan(folder) as entries:
+            yield iter([Unreadable(e) if e.name == "folder" else e for e in entries])
+    monkeypatch.setattr(api.os, "scandir", failing)
+    body = get(client, "search", root="r0", q="needle")
+    assert body["results"] == [] and body["skipped"] == 0

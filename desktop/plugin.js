@@ -26,6 +26,7 @@ var S = {
   retry: "Retry",
   root: "Folder",
   search: "Search files",
+  searchIn: (folder) => `Search in ${folder}`,
   newFolder: "New folder",
   uploadFiles: "Upload files",
   uploadFolder: "Upload folder",
@@ -34,8 +35,8 @@ var S = {
   emptyFolder: "This folder is empty \u2014 drop files here or use Upload",
   noResults: "No matching files",
   truncated: (n) => n === 1 ? "Showing the first item" : `Showing the first ${n} items`,
-  searchMore: (n) => `Showing the first ${n} matches. Type more to narrow the search.`,
-  searchStopped: (visited) => `Search stopped after checking ${visited.toLocaleString()} items, so some matches may be missing. Open a folder to search inside it.`,
+  searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
+  searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: "No matches found so far",
   dropTo: (folder) => `Drop to upload to ${folder}`,
   copied: (n) => n === 1 ? "Path copied" : `${n} paths copied`,
@@ -686,7 +687,8 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
   ] });
 }
 function BrowserSearch({ b, label = S.search }) {
-  return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": label, onChange: b.setSearch, placeholder: label, value: b.search }) });
+  const folder = b.path?.split("/").pop();
+  return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": label, onChange: b.setSearch, placeholder: folder ? S.searchIn(folder) : label, value: b.search }) });
 }
 function sortEntries(entries, highlights, atRoot) {
   const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;

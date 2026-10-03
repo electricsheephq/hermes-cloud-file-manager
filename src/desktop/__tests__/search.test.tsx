@@ -9,7 +9,7 @@ import { fakeBackend, ROOTS } from './fake-backend'
 import { createTestContext, resetHost, resetQueryCache } from './sdk-mock'
 
 const result = { name: 'match.txt', rel: 'docs/match.txt', abs: '/home/agent/docs/match.txt', is_dir: false, size: 1, mtime: 0 }
-const stopped = 'Search stopped after checking 12,345 items, so some matches may be missing. Open a folder to search inside it.'
+const stopped = `Search stopped after checking ${(12345).toLocaleString()} items, so some matches may be missing. Open a folder to search inside it.`
 const search = () => fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'pdf' } })
 
 function setup(response?: SearchResponse) {
@@ -65,7 +65,7 @@ it('sends the current subfolder from the picker', async () => {
 })
 
 it.each([
-  ['results', 'Showing the first 1 matches. Type more to narrow the search.'],
+  ['results', 'Showing the first match. Type more to narrow the search.'],
   ['time', stopped],
   ['visits', stopped],
   [undefined, 'Showing the first item'],
@@ -94,6 +94,23 @@ it.each(['time', 'visits'] as const)('explains an empty search stopped by %s', a
   expect(await screen.findByText('No matches found so far')).toBeTruthy()
   expect(screen.getByText(stopped)).toBeTruthy()
   expect(screen.queryByText('No matching files')).toBeNull()
+})
+
+it('words a search stopped before checking anything without a count', async () => {
+  setup({ ok: true, results: [], truncated: true, reason: 'time', visited: 0 })
+  render(<CloudFilesPage />)
+  await screen.findByText('docs')
+  search()
+  expect(await screen.findByText('Search stopped early, so some matches may be missing. Open a folder to search inside it.')).toBeTruthy()
+})
+
+it('names the folder being searched below the root, keeping the field label', async () => {
+  setup()
+  render(<CloudFilesPage />)
+  expect((await screen.findByLabelText('Search files')).getAttribute('placeholder')).toBe('Search files')
+  fireEvent.doubleClick(await screen.findByText('docs'))
+  await screen.findByText('a.pdf')
+  expect(screen.getByLabelText('Search files').getAttribute('placeholder')).toBe('Search in docs')
 })
 
 it('keeps the ordinary empty state for a complete search', async () => {
