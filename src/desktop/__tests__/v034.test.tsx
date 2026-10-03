@@ -6,6 +6,9 @@ import { formatInsertText } from '../format'
 import { fakeBackend } from './fake-backend'
 import { createTestContext, host, resetHost, resetQueryCache, useQueryClient } from './sdk-mock'
 
+// Several cases render 2,500 rows in jsdom, which takes a few seconds on CI runners (about 5x this Mac).
+vi.setConfig({ testTimeout: 30_000 })
+
 const entry = (rel: string, is_dir = false): Entry => ({ name: rel.split('/').pop()!, rel, abs: `/home/agent/${rel}`, is_dir, size: 1, mtime: 0 })
 const files = (n: number, folder = '') => Array.from({ length: n }, (_, i) => entry(`${folder ? folder + '/' : ''}f${String(i).padStart(4, '0')}.txt`))
 const rows = () => [...document.querySelectorAll('[data-entry]')].map(row => row.getAttribute('data-entry'))
