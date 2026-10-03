@@ -119,7 +119,10 @@ declare module '@hermes/plugin-sdk' {
     staleTime?: number
     placeholderData?: (previousData: T | undefined, previousQuery: { queryKey: readonly unknown[] } | undefined) => T | undefined
   }): UseQueryResult<T>
-  export function useQueryClient(): { invalidateQueries(filters: { queryKey: readonly unknown[] }): Promise<void> }
+  export function useQueryClient(): {
+    invalidateQueries(filters: { queryKey: readonly unknown[] }): Promise<void>
+    getQueryData<T = unknown>(queryKey: readonly unknown[]): T | undefined
+  }
 
   // UI kit: loosely typed on purpose; the app owns the real props.
   export const Button: ComponentType<any>

@@ -225,7 +225,7 @@ import {
   host as host3,
   Input,
   Skeleton as Skeleton4,
-  useQueryClient,
+  useQueryClient as useQueryClient2,
   useValue as useValue3
 } from "@hermes/plugin-sdk";
 import { useEffect as useEffect3, useRef as useRef2, useState as useState4, useSyncExternalStore as useSyncExternalStore2 } from "react";
@@ -247,6 +247,7 @@ import {
   SelectValue,
   Skeleton,
   useQuery,
+  useQueryClient,
   useValue
 } from "@hermes/plugin-sdk";
 import { useEffect, useMemo, useState } from "react";
@@ -726,13 +727,24 @@ function sortEntries(entries, highlights, atRoot) {
   const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name));
 }
-async function listUpTo([connectionId, profile], root, path, count) {
+async function listUpTo([connectionId, profile], root, path, count, shown) {
+  const read = (offset, limit) => {
+    if ((host.state.connectionId.get() ?? "local") !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged);
+    return call(query("/list", { root, path, offset, limit }));
+  };
+  const have = shown?.entries.length ?? 0;
+  if (shown && have && have < count && count - have < LIST_PAGE_MAX) {
+    const next = await read(have - 1, count - have + 1);
+    if (next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
+      const seen2 = new Set(shown.entries.map((entry) => entry.abs));
+      return { ...next, entries: [...shown.entries, ...next.entries.filter((entry) => !seen2.has(entry.abs))] };
+    }
+  }
   const seen = /* @__PURE__ */ new Set();
   const entries = [];
   let last;
   for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
-    if ((host.state.connectionId.get() ?? "local") !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged);
-    last = await call(query("/list", { root, path, offset, limit: Math.min(LIST_PAGE_MAX, count - offset) }));
+    last = await read(offset, Math.min(LIST_PAGE_MAX, count - offset));
     for (const entry of last.entries) if (!seen.has(entry.abs)) {
       seen.add(entry.abs);
       entries.push(entry);
@@ -749,10 +761,18 @@ function EntryList({ b, height, onOpenFile }) {
   const count = range.folder === folder ? range.count : LIST_LIMIT;
   if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT });
   const listingKey = ["hcfm", connectionId, profile, "list", rootId, b.path, count];
+  const client = useQueryClient();
   const searching = Boolean(b.query);
   const listing = useQuery({
     queryKey: listingKey,
-    queryFn: () => listUpTo([connectionId, profile], rootId, b.path, count),
+    // A first read of this count is a Load more: hand it the listing on screen (the previous count).
+    queryFn: () => listUpTo(
+      [connectionId, profile],
+      rootId,
+      b.path,
+      count,
+      client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 6), count - LIST_LIMIT]) : void 0
+    ),
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
     retry: 1
@@ -1651,7 +1671,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
 function Files({ profile, roots, doc, setDoc }) {
   const b = useBrowser(roots, "page");
   const guard = useLeaveGuard(doc);
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient2();
   const [newFolder, setNewFolder] = useState4(false);
   const filesInput = useRef2(null);
   const folderInput = useRef2(null);

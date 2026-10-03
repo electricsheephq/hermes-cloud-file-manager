@@ -115,6 +115,7 @@ export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData
 }
 export function useQueryClient() {
   return {
+    getQueryData: <T,>(queryKey: readonly unknown[]) => cache.get(JSON.stringify(queryKey))?.data as T | undefined,
     invalidateQueries: async ({ queryKey }: { queryKey: readonly unknown[] }) => {
       const prefix = JSON.stringify(queryKey).slice(0, -1)
       await Promise.all([...cache].filter(([key]) => key.startsWith(prefix)).map(([, entry]) => fetchEntry(entry)))

@@ -17,6 +17,7 @@ import {
   SelectValue,
   Skeleton,
   useQuery,
+  useQueryClient,
   useValue
 } from '@hermes/plugin-sdk'
 import { type CSSProperties, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react'
@@ -235,16 +236,30 @@ function sortEntries(entries: Entry[], highlights: string[], atRoot: boolean): E
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
 }
 
-/** The first count entries, deduplicated by abs if a folder changes between capped chunks. The plugin's REST
- *  client follows the selected agent, so each chunk is sent only while this listing's agent is still selected:
- *  after a switch the listing fails rather than mixing two agents' files under one query key. */
-async function listUpTo([connectionId, profile]: [string, string], root: string, path: string, count: number): Promise<ListResponse> {
+/** The first count entries. The gateway scans the whole folder for every request, so a Load more (the first read
+ *  of a larger count, given the listing on screen) reads only the new slice when the shown rows still line up: it
+ *  re-reads the last shown entry too, and appends only if that entry is still in its place and the total is
+ *  unchanged. Any other read re-reads the whole range in capped chunks, deduplicated by abs if the folder changes
+ *  between them. The plugin's REST client follows the selected agent, so each request is sent only while this
+ *  listing's agent is still selected: after a switch the listing fails rather than mixing two agents' files. */
+async function listUpTo([connectionId, profile]: [string, string], root: string, path: string, count: number, shown?: ListResponse): Promise<ListResponse> {
+  const read = (offset: number, limit: number) => {
+    if ((host.state.connectionId.get() ?? 'local') !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged)
+    return call<ListResponse>(query('/list', { root, path, offset, limit }))
+  }
+  const have = shown?.entries.length ?? 0
+  if (shown && have && have < count && count - have < LIST_PAGE_MAX) {
+    const next = await read(have - 1, count - have + 1)
+    if (next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
+      const seen = new Set(shown.entries.map(entry => entry.abs))
+      return { ...next, entries: [...shown.entries, ...next.entries.filter(entry => !seen.has(entry.abs))] }
+    }
+  }
   const seen = new Set<string>()
   const entries: Entry[] = []
   let last: ListResponse | undefined
   for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
-    if ((host.state.connectionId.get() ?? 'local') !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged)
-    last = await call<ListResponse>(query('/list', { root, path, offset, limit: Math.min(LIST_PAGE_MAX, count - offset) }))
+    last = await read(offset, Math.min(LIST_PAGE_MAX, count - offset))
     for (const entry of last.entries) if (!seen.has(entry.abs)) { seen.add(entry.abs); entries.push(entry) }
     if (offset + last.entries.length >= last.total) break
   }
@@ -261,10 +276,13 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const count = range.folder === folder ? range.count : LIST_LIMIT
   if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT })
   const listingKey = ['hcfm', connectionId, profile, 'list', rootId, b.path, count]
+  const client = useQueryClient()
   const searching = Boolean(b.query)
   const listing = useQuery({
     queryKey: listingKey,
-    queryFn: () => listUpTo([connectionId, profile], rootId, b.path, count),
+    // A first read of this count is a Load more: hand it the listing on screen (the previous count).
+    queryFn: () => listUpTo([connectionId, profile], rootId, b.path, count,
+      client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 6), count - LIST_LIMIT]) : undefined),
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
     retry: 1

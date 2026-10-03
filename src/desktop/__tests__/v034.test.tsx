@@ -60,29 +60,48 @@ it.each([false, true])('%s: L1/L6 keeps 500 rows during Load more, then shows al
   expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
   if (picker) expect(within(dialog()).getAllByRole('listitem')).toHaveLength(812)
 })
-it('L2: count 2500 uses capped chunks at offsets 0 and 2000', async () => {
+it('L2: each Load more reads only the new slice; a refetch re-reads the whole range in capped chunks', async () => {
   const { calls } = setup({ '': files(2600) })
   await flush()
-  for (let i = 0; i < 3; i++) await more()
-  const start = calls.length
-  await more()
-  expect(calls.slice(start).filter(c => c.path === '/list').map(c => [c.params.offset, c.params.limit])).toEqual([['0', '2000'], ['2000', '500']])
+  const lists = (from: number) => calls.slice(from).filter(c => c.path === '/list').map(c => [c.params.offset, c.params.limit])
+  let start = calls.length
+  for (let i = 0; i < 4; i++) await more()
+  expect(lists(start)).toEqual([['499', '501'], ['999', '501'], ['1499', '501'], ['1999', '501']])
   expect(rows()).toHaveLength(2500)
+  expect(new Set(rows()).size).toBe(2500)
   expect(screen.getByText(`Showing ${(2500).toLocaleString()} of ${(2600).toLocaleString()} items`)).toBeTruthy()
+  start = calls.length
+  fireEvent.click(button('Invalidate')); await flush()
+  expect(lists(start)).toContainEqual(['2000', '500'])
+  expect(lists(start).some(([, limit]) => limit === '501')).toBe(false)
+  expect(rows()).toHaveLength(2500)
 })
 it('L7: an agent switch while a chunk is pending sends no later chunk to the new agent', async () => {
   const backend = setup({ '': files(2600) })
   await flush()
-  for (let i = 0; i < 3; i++) await more()
+  for (let i = 0; i < 4; i++) await more()
   backend.hold()
-  fireEvent.click(button('Load more'))
+  fireEvent.click(button('Invalidate'))
   await flush()
-  expect(backend.calls.at(-1)!.params).toMatchObject({ offset: '0', limit: '2000' })
+  expect(backend.calls.some(c => c.path === '/list' && c.params.offset === '0' && c.params.limit === '2000')).toBe(true)
   const start = backend.calls.length
   act(() => host.state.profile.set('other'))
   await act(async () => backend.release())
   await flush(4)
   expect(backend.calls.slice(start).some(c => c.path === '/list' && c.params.offset === '2000')).toBe(false)
+})
+it.each([
+  ['the total changed', (folder: Entry[]) => void folder.unshift(entry('a-first.txt'))],
+  ['the last shown row moved', (folder: Entry[]) => { folder.splice(10, 1); folder.push(entry('zz-last.txt')) }]
+])('L8: Load more re-reads the whole range when %s', async (_, change) => {
+  const folder = files(812)
+  const { calls } = setup({ '': folder })
+  await flush()
+  change(folder)
+  const start = calls.length
+  await more()
+  expect(calls.slice(start).filter(c => c.path === '/list').map(c => [c.params.offset, c.params.limit])).toEqual([['499', '501'], ['0', '1000']])
+  expect(rows()).toEqual(folder.map(e => e.rel))
 })
 it('L3: another folder never shows previous rows and each navigation resets count', async () => {
   setup({ '': [entry('A', true), entry('B', true)], A: files(1200, 'A'), B: files(812, 'B') })
