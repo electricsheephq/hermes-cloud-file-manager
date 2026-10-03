@@ -70,6 +70,20 @@ it('L2: count 2500 uses capped chunks at offsets 0 and 2000', async () => {
   expect(rows()).toHaveLength(2500)
   expect(screen.getByText(`Showing ${(2500).toLocaleString()} of ${(2600).toLocaleString()} items`)).toBeTruthy()
 })
+it('L7: an agent switch while a chunk is pending sends no later chunk to the new agent', async () => {
+  const backend = setup({ '': files(2600) })
+  await flush()
+  for (let i = 0; i < 3; i++) await more()
+  backend.hold()
+  fireEvent.click(button('Load more'))
+  await flush()
+  expect(backend.calls.at(-1)!.params).toMatchObject({ offset: '0', limit: '2000' })
+  const start = backend.calls.length
+  act(() => host.state.profile.set('other'))
+  await act(async () => backend.release())
+  await flush(4)
+  expect(backend.calls.slice(start).some(c => c.path === '/list' && c.params.offset === '2000')).toBe(false)
+})
 it('L3: another folder never shows previous rows and each navigation resets count', async () => {
   setup({ '': [entry('A', true), entry('B', true)], A: files(1200, 'A'), B: files(812, 'B') })
   await flush()

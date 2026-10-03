@@ -235,12 +235,15 @@ function sortEntries(entries: Entry[], highlights: string[], atRoot: boolean): E
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
 }
 
-/** The first count entries, deduplicated by abs if a folder changes between capped chunks. */
-async function listUpTo(root: string, path: string, count: number): Promise<ListResponse> {
+/** The first count entries, deduplicated by abs if a folder changes between capped chunks. The plugin's REST
+ *  client follows the selected agent, so each chunk is sent only while this listing's agent is still selected:
+ *  after a switch the listing fails rather than mixing two agents' files under one query key. */
+async function listUpTo([connectionId, profile]: [string, string], root: string, path: string, count: number): Promise<ListResponse> {
   const seen = new Set<string>()
   const entries: Entry[] = []
   let last: ListResponse | undefined
   for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
+    if ((host.state.connectionId.get() ?? 'local') !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged)
     last = await call<ListResponse>(query('/list', { root, path, offset, limit: Math.min(LIST_PAGE_MAX, count - offset) }))
     for (const entry of last.entries) if (!seen.has(entry.abs)) { seen.add(entry.abs); entries.push(entry) }
     if (offset + last.entries.length >= last.total) break
@@ -261,7 +264,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const searching = Boolean(b.query)
   const listing = useQuery({
     queryKey: listingKey,
-    queryFn: () => listUpTo(rootId, b.path, count),
+    queryFn: () => listUpTo([connectionId, profile], rootId, b.path, count),
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
     retry: 1

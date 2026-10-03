@@ -37,6 +37,7 @@ var S = {
   truncated: (n) => n === 1 ? "Showing the first item" : `Showing the first ${n} items`,
   showingOf: (n, total) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
   loadMore: "Load more",
+  agentChanged: "The selected agent changed while this folder was loading.",
   firstOnly: (n) => `Showing the first ${n.toLocaleString()} items. Search finds the rest.`,
   searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
@@ -725,11 +726,12 @@ function sortEntries(entries, highlights, atRoot) {
   const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name));
 }
-async function listUpTo(root, path, count) {
+async function listUpTo([connectionId, profile], root, path, count) {
   const seen = /* @__PURE__ */ new Set();
   const entries = [];
   let last;
   for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
+    if ((host.state.connectionId.get() ?? "local") !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged);
     last = await call(query("/list", { root, path, offset, limit: Math.min(LIST_PAGE_MAX, count - offset) }));
     for (const entry of last.entries) if (!seen.has(entry.abs)) {
       seen.add(entry.abs);
@@ -750,7 +752,7 @@ function EntryList({ b, height, onOpenFile }) {
   const searching = Boolean(b.query);
   const listing = useQuery({
     queryKey: listingKey,
-    queryFn: () => listUpTo(rootId, b.path, count),
+    queryFn: () => listUpTo([connectionId, profile], rootId, b.path, count),
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
     retry: 1

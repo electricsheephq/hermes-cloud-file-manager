@@ -30,6 +30,7 @@ export const S = {
   truncated: (n: number) => n === 1 ? 'Showing the first item' : `Showing the first ${n} items`,
   showingOf: (n: number, total: number) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
   loadMore: 'Load more',
+  agentChanged: 'The selected agent changed while this folder was loading.',
   firstOnly: (n: number) => `Showing the first ${n.toLocaleString()} items. Search finds the rest.`,
   searchMore: (n: number) => `Showing the first ${n === 1 ? 'match' : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited: number) =>
