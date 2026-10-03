@@ -464,3 +464,31 @@ def test_read_opens_in_binary_mode(client, api, fs, monkeypatch):
     monkeypatch.setattr(api.os, "open", record)
     assert get(client, "file", root="r0", path="note.md")["text"] == "a\r\nb"
     assert flags and all(mode & fake for mode in flags)
+
+
+@pytest.mark.parametrize("route,change", [("read", "append"), ("read", "rewrite"), ("save", "append")])
+def test_torn_read_refused(client, api, fs, monkeypatch, route, change):
+    target = fs[0] / "note.md"
+    original = b"a" * 65536 + b"tail"
+    target.write_bytes(original)
+    os.utime(target, (946684800, 946684800))  # even a coarse clock must see the rewrite
+    initial = target.stat()
+    read, changed = api.os.read, []
+    expected = original + b"appended" if change == "append" else b"b" * len(original)
+
+    def mutate(fd, size):
+        info = os.fstat(fd)
+        chunk = read(fd, size)
+        if not changed and (info.st_dev, info.st_ino) == (initial.st_dev, initial.st_ino):
+            # The first chunk is already read; a separate handle changes the remainder in place.
+            with target.open("ab" if change == "append" else "r+b") as writer:
+                writer.write(b"appended" if change == "append" else expected)
+            changed.append(True)
+        return chunk
+
+    monkeypatch.setattr(api.os, "read", mutate)
+    body = get(client, "file", root="r0", path="note.md") if route == "read" else save(client, base=original, text="sent text")
+    assert changed == [True]
+    assert target.read_bytes() == expected
+    assert list(fs[0].glob(".cfm-*.part")) == []
+    error(body, "changed")

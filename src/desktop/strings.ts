@@ -97,6 +97,7 @@ export const S = {
   save: 'Save',
   backToEditing: 'Back to editing',
   saved: 'Saved',
+  notSaved: (name: string, reason: string) => `${name} wasn't saved. ${reason}`,
   loadingFile: 'Opening…',
   noChanges: 'No changes',
   diffSummary: (added: number, removed: number) => `+${added} −${removed} lines`,

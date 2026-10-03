@@ -581,3 +581,120 @@ describe('editor: leaving', () => {
     expect(textarea()).toBeNull()
   })
 })
+
+describe('editor: follow-up timing', () => {
+  it('D1: settles a Save on the remounted page and sends the new sha on the next Save', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    const { view, saves } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    await editTo('readme.md', 'saved text\n')
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await flush(2)
+    view.unmount()
+    render(<CloudFilesPage />)
+    await waitFor(() => expect(textarea()?.value).toBe('saved text\n'))
+    expect($drafts.get().size).toBe(0)
+    await act(async () => answer({ ok: true, sha256: fakeSha('saved text\n') }))
+    expect(textarea()).toBeNull()
+    expect(screen.getByTestId('md').textContent).toBe('saved text\n')
+    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    fireEvent.click(button('Edit'))
+    fireEvent.change(textarea()!, { target: { value: 'next text\n' } })
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await flush(2)
+    expect(saves()).toHaveLength(2)
+    expect(saves()[1].opts.body.base_sha256).toBe(fakeSha('saved text\n'))
+    await act(async () => answer({ ok: true, sha256: fakeSha('next text\n') }))
+  })
+
+  it('D2: does not rebase a parked draft from a different load of the same file and sha', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    const { view } = setup({ '/file/save': () => new Promise(resolve => (answer = resolve)) })
+    await editTo('readme.md', 'sent\n')
+    fireEvent.click(button('Review & save'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+    await flush(2)
+    view.unmount()
+    const original = [...$drafts.get().values()][0]
+    const next = render(<CloudFilesPage />)
+    await waitFor(() => expect(textarea()?.value).toBe('sent\n'))
+    fireEvent.click(button('Cancel'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Discard' }))
+    fireEvent.click(button('Close'))
+    await editTo('readme.md', 'different load\n')
+    next.unmount()
+    const parked = [...$drafts.get().values()][0]
+    expect(parked.id).not.toBe(original.id)
+    expect(parked.sha).toBe(original.sha)
+    await act(async () => answer({ ok: true, sha256: fakeSha('sent\n') }))
+    expect([...$drafts.get().values()]).toEqual([parked])
+    expect(parked).toMatchObject({ draft: 'different load\n', base: TEXTS['readme.md'], sha: fakeSha(TEXTS['readme.md']), mode: 'edit' })
+  })
+
+  it.each(['back', 'review', 'unmounted'] as const)('D3–D5: a network failure with Review %s stays visible', async where => {
+    let fail: (error: unknown) => void = () => undefined
+    const { view } = setup({ '/file/save': () => new Promise((_resolve, reject) => (fail = reject)) })
+    const notify = vi.spyOn(host, 'notify')
+    try {
+      await editTo('readme.md', 'keep my draft\n')
+      fireEvent.click(button('Review & save'))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Save' }))
+      await flush(2)
+      if (where === 'back') fireEvent.click(within(dialog()).getByRole('button', { name: 'Back to editing' }))
+      if (where === 'unmounted') view.unmount()
+      await act(async () => fail(new Error('Connection lost')))
+      await flush(2)
+      if (where === 'review') {
+        expect(within(dialog()).getByText('Connection lost')).toBeTruthy()
+        expect(notify).not.toHaveBeenCalled()
+      } else {
+        expect(notify).toHaveBeenCalledExactlyOnceWith({ kind: 'error', message: "readme.md wasn't saved. Connection lost" })
+      }
+      if (where === 'unmounted') {
+        expect([...$drafts.get().values()][0]).toMatchObject({ draft: 'keep my draft\n', sha: fakeSha(TEXTS['readme.md']), mode: 'edit' })
+      } else {
+        expect(textarea()?.value).toBe('keep my draft\n')
+        expect(screen.getByText('Unsaved changes')).toBeTruthy()
+      }
+    } finally {
+      notify.mockRestore()
+    }
+  })
+
+  it.each(['connectionId', 'profile'] as const)('D6: switching %s with no file open restores only that agent’s parked draft', async dimension => {
+    const { view, calls } = setup()
+    await editTo('readme.md', 'agent A draft\n')
+    view.unmount()
+    const back = dimension === 'profile' ? 'default' : 'conn-1'
+    act(() => host.state[dimension].set(dimension === 'profile' ? 'eva' : 'conn-2'))
+    render(<CloudFilesPage />)
+    await screen.findByText('notes.txt')
+    expect(textarea()).toBeNull()
+    act(() => host.state[dimension].set(dimension === 'profile' ? 'other' : 'conn-3'))
+    await screen.findByText('notes.txt')
+    expect(textarea()).toBeNull()
+    expect(screen.getByLabelText('Search files')).toBeTruthy()
+    expect($drafts.get().size).toBe(1)
+    act(() => host.state[dimension].set(back))
+    await waitFor(() => expect(textarea()?.value).toBe('agent A draft\n'))
+    expect(screen.getByText('Editing')).toBeTruthy()
+    expect(screen.getByText('Unsaved changes')).toBeTruthy()
+    expect($drafts.get().size).toBe(0)
+    expect(calls.filter(c => c.path === '/file')).toHaveLength(1)
+  })
+
+  it('D6: switching to an agent with a parked draft does not replace an open file', async () => {
+    const { view } = setup()
+    await editTo('readme.md', 'agent A draft\n')
+    view.unmount()
+    act(() => host.state.profile.set('eva'))
+    render(<CloudFilesPage />)
+    await editTo('notes.txt', 'agent B draft\n')
+    act(() => host.state.profile.set('default'))
+    await screen.findByRole('status')
+    expect(textarea()?.value).toBe('agent B draft\n')
+    expect(screen.getByLabelText('notes.txt')).toBeTruthy()
+    expect([...$drafts.get().values()][0]).toMatchObject({ name: 'readme.md', draft: 'agent A draft\n' })
+  })
+})
