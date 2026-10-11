@@ -2,6 +2,16 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.7] - 2026-10-12
+
+Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.
+
+### Fixed
+- Switching to an agent without Cloud Files (or without Google Drive) no longer closes a **+ → Cloud** or
+  **+ → Google Drive** picker you opened on the previous agent. It stays open with a note to switch back;
+  an import already started on the previous agent continues when you switch back. Closing the picker closes it
+  and stops its import.
+
 ## [0.3.6] - 2026-10-12
 
 Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.

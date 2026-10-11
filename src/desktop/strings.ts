@@ -71,6 +71,15 @@ export const S = {
   tooLarge: (max: number) => `Too large (max ${mb(max)})`,
   // Picker
   pickerTitle: 'Attach from Cloud Files',
+  // Same profile name means only the connection changed, so the names wouldn't tell the agents apart.
+  pickerPinnedElsewhere: (current: string, pinned: string) =>
+    current === pinned
+      ? "Cloud Files isn't set up on the agent you switched to. Switch back to the agent you opened this on to keep picking files there."
+      : `Cloud Files isn't set up on ${current}. Switch back to ${pinned} to keep picking files there.`,
+  drivePinnedElsewhere: (current: string, pinned: string) =>
+    current === pinned
+      ? "Google Drive isn't available on the agent you switched to. Switch back to the agent you opened this on to keep importing; an import already started there continues when you switch back."
+      : `Google Drive isn't available on ${current}. Switch back to ${pinned} to keep importing; an import already started there continues when you switch back.`,
   selected: (n: number) => `${n} selected`,
   insert: 'Insert locations',
   lineBreakSkipped: (n: number) => n === 1 ? 'A selected name has a line break, so it won’t be inserted.' : `${n} selected names have a line break, so they won’t be inserted.`,

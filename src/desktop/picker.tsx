@@ -23,7 +23,7 @@ import { formatInsertText, hasLineBreak } from './format'
 import { currentPin } from './page'
 import { S } from './strings'
 import type { AgentPin } from './upload'
-import { pluginCtx, rest, type RootsResponse } from './api'
+import { $available, $driveAvailable, pluginCtx, rest, type RootsResponse } from './api'
 
 export const $pickerOpen = atom(false)
 /** `insertText` of the composer whose "+" menu opened the picker. */
@@ -53,6 +53,15 @@ const pinReady = (pin: AgentPin) =>
 const $touched = atom(false)
 let openPin: null | AgentPin = null
 let stopWatching: () => void = () => undefined
+
+/** True only while the open picker is pinned to a different agent than the selected one. */
+export function pickerPinnedElsewhere(): boolean {
+  return $pickerOpen.get() && openPin !== null &&
+    (openPin.profile !== host.state.profile.get() || openPin.connectionId !== host.state.connectionId.get())
+}
+
+/** The open picker's profile, without exposing its mutable pin. */
+export const pickerPinProfile = () => openPin?.profile
 
 function watchOpen() {
   unwatch()
@@ -168,7 +177,14 @@ function PickerDialog() {
   const source = useValue($pickerSource)
   const finished = useValue($finished)
   const job = useImport(useValue($pickerJob))
-  const notice = finished ? S.importedTo(finished.pin.profile) : mismatch ? S.ownerMismatch(owner!.profile, profile) : null
+  const available = useValue($available)
+  const driveAvailable = useValue($driveAvailable)
+  const unavailable = available === false || (source === 'drive' && driveAvailable === false)
+  const pending = available === null || (source === 'drive' && driveAvailable !== true && driveAvailable !== false)
+  const notice = finished ? S.importedTo(finished.pin.profile)
+    : !pending && unavailable && pickerPinnedElsewhere()
+      ? (source === 'drive' ? S.drivePinnedElsewhere : S.pickerPinnedElsewhere)(profile, pickerPinProfile()!)
+      : mismatch && !pending ? S.ownerMismatch(owner!.profile, profile) : null
 
   return (
     <Dialog onOpenChange={(next: boolean) => !next && closePicker()} open>
@@ -181,6 +197,8 @@ function PickerDialog() {
             <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{notice}</p>
             {finished && job && <ImportFailures failures={job.failures} />}
           </>
+        ) : pending || unavailable ? (
+          <div aria-busy="true" style={{ height: 360 }} />
         ) : (
           <PickerBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} source={source} />
         )}

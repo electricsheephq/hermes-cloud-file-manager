@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
 import { fakeBackend } from './fake-backend'
-import { bindContext } from '../api'
+import { $available, bindContext } from '../api'
 import { $hostClaim, $pickerOpen, cloudProvider, PickerHost } from '../picker'
 
 const TICK = '`'
@@ -13,6 +13,7 @@ function open(insertText = vi.fn()) {
 }
 
 beforeEach(() => {
+  $available.set(true) // Direct host mounts stand in for an already registered Cloud provider.
   resetQueryCache()
   resetHost()
   bindContext(createTestContext({ rest: fakeBackend().rest }).ctx as any)

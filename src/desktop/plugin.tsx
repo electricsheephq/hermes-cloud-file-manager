@@ -12,7 +12,7 @@ import {
 import { $available, $driveAvailable, bindContext, isNotFoundError } from './api'
 import { $driveJob } from './drive'
 import { $batch, CloudFilesPage } from './page'
-import { $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost } from './picker'
+import { $pickerOpen, $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost, pickerPinnedElsewhere } from './picker'
 import { S } from './strings'
 
 export const PLUGIN_ID = 'hermes-cloud-file-manager'
@@ -21,9 +21,9 @@ const PROBE_INTERVAL_MS = 60_000
 
 export { isNotFoundError }
 
-/** Sidebar row, "+ → Cloud" provider and the picker host only while the selected agent's backend answers
- *  /available; the route stays registered so a restored /cloud-files never falls through to the session
- *  route. Transport errors keep the last answer only for the same agent. While it is available, /drive/available (same triggers, same
+/** Sidebar row and "+ → Cloud" provider only while the selected agent's backend answers /available; an open
+ *  picker pinned elsewhere keeps its host even after a negative answer. The route stays registered so a restored
+ *  /cloud-files never falls through to the session route. Transport errors keep the last answer only for the same agent. While it is available, /drive/available (same triggers, same
  *  newest-probe-wins rule) adds "+ → Google Drive" and the page's Drive source; a 404 there means an older
  *  gateway half without Drive. */
 export function registerAvailabilityGate(ctx: PluginContext, onChange?: (available: boolean | null) => void) {
@@ -36,10 +36,11 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   const setDrive = (available: boolean) => {
     if (disposed) return
     if ($driveAvailable.get() !== available) $driveAvailable.set(available)
+    // An agent switch already dropped the provider, so a "no" for the picker's own agent closes it either way.
+    if (!available && $pickerOpen.get() && $pickerSource.get() === 'drive' && !pickerPinnedElsewhere()) closePicker()
     if (available && !driveRemover) {
       driveRemover = ctx.register({ id: 'attach-drive', area: COMPOSER_AREAS.attachments, data: driveProvider })
     } else if (!available && driveRemover) {
-      if ($pickerSource.get() === 'drive') closePicker()
       driveRemover()
       driveRemover = null
     }
@@ -68,7 +69,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     }
     if (available && !pickerRemover) {
       pickerRemover = ctx.register({ id: 'picker-host', area: COMPOSER_AREAS.underside, render: () => <PickerHost /> })
-    } else if (available === false) {
+    } else if (available === false && !pickerPinnedElsewhere()) {
       closePicker()
       pickerRemover?.()
       pickerRemover = null
@@ -104,7 +105,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   // listen, not subscribe: Nano Stores' subscribe also fires at once, which would triple the first probe.
   // A new agent starts without Drive until its own probe answers: one agent's Drive answer never carries over
   // to another, even when the new probe is slow or fails in transport. An open Drive picker stays (pinned and
-  // paused) until the new answer says Drive is unavailable.
+  // paused) even if the new agent has no Cloud Files or Drive; only its pinned agent's no closes it.
   const onAgentChange = () => {
     if (!disposed) {
       set(null)
@@ -114,7 +115,15 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     }
     void probe()
   }
-  const unsubscribers = [host.state.profile.listen(onAgentChange), host.state.connectionId.listen(onAgentChange)]
+  const unsubscribers = [
+    host.state.profile.listen(onAgentChange), host.state.connectionId.listen(onAgentChange),
+    $pickerOpen.listen(open => {
+      if (!open && known === false && !disposed) {
+        pickerRemover?.()
+        pickerRemover = null
+      }
+    })
+  ]
   ctx.onDispose(() => {
     disposed = true
     unsubscribers.forEach(stop => stop())
