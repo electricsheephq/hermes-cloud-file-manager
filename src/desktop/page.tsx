@@ -63,6 +63,15 @@ export function CloudFilesPage() {
   const connectionId = useValue(host.state.connectionId)
   // The open file lives above the per-agent key: switching agents keeps it on screen behind a banner.
   const [doc, setDoc] = useOpenDoc()
+  if (available === null) {
+    return (
+      <Frame profile={profile}>
+        <div aria-busy="true" style={{ display: 'grid', gap: 6, padding: pad }}>
+          {[0, 1, 2].map(i => <Skeleton key={i} style={{ height: 18 }} />)}
+        </div>
+      </Frame>
+    )
+  }
   if (available === false) {
     return (
       <Frame profile={profile}>

@@ -49,7 +49,8 @@ function pick(container: HTMLElement, files: File[], index = 0) {
 beforeEach(() => {
   resetQueryCache()
   resetHost()
-  $available.set(null)
+  // these suites model an agent whose gateway answered /available
+  $available.set(true)
   $batch.set(null)
   $drafts.set(new Map())
   $driveJob.set(null)
