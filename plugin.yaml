@@ -12,15 +12,18 @@ tags: [desktop, files, upload, remote, workspace]
 config_schema:
   roots:
     type: list
+    label: "Folders to show"
     default: []
-    description: "Absolute folders on the agent's machine to show in Cloud Files. Empty = the agent's workspace (terminal.cwd, else the gateway user's home)."
+    description: "Absolute folders on the agent's machine to show in Cloud Files, as a JSON list, e.g. [\"/home/me/projects\"]. Empty = the agent's working folder (terminal.cwd), else the gateway user's home."
   folder_notes:
     type: dict
+    label: "Folder notes"
     default: {}
-    description: "Optional short note shown next to a top-level folder, by folder name (e.g. docs: Imported into the agent's knowledge base)."
+    description: "Optional short note shown next to a top-level folder, by folder name, as JSON, e.g. {\"docs\": \"Imported into the agent's knowledge base\"}."
   max_file_mb:
     type: int
+    label: "Largest upload (MiB)"
     default: 100
-    description: "Largest single file the upload accepts, in MiB."
+    description: "Largest single file the upload accepts, in whole MiB. Decimals are rounded down; a value under 1 falls back to 100."
 provides_tools: []
 provides_hooks: []
