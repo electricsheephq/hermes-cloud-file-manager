@@ -95,6 +95,28 @@ describe('D2 focus follows keyboard navigation', () => {
     await waitFor(() => expect(focusedEntry()).toBe('docs/a.pdf'))
   })
 
+  it('a listing that loads after the user moved elsewhere leaves their focus alone', async () => {
+    const backend = fakeBackend()
+    let release: (() => void) | undefined
+    const gate = new Promise<void>(resolve => (release = resolve))
+    const rest = async (full: string, opts?: any) => {
+      const [path, qs = ''] = full.split('?')
+      if (path === '/list' && new URLSearchParams(qs).get('path') === 'docs') await gate
+      return backend.rest(full, opts)
+    }
+    bindContext(createTestContext({ rest }).ctx as any)
+    render(<CloudFilesPage />)
+    await screen.findByText('docs')
+    rowOf('docs').focus()
+    fireEvent.keyDown(rowOf('docs'), { key: 'Enter' })
+    const search = screen.getAllByRole('textbox').find(el => el.getAttribute('aria-label')?.startsWith('Search'))!
+    search.focus()
+    release!()
+    await screen.findByText('a.pdf')
+    await flush()
+    expect(document.activeElement).toBe(search)
+  })
+
   it('Enter on an empty folder focuses the list itself', async () => {
     setup()
     await screen.findByText('zeta')
@@ -143,7 +165,7 @@ describe('D2 focus follows keyboard navigation', () => {
 
 describe('D3 announcements', () => {
   it('the drawer headline is a polite status and both progress bars are labelled', async () => {
-    let release!: () => void
+    let release: (() => void) | undefined
     const { view } = setup({ ...UPLOADS, '/uploads/chunk': (opts: any) => new Promise(resolve => (release = () => resolve(UPLOADS['/uploads/chunk'](opts)))) })
     await screen.findByText('docs')
     pick(view.container, [new File(['hello'], 'a.txt')])
@@ -153,7 +175,8 @@ describe('D3 announcements', () => {
     const status = within(drawer).getByRole('status')
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(status.textContent).toMatch(/^Uploading 1 of 1/)
-    release()
+    await waitFor(() => expect(release).toBeTypeOf('function')) // the chunk request is in flight
+    release!()
     await waitFor(() => expect(status.textContent).toBe('Uploaded 1 of 1'))
   })
 
@@ -212,14 +235,16 @@ describe('D5 an all-invalid roots setting', () => {
     expect(SETTINGS_PATH).toBe('/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager')
   })
 
-  it('the picker shows the same state and closes when Open settings is pressed', async () => {
-    const navigate = vi.spyOn(host, 'navigate')
+  it('the picker shows the same state and closes before Open settings navigates', async () => {
+    let openWhenNavigating: boolean | undefined
+    const navigate = vi.spyOn(host, 'navigate').mockImplementation(() => void (openWhenNavigating = $pickerOpen.get()))
     bindContext(createTestContext({ rest: fakeBackend({ '/roots': () => NO_ROOTS }).rest }).ctx as any)
     render(<PickerHost />)
     act(() => void cloudProvider.run({ insertText: vi.fn() }))
     expect(await screen.findByText('Cloud Files has no folder to show')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
     expect(navigate).toHaveBeenCalledWith(SETTINGS_PATH)
+    expect(openWhenNavigating).toBe(false)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })

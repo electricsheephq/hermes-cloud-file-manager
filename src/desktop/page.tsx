@@ -18,7 +18,7 @@ import {
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
 import { $available, $driveAvailable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse } from './api'
-import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, RootSelect, useBrowser, useRoots } from './browser'
+import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, useBrowser, useRoots } from './browser'
 import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
@@ -214,7 +214,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
   const closeDoc = () => {
     const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null
     // The Close button goes away with the editor: focus the file's row once the list is back (if it is listed).
-    if (doc && folder !== null) b.focusNext.current = doc.path
+    if (doc && folder !== null) requestFocus(b.focusNext, doc.path)
     setDoc(null)
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder)
   }

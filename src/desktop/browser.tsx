@@ -34,19 +34,27 @@ export const DEBOUNCE_MS = 300
 /** Plugin settings in Hermes Desktop; older hosts redirect it to Capabilities ▸ Plugins. */
 export const SETTINGS_PATH = '/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager'
 
-/** Where focus goes once the next listing has loaded: the row whose data-entry is the string, else (or for
+/** Where focus goes once the next listing has loaded: the row whose data-entry is `want`, else (or for
  *  `true`) the first row, else the list itself. Set by keyboard navigation and by closing the editor. */
-export type FocusRequest = MutableRefObject<null | true | string>
+export type FocusRequest = MutableRefObject<null | { want: true | string; from: Element | null }>
+
+/** Asks for focus to move into the list after the next load, remembering where focus is now. */
+export function requestFocus(request: FocusRequest, want: true | string) {
+  request.current = { want, from: document.activeElement }
+}
 
 /** The ref for a list's scroller: after a focus request, moves focus into the list once `ready` (loaded). */
 export function useListFocus(request: FocusRequest, ready: boolean) {
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const want = request.current
-    if (!want || !ready || !list.current) return
+    const req = request.current
+    if (!req || !ready || !list.current) return
     request.current = null
+    // The user moved on while the listing loaded (into Search, a dialog, ...): leave their focus where it is.
+    const now = document.activeElement
+    if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return
     const rows = [...list.current.querySelectorAll<HTMLElement>('[role=listitem]')]
-    ;(rows.find(row => row.getAttribute('data-entry') === want) ?? rows[0] ?? list.current).focus()
+    ;(rows.find(row => row.getAttribute('data-entry') === req.want) ?? rows[0] ?? list.current).focus()
   })
   return list
 }
@@ -198,8 +206,8 @@ export function NoRoots({ reason, onOpenSettings }: { reason?: string; onOpenSet
       <EmptyState description={reason ?? codeText('no_roots')} title={S.noRootsTitle} />
       <Button
         onClick={() => {
-          host.navigate(SETTINGS_PATH)
           onOpenSettings?.()
+          host.navigate(SETTINGS_PATH)
         }}
         size="sm"
         variant="secondary"
@@ -259,7 +267,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
             ) : (
               <Button
                 onClick={(event?: MouseEvent) => {
-                  if (fromKeyboard(event)) b.focusNext.current = true
+                  if (fromKeyboard(event)) requestFocus(b.focusNext, true)
                   onNavigate(crumb.path)
                 }}
                 size="inline"
@@ -431,7 +439,7 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
         // Only keys aimed at the row itself: Space on the nested checkbox is the checkbox's own toggle.
         if (event.target !== event.currentTarget) return
         if (event.key === 'Enter') {
-          if (entry.is_dir && !entry.link_outside) b.focusNext.current = true
+          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, true)
           onOpen(entry)
         }
         if (event.key === ' ') {

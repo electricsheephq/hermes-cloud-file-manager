@@ -5,7 +5,7 @@ import { Button, Checkbox, Codicon, EmptyState, Skeleton, useQuery } from '@herm
 import { type CSSProperties, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
 
 import { call, query } from './api'
-import { DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
+import { DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
 import { type DriveImport, driveIcon, type DriveItem, type DriveListResponse, type ImportFailure, type ImportSnapshot } from './drive'
 import { humanSize, shortDate } from './format'
 import { S } from './strings'
@@ -63,7 +63,7 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
           ) : (
             <Button
               onClick={(event?: MouseEvent) => {
-                if (fromKeyboard(event)) d.focusNext.current = true
+                if (fromKeyboard(event)) requestFocus(d.focusNext, true)
                 d.crumb(i)
               }}
               size="inline"
@@ -133,7 +133,7 @@ function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized:
       onKeyDown={event => {
         if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
-        if (item.is_folder && event.key === 'Enter') d.focusNext.current = true
+        if (item.is_folder && event.key === 'Enter') requestFocus(d.focusNext, true)
         activate()
       }}
       onMouseEnter={() => setHover(true)}
