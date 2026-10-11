@@ -2,6 +2,19 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.6] - 2026-10-12
+
+Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.
+
+### Fixed
+- Reopening the app on the Cloud Files page no longer asks the agent for its folders before it knows the agent has
+  the plugin, and no longer shows "needs an update" on an agent where Cloud Files isn't set up. The page waits, then
+  shows the files or the set-up note.
+- Switching to another agent hides **Cloud Files** and **+ → Cloud** until that agent answers, instead of keeping
+  the previous agent's answer. An open **+ → Cloud** picker stays open across the switch and offers **Copy
+  locations**, as before.
+- Disabling the plugin stops any upload or Google Drive import still running or paused.
+
 ## [0.3.5] - 2026-10-11
 
 Faster big folders, clearer messages and keyboard use. Both halves changed: after updating, restart the agent's gateway

@@ -23,7 +23,8 @@ const rows = () => screen.getAllByRole('listitem').map(row => row.getAttribute('
 beforeEach(() => {
   resetQueryCache()
   resetHost()
-  $available.set(null)
+  // these suites model an agent whose gateway answered /available
+  $available.set(true)
   $batch.set(null)
 })
 

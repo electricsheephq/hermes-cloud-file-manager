@@ -10,7 +10,8 @@ import {
 } from '@hermes/plugin-sdk'
 
 import { $available, $driveAvailable, bindContext, isNotFoundError } from './api'
-import { CloudFilesPage } from './page'
+import { $driveJob } from './drive'
+import { $batch, CloudFilesPage } from './page'
 import { $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost } from './picker'
 import { S } from './strings'
 
@@ -22,11 +23,12 @@ export { isNotFoundError }
 
 /** Sidebar row, "+ → Cloud" provider and the picker host only while the selected agent's backend answers
  *  /available; the route stays registered so a restored /cloud-files never falls through to the session
- *  route. Transport errors keep the last answer. While it is available, /drive/available (same triggers, same
+ *  route. Transport errors keep the last answer only for the same agent. While it is available, /drive/available (same triggers, same
  *  newest-probe-wins rule) adds "+ → Google Drive" and the page's Drive source; a 404 there means an older
  *  gateway half without Drive. */
-export function registerAvailabilityGate(ctx: PluginContext, onChange?: (available: boolean) => void) {
+export function registerAvailabilityGate(ctx: PluginContext, onChange?: (available: boolean | null) => void) {
   let removers: Array<() => void> | null = null
+  let pickerRemover: null | (() => void) = null
   let known: boolean | null = null
   let disposed = false
   let driveRemover: null | (() => void) = null
@@ -43,9 +45,9 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     }
   }
 
-  const set = (available: boolean) => {
+  const set = (available: boolean | null) => {
     if (disposed) return
-    if (!available) setDrive(false)
+    if (available === false) setDrive(false)
     if (available !== known) {
       known = available
       onChange?.(available)
@@ -58,15 +60,18 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
           order: 45,
           data: { codicon: 'cloud', label: S.navLabel, path: PAGE_PATH } satisfies SidebarNavContribution
         }),
-        ctx.register({ id: 'attach-cloud', area: COMPOSER_AREAS.attachments, data: cloudProvider }),
-        ctx.register({ id: 'picker-host', area: COMPOSER_AREAS.underside, render: () => <PickerHost /> })
+        ctx.register({ id: 'attach-cloud', area: COMPOSER_AREAS.attachments, data: cloudProvider })
       ]
     } else if (!available && removers) {
-      // Close the picker and forget the old composer's insertText first: otherwise the stale picker
-      // would reopen on the next available flip and could insert into a composer that is gone.
-      closePicker()
       removers.forEach(remove => remove())
       removers = null
+    }
+    if (available && !pickerRemover) {
+      pickerRemover = ctx.register({ id: 'picker-host', area: COMPOSER_AREAS.underside, render: () => <PickerHost /> })
+    } else if (available === false) {
+      closePicker()
+      pickerRemover?.()
+      pickerRemover = null
     }
   }
 
@@ -77,7 +82,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     const mine = ++generation
     return ctx.rest('/available').then(
       () => {
-        if (mine !== generation) return
+        if (mine !== generation || disposed) return
         set(true)
         return ctx.rest<{ available?: boolean }>('/drive/available').then(
           res => {
@@ -102,6 +107,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   // paused) until the new answer says Drive is unavailable.
   const onAgentChange = () => {
     if (!disposed) {
+      set(null)
       if ($driveAvailable.get() === true) $driveAvailable.set(null)
       driveRemover?.()
       driveRemover = null
@@ -113,6 +119,10 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     disposed = true
     unsubscribers.forEach(stop => stop())
     closePicker()
+    $batch.get()?.cancel()
+    $batch.set(null)
+    $driveJob.get()?.cancel()
+    $driveJob.set(null)
   })
 
   return { probe }

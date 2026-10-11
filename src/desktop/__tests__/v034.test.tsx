@@ -40,7 +40,8 @@ function setup(folders: Record<string, Entry[]>, picker = false, truncated = fal
 }
 const more = async () => { fireEvent.click(button('Load more')); await flush() }
 beforeEach(() => {
-  resetQueryCache(); resetHost(); $available.set(null); $driveAvailable.set(false); $batch.set(null)
+  // these suites model an agent whose gateway answered /available
+  resetQueryCache(); resetHost(); $available.set(true); $driveAvailable.set(false); $batch.set(null)
 })
 afterEach(() => { act(closePicker); vi.restoreAllMocks() })
 
