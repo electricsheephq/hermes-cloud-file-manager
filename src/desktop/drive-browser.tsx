@@ -2,10 +2,10 @@
 // (folder names kept client-side), debounced search, and the item list. Files multi-select across folders;
 // folders open on click and cannot be selected (imports are one file each).
 import { Button, Checkbox, Codicon, EmptyState, Skeleton, useQuery } from '@hermes/plugin-sdk'
-import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from 'react'
+import { type CSSProperties, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
 
 import { call, query } from './api'
-import { DEBOUNCE_MS, LoadError, useDebounced, useScope } from './browser'
+import { DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
 import { type DriveImport, driveIcon, type DriveItem, type DriveListResponse, type ImportFailure, type ImportSnapshot } from './drive'
 import { humanSize, shortDate } from './format'
 import { S } from './strings'
@@ -24,6 +24,7 @@ export function useDriveBrowser() {
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS)
   const [selected, setSelected] = useState<ReadonlyMap<string, DriveItem>>(new Map())
   const q = search.trim() ? debounced : ''
+  const focusNext: FocusRequest = useRef(null)
   const goTo = (next: readonly Crumb[]) => {
     setTrail(next)
     setSearch('')
@@ -34,6 +35,7 @@ export function useDriveBrowser() {
     search,
     q,
     selected,
+    focusNext,
     setSearch,
     /** A folder opened from search results has no known path: it hangs directly off the Drive root. */
     open: (item: DriveItem) => goTo(q ? [trail[0], item] : [...trail, item]),
@@ -59,7 +61,14 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
           {i === d.trail.length - 1 && !d.q ? (
             <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.name}</span>
           ) : (
-            <Button onClick={() => d.crumb(i)} size="inline" variant="text">
+            <Button
+              onClick={(event?: MouseEvent) => {
+                if (fromKeyboard(event)) d.focusNext.current = true
+                d.crumb(i)
+              }}
+              size="inline"
+              variant="text"
+            >
               {crumb.name}
             </Button>
           )}
@@ -77,6 +86,9 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     retry: 1
   })
   const items = list.data?.items ?? []
+  // Drive search answers carry no sizes: the size column shows only when some item has one.
+  const sized = items.some(item => item.size != null)
+  const ref = useListFocus(d.focusNext, Boolean(list.data || list.error))
 
   let body: ReactNode
   if (list.error) {
@@ -95,17 +107,22 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     body = (
       <div role="list">
         {items.map(item => (
-          <DriveRow d={d} item={item} key={item.id} />
+          <DriveRow d={d} item={item} key={item.id} sized={sized} />
         ))}
         {list.data.truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.truncated(items.length)}</div>}
       </div>
     )
   }
-  return <div style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }}>{body}</div>
+  return (
+    <div ref={ref} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
+      {body}
+    </div>
+  )
 }
 
-function DriveRow({ d, item }: { d: DriveBrowser; item: DriveItem }) {
+function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized: boolean }) {
   const [hover, setHover] = useState(false)
+  const focus = useRowFocus()
   const checked = d.selected.has(item.id)
   const activate = () => (item.is_folder ? d.open(item) : d.toggle(item))
   return (
@@ -116,14 +133,16 @@ function DriveRow({ d, item }: { d: DriveBrowser; item: DriveItem }) {
       onKeyDown={event => {
         if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
+        if (item.is_folder && event.key === 'Enter') d.focusNext.current = true
         activate()
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      {...focus.handlers}
       role="listitem"
       style={{
         display: 'grid',
-        gridTemplateColumns: '16px 16px minmax(0, 1fr) 72px 96px',
+        gridTemplateColumns: `16px 16px minmax(0, 1fr)${sized ? ' 72px' : ''} 96px`,
         alignItems: 'center',
         gap: 8,
         minHeight: 28,
@@ -131,7 +150,8 @@ function DriveRow({ d, item }: { d: DriveBrowser; item: DriveItem }) {
         fontSize: 12,
         cursor: 'default',
         userSelect: 'none',
-        background: checked ? 'var(--ui-row-active-background)' : hover ? 'var(--ui-row-hover-background)' : undefined
+        background: checked ? 'var(--ui-row-active-background)' : hover || focus.focused ? 'var(--ui-row-hover-background)' : undefined,
+        ...focus.ring
       }}
       tabIndex={0}
     >
@@ -147,9 +167,11 @@ function DriveRow({ d, item }: { d: DriveBrowser; item: DriveItem }) {
       </span>
       <Codicon name={driveIcon(item)} size="0.875rem" style={{ color: item.is_folder ? 'var(--ui-accent)' : 'var(--ui-text-secondary)' }} />
       <span style={{ ...ellipsis, color: 'var(--ui-text-primary)' }}>{item.name}</span>
-      <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-        {item.is_folder ? '' : item.size == null ? '—' : humanSize(item.size)}
-      </span>
+      {sized && (
+        <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+          {item.is_folder ? '' : item.size == null ? '—' : humanSize(item.size)}
+        </span>
+      )}
       <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
         {item.mtime ? shortDate(Date.parse(item.mtime) / 1000) : ''}
       </span>

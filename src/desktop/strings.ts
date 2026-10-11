@@ -10,11 +10,13 @@ export const S = {
   navLabel: 'Cloud Files',
   providerLabel: 'Cloud',
   notSetUp: (agent: string) =>
-    `Cloud Files isn't set up on ${agent} yet. Install the plugin on the agent's gateway, add it to \`plugins.enabled\`, and restart the gateway.`,
+    `Cloud Files isn't set up on ${agent} yet. Install the Cloud File Manager plugin on the agent and enable it (Capabilities ▸ Plugins, or \`hermes plugins enable hermes-cloud-file-manager\`). On Hermes 0.21.6 or later it appears within about a minute; on older versions, restart the agent's gateway.`,
   unsupportedTitle: "Cloud Files can't browse this agent's machine",
   needsUpdateTitle: 'Cloud Files needs an update on this agent',
   needsUpdateBody:
-    "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there, then restart Hermes on that machine.",
+    "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there. After an update, restart the agent's gateway.",
+  noRootsTitle: 'Cloud Files has no folder to show',
+  openSettings: 'Open settings',
   loadFailed: "Couldn't load files",
   retry: 'Retry',
   root: 'Folder',
@@ -26,6 +28,7 @@ export const S = {
   copyPath: 'Copy path',
   maxPerFile: (bytes: number) => `Up to ${mb(bytes)} per file`,
   emptyFolder: 'This folder is empty — drop files here or use Upload',
+  emptyFolderPick: 'This folder is empty',
   noResults: 'No matching files',
   truncated: (n: number) => n === 1 ? 'Showing the first item' : `Showing the first ${n} items`,
   showingOf: (n: number, total: number) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
@@ -43,6 +46,8 @@ export const S = {
   uploads: 'Uploads',
   expand: 'Show uploads',
   collapse: 'Hide uploads',
+  uploadProgress: 'Upload progress',
+  uploadProgressOf: (path: string) => `Upload progress for ${path}`,
   // New folder dialog
   folderName: 'Folder name',
   create: 'Create',
@@ -143,11 +148,20 @@ export const CODE_TEXT: Record<string, string> = {
   bad_id: "That Google Drive item isn't valid.",
   is_folder: 'Choose files, not folders.',
   drive_error: "Google Drive couldn't finish that. Try again.",
-  timeout: 'Google Drive took too long. Try again.'
+  timeout: 'Google Drive took too long. Try again.',
+  permission_denied: "The agent's user isn't allowed to open or change this.",
+  no_space: "The agent's machine is out of disk space.",
+  read_only: 'This location is read-only.',
+  no_roots: "None of the folders in Cloud Files settings can be shown on this machine. Check the paths in the plugin's settings.",
+  io_error: "Something went wrong reading or writing on the agent's machine.",
+  no_free_name: 'No free name is left for this file here. Rename it and try again.',
+  chunk_too_large: "Part of the upload was too large for the agent's machine. Try again.",
+  offset: 'The upload got out of step with the server. Try again.',
+  bad_upload_id: 'The upload is no longer valid. Try again.'
 }
 
 /** /file and /file/save codes → plain sentences (the upload wording in CODE_TEXT doesn't fit an open file). */
-const FILE_CODE_TEXT: Record<string, string> = {
+export const FILE_CODE_TEXT: Record<string, string> = {
   not_editable: 'Only .md, .markdown and .txt files can be opened here.',
   is_link: 'This file is a link, so it can’t be opened here.',
   not_a_file: 'This isn’t a regular file.',
