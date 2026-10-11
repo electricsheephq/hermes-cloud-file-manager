@@ -20,17 +20,58 @@ import {
   useQueryClient,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
-import { S } from './strings'
+import { codeText, S } from './strings'
 import { transportText } from './upload'
 
 export const LIST_LIMIT = 500
 const LIST_PAGE_MAX = 2000
 const SEARCH_LIMIT = 200
 export const DEBOUNCE_MS = 300
+/** Plugin settings in Hermes Desktop; older hosts redirect it to Capabilities ▸ Plugins. */
+export const SETTINGS_PATH = '/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager'
+
+/** Where focus goes once the listing of folder `at` has loaded: the row whose data-entry is `want`, else (or for
+ *  `true`) the first row, else the list itself. Set by keyboard navigation and by closing the editor. */
+export type FocusRequest = MutableRefObject<null | { at: string; want: true | string; from: Element | null }>
+
+/** Asks for focus to move into folder `at`'s list once it has loaded, remembering where focus is now. */
+export function requestFocus(request: FocusRequest, at: string, want: true | string = true) {
+  request.current = { at, want, from: document.activeElement }
+}
+
+/** The ref for a list's scroller: after a focus request for `at`, the folder on screen, moves focus into the list
+ *  once `ready` (loaded). Matching `at` keeps a render of the previous folder from taking the request. */
+export function useListFocus(request: FocusRequest, ready: boolean, at: string | null) {
+  const list = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const req = request.current
+    if (!req || !ready || !list.current || req.at !== at) return
+    request.current = null
+    // The user moved on while the listing loaded (into Search, a dialog, ...): leave their focus where it is.
+    const now = document.activeElement
+    if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return
+    const rows = [...list.current.querySelectorAll<HTMLElement>('[role=listitem]')]
+    ;(rows.find(row => row.getAttribute('data-entry') === req.want) ?? rows[0] ?? list.current).focus()
+  })
+  return list
+}
+
+/** Row focus: the host CSS removes every focus ring, so a focused row draws its own (inset accent line). */
+export function useRowFocus() {
+  const [focused, setFocused] = useState(false)
+  return {
+    focused,
+    handlers: { onBlur: () => setFocused(false), onFocus: () => setFocused(true) },
+    ring: focused ? { boxShadow: 'inset 0 0 0 1px var(--ui-accent, currentColor)' } : undefined
+  }
+}
+
+/** A Button click with no pointer behind it (Enter or Space): `detail` counts mouse clicks and is 0 then. */
+export const fromKeyboard = (event?: MouseEvent) => !event?.detail
 
 /** Query-key scope: (connectionId, profile) so switching agents never shows another agent's files. */
 export function useScope(): [string, string] {
@@ -92,6 +133,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const setSelected = mode === 'pick' ? (value: SetStateAction<ReadonlyMap<string, Entry>>) => write('selected', value) : setLocalSelected
   const root: Root | undefined = roots.roots.find(r => r.id === rootId) ?? roots.roots[0]
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS)
+  const focusNext: FocusRequest = useRef(null)
 
   const navigate = (next: string) => {
     setPath(next)
@@ -107,6 +149,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
     query: search.trim() ? debounced : '',
     selected,
     mode,
+    focusNext,
     setSearch,
     navigate,
     switchRoot: (id: string) => {
@@ -153,6 +196,25 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => v
       <ErrorState description={error instanceof ApiError ? error.message : transportText(error)} title={S.loadFailed}>
         {retry}
       </ErrorState>
+    </div>
+  )
+}
+
+/** `/roots` found none of the configured folders: the gateway's reason and a way to the plugin's settings. */
+export function NoRoots({ reason, onOpenSettings }: { reason?: string; onOpenSettings?: () => void }) {
+  return (
+    <div style={{ display: 'grid', gap: 8, justifyItems: 'center', padding: '8px 32px 32px', textAlign: 'center' }}>
+      <EmptyState description={reason ?? codeText('no_roots')} title={S.noRootsTitle} />
+      <Button
+        onClick={() => {
+          onOpenSettings?.()
+          host.navigate(SETTINGS_PATH)
+        }}
+        size="sm"
+        variant="secondary"
+      >
+        {S.openSettings}
+      </Button>
     </div>
   )
 }
@@ -204,7 +266,14 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
             {last && !b.query && !leaf ? (
               <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.label}</span>
             ) : (
-              <Button onClick={() => onNavigate(crumb.path)} size="inline" variant="text">
+              <Button
+                onClick={(event?: MouseEvent) => {
+                  if (fromKeyboard(event)) requestFocus(b.focusNext, crumb.path)
+                  onNavigate(crumb.path)
+                }}
+                size="inline"
+                variant="text"
+              >
                 {crumb.label}
               </Button>
             )}
@@ -303,6 +372,8 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const stopped = reason === 'time' || reason === 'visits'
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
 
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path)
+
   const open = (entry: Entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
     if (!entry.is_dir || entry.link_outside) return
@@ -321,7 +392,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
       </div>
     )
   } else if (!entries.length) {
-    body = <EmptyState description={stopped ? truncationNote : undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : S.emptyFolder} />
+    body = <EmptyState description={stopped ? truncationNote : undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
   } else {
     body = (
       <div role="list">
@@ -342,7 +413,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   // A plain scroller, not ScrollArea: Radix's viewport lays children out as a table, which defeats the
   // rows' text-overflow ellipsis on long names.
   return (
-    <div style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }}>
+    <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
     </div>
   )
@@ -350,6 +421,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
 
 function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; onOpen: (entry: Entry) => void; searching: boolean }) {
   const [hover, setHover] = useState(false)
+  const focus = useRowFocus()
   const checked = b.selected.has(entry.abs)
   const note = !searching && b.path === '' ? b.root?.notes?.[entry.rel] ?? b.root?.notes?.[entry.name] : undefined
   const secondary = searching ? parentPath(entry.rel) || b.root?.label : note
@@ -367,7 +439,10 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
       onKeyDown={event => {
         // Only keys aimed at the row itself: Space on the nested checkbox is the checkbox's own toggle.
         if (event.target !== event.currentTarget) return
-        if (event.key === 'Enter') onOpen(entry)
+        if (event.key === 'Enter') {
+          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, entry.rel)
+          onOpen(entry)
+        }
         if (event.key === ' ') {
           event.preventDefault()
           b.toggle(entry)
@@ -375,6 +450,7 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      {...focus.handlers}
       role="listitem"
       style={{
         display: 'grid',
@@ -387,7 +463,8 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
         cursor: 'default',
         userSelect: 'none',
         opacity: entry.link_outside ? 0.5 : 1,
-        background: checked ? 'var(--ui-row-active-background)' : hover ? 'var(--ui-row-hover-background)' : undefined
+        background: checked ? 'var(--ui-row-active-background)' : hover || focus.focused ? 'var(--ui-row-hover-background)' : undefined,
+        ...focus.ring
       }}
       tabIndex={0}
     >

@@ -55,7 +55,7 @@ interface FileResponse {
 }
 
 const BOM = '\uFEFF'
-const mono = 'var(--ui-font-mono, ui-monospace, monospace)'
+const mono = 'var(--font-mono, ui-monospace, monospace)'
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 
 /** Edit as LF without a BOM; `encodeText` puts both back, so an untouched uniform text round-trips byte-exact.
@@ -372,7 +372,11 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
             <span style={{ fontWeight: 600 }}>{doc.name}</span>
             <span style={muted}>{doc.pin.profile}</span>
             <span style={{ ...muted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.abs}</span>
-            {saved && <span style={{ color: 'var(--ui-green)' }}>{S.saved}</span>}
+            {saved && (
+              <span aria-live="polite" role="status" style={{ color: 'var(--ui-green)' }}>
+                {S.saved}
+              </span>
+            )}
           </span>
         )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
@@ -401,7 +405,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
         </span>
       </div>
       {!here && (
-        <div role="status" style={{ margin: '0 20px 8px', padding: '6px 10px', borderRadius: 6, fontSize: 12, background: 'var(--ui-warning-background, color-mix(in srgb, var(--ui-accent) 10%, transparent))', color: 'var(--ui-warning-text, var(--ui-text-primary))' }}>
+        <div role="status" style={{ margin: '0 20px 8px', padding: '6px 10px', borderRadius: 6, fontSize: 12, background: 'color-mix(in srgb, var(--ui-yellow, #d4a72c) 14%, transparent)', color: 'var(--ui-text-primary, currentColor)' }}>
           {S.otherAgent(doc.pin.profile)}
         </div>
       )}
@@ -415,7 +419,11 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
           {diff && !diff.tooLarge && <div style={{ ...muted, fontSize: 12 }}>{S.diffSummary(diff.added, diff.removed)}</div>}
           {diff && <DiffView diff={diff} style={{ maxHeight: '60vh' }} />}
           {doc.mixed && <div style={{ ...muted, fontSize: 12 }}>{S.mixedEndings}</div>}
-          {saveError && <div style={{ color: 'var(--ui-red)', fontSize: 12 }}>{saveError}</div>}
+          {saveError && (
+            <div role="alert" style={{ color: 'var(--ui-red)', fontSize: 12 }}>
+              {saveError}
+            </div>
+          )}
           <DialogFooter>
             <Button onClick={() => setPopup(null)} variant="text">
               {S.backToEditing}

@@ -16,7 +16,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { useEffect, useRef } from 'react'
 
-import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
+import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, NoRoots, RootSelect, useBrowser, useRoots } from './browser'
 import { DriveImport, type ImportHold } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { formatInsertText, hasLineBreak } from './format'
@@ -200,6 +200,7 @@ function PickerDialog() {
 function PickerBody({ profile, source }: { profile: string; source: 'cloud' | 'drive' }) {
   const roots = useRoots()
   if (roots.error) return <LoadError error={roots.error} onRetry={() => void roots.refetch()} />
+  if (roots.data?.code === 'no_roots') return <NoRoots onOpenSettings={closePicker} reason={roots.data.reason} />
   if (roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
     return <EmptyState description={roots.data.reason} title={S.unsupportedTitle} />
   }
@@ -229,7 +230,9 @@ function PickerBrowser({ profile, roots }: { profile: string; roots: RootsRespon
       <EntryList b={b} height={360} />
       {touched && <div style={{ fontSize: 12, color: 'var(--ui-text-secondary)' }}>{S.chatChanged}</div>}
       <DialogFooter style={{ alignItems: 'center' }}>
-        <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{S.selected(b.selected.size)}</span>
+        <span aria-live="polite" role="status" style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>
+          {S.selected(b.selected.size)}
+        </span>
         {skipped > 0 && <span style={{ fontSize: 12, color: 'var(--ui-text-secondary)' }}>{S.lineBreakSkipped(skipped)}</span>}
         <Button onClick={closePicker} variant="text">
           {S.cancel}
@@ -276,7 +279,9 @@ function DrivePicker({ roots }: { roots: RootsResponse }) {
       <DriveList d={d} height={360} />
       {snap && <ImportFailures failures={snap.failures} />}
       <DialogFooter style={{ alignItems: 'center' }}>
-        <span style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{snap ? importStatus(snap) : S.selected(d.selected.size)}</span>
+        <span aria-live="polite" role="status" style={{ marginRight: 'auto', fontSize: 12, color: 'var(--ui-text-tertiary)' }}>
+          {snap ? importStatus(snap) : S.selected(d.selected.size)}
+        </span>
         {snap && !snap.running ? (
           <Button onClick={closePicker}>{S.close}</Button>
         ) : (

@@ -18,10 +18,12 @@ var S = {
   title: "Cloud Files",
   navLabel: "Cloud Files",
   providerLabel: "Cloud",
-  notSetUp: (agent) => `Cloud Files isn't set up on ${agent} yet. Install the plugin on the agent's gateway, add it to \`plugins.enabled\`, and restart the gateway.`,
+  notSetUp: (agent) => `Cloud Files isn't set up on ${agent} yet. Install the Cloud File Manager plugin on the agent and enable it (Capabilities \u25B8 Plugins, or \`hermes plugins enable hermes-cloud-file-manager\`). On Hermes 0.21.6 or later it appears within about a minute; on older versions, restart the agent's gateway.`,
   unsupportedTitle: "Cloud Files can't browse this agent's machine",
   needsUpdateTitle: "Cloud Files needs an update on this agent",
-  needsUpdateBody: "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there, then restart Hermes on that machine.",
+  needsUpdateBody: "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there. After an update, restart the agent's gateway.",
+  noRootsTitle: "Cloud Files has no folder to show",
+  openSettings: "Open settings",
   loadFailed: "Couldn't load files",
   retry: "Retry",
   root: "Folder",
@@ -33,6 +35,7 @@ var S = {
   copyPath: "Copy path",
   maxPerFile: (bytes) => `Up to ${mb(bytes)} per file`,
   emptyFolder: "This folder is empty \u2014 drop files here or use Upload",
+  emptyFolderPick: "This folder is empty",
   noResults: "No matching files",
   truncated: (n) => n === 1 ? "Showing the first item" : `Showing the first ${n} items`,
   showingOf: (n, total) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
@@ -49,6 +52,8 @@ var S = {
   uploads: "Uploads",
   expand: "Show uploads",
   collapse: "Hide uploads",
+  uploadProgress: "Upload progress",
+  uploadProgressOf: (path) => `Upload progress for ${path}`,
   // New folder dialog
   folderName: "Folder name",
   create: "Create",
@@ -145,7 +150,16 @@ var CODE_TEXT = {
   bad_id: "That Google Drive item isn't valid.",
   is_folder: "Choose files, not folders.",
   drive_error: "Google Drive couldn't finish that. Try again.",
-  timeout: "Google Drive took too long. Try again."
+  timeout: "Google Drive took too long. Try again.",
+  permission_denied: "The agent's user isn't allowed to open or change this.",
+  no_space: "The agent's machine is out of disk space.",
+  read_only: "This location is read-only.",
+  no_roots: "None of the folders in Cloud Files settings can be shown on this machine. Check the paths in the plugin's settings.",
+  io_error: "Something went wrong reading or writing on the agent's machine.",
+  no_free_name: "No free name is left for this file here. Rename it and try again.",
+  chunk_too_large: "Part of the upload was too large for the agent's machine. Try again.",
+  offset: "The upload got out of step with the server. Try again.",
+  bad_upload_id: "The upload is no longer valid. Try again."
 };
 var FILE_CODE_TEXT = {
   not_editable: "Only .md, .markdown and .txt files can be opened here.",
@@ -228,7 +242,7 @@ import {
   useQueryClient as useQueryClient2,
   useValue as useValue3
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect3, useRef as useRef2, useState as useState4, useSyncExternalStore as useSyncExternalStore2 } from "react";
+import { useEffect as useEffect3, useId, useRef as useRef4, useState as useState4, useSyncExternalStore as useSyncExternalStore2 } from "react";
 
 // src/desktop/browser.tsx
 import {
@@ -250,7 +264,7 @@ import {
   useQueryClient,
   useValue
 } from "@hermes/plugin-sdk";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // src/desktop/format.ts
 var TICK = "`";
@@ -392,7 +406,7 @@ var UploadBatch = class {
     for (const { file, rel } of input.files) {
       const id = this.nextId++;
       const tooBig = file.size > this.limits.max_file_bytes;
-      this.blobs.set(id, file);
+      if (!tooBig) this.blobs.set(id, file);
       items.push({
         id,
         root: dest.root,
@@ -432,6 +446,7 @@ var UploadBatch = class {
       canceled: true,
       items: this.snapshot.items.map((item) => item.status === "queued" || item.status === "uploading" ? { ...item, status: "canceled" } : item)
     });
+    this.blobs.clear();
     for (const id of [...this.inFlight.keys()]) this.abort(id);
     this.wake();
   }
@@ -484,6 +499,7 @@ var UploadBatch = class {
           const fin = await this.send("/uploads/finish", { upload_id: uploadId, root, path, size }, false);
           if (fin.ok) {
             this.inFlight.delete(item.id);
+            this.blobs.delete(item.id);
             if (this.snapshot.canceled) return;
             const finalName = baseName(fin.entry?.rel ?? fin.entry?.name ?? path);
             this.patch(item.id, { status: "done", sent: size, ...fin.renamed ? { savedAs: finalName } : {} });
@@ -601,6 +617,32 @@ var LIST_LIMIT = 500;
 var LIST_PAGE_MAX = 2e3;
 var SEARCH_LIMIT = 200;
 var DEBOUNCE_MS = 300;
+var SETTINGS_PATH = "/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager";
+function requestFocus(request, at, want = true) {
+  request.current = { at, want, from: document.activeElement };
+}
+function useListFocus(request, ready, at) {
+  const list = useRef(null);
+  useEffect(() => {
+    const req = request.current;
+    if (!req || !ready || !list.current || req.at !== at) return;
+    request.current = null;
+    const now = document.activeElement;
+    if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return;
+    const rows = [...list.current.querySelectorAll("[role=listitem]")];
+    (rows.find((row) => row.getAttribute("data-entry") === req.want) ?? rows[0] ?? list.current).focus();
+  });
+  return list;
+}
+function useRowFocus() {
+  const [focused, setFocused] = useState(false);
+  return {
+    focused,
+    handlers: { onBlur: () => setFocused(false), onFocus: () => setFocused(true) },
+    ring: focused ? { boxShadow: "inset 0 0 0 1px var(--ui-accent, currentColor)" } : void 0
+  };
+}
+var fromKeyboard = (event) => !event?.detail;
 function useScope() {
   const connectionId = useValue(host.state.connectionId);
   const profile = useValue(host.state.profile);
@@ -646,6 +688,7 @@ function useBrowser(roots, mode) {
   const setSelected = mode === "pick" ? (value) => write("selected", value) : setLocalSelected;
   const root = roots.roots.find((r) => r.id === rootId) ?? roots.roots[0];
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
+  const focusNext = useRef(null);
   const navigate = (next) => {
     setPath(next);
     setSearch("");
@@ -659,6 +702,7 @@ function useBrowser(roots, mode) {
     query: search.trim() ? debounced : "",
     selected,
     mode,
+    focusNext,
     setSearch,
     navigate,
     switchRoot: (id) => {
@@ -687,6 +731,23 @@ function LoadError({ error, onRetry }) {
   }
   return /* @__PURE__ */ jsx("div", { style: { padding: 32 }, children: /* @__PURE__ */ jsx(ErrorState, { description: error instanceof ApiError ? error.message : transportText(error), title: S.loadFailed, children: retry }) });
 }
+function NoRoots({ reason, onOpenSettings }) {
+  return /* @__PURE__ */ jsxs("div", { style: { display: "grid", gap: 8, justifyItems: "center", padding: "8px 32px 32px", textAlign: "center" }, children: [
+    /* @__PURE__ */ jsx(EmptyState, { description: reason ?? codeText("no_roots"), title: S.noRootsTitle }),
+    /* @__PURE__ */ jsx(
+      Button,
+      {
+        onClick: () => {
+          onOpenSettings?.();
+          host.navigate(SETTINGS_PATH);
+        },
+        size: "sm",
+        variant: "secondary",
+        children: S.openSettings
+      }
+    )
+  ] });
+}
 var DRIVE_VALUE = "hcfm:google-drive";
 function RootSelect({ b, drive }) {
   if (b.roots.roots.length < 2 && !drive) return null;
@@ -710,7 +771,18 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
       const last = i === crumbs.length - 1;
       return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
         i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: muted }),
-        last && !b.query && !leaf ? /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.label }) : /* @__PURE__ */ jsx(Button, { onClick: () => onNavigate(crumb.path), size: "inline", variant: "text", children: crumb.label })
+        last && !b.query && !leaf ? /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.label }) : /* @__PURE__ */ jsx(
+          Button,
+          {
+            onClick: (event) => {
+              if (fromKeyboard(event)) requestFocus(b.focusNext, crumb.path);
+              onNavigate(crumb.path);
+            },
+            size: "inline",
+            variant: "text",
+            children: crumb.label
+          }
+        )
       ] }, crumb.path || "/");
     }),
     leaf && /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
@@ -792,6 +864,7 @@ function EntryList({ b, height, onOpenFile }) {
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === "results" ? S.searchMore(entries.length) : S.truncated(entries.length);
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path);
   const open = (entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry);
     if (!entry.is_dir || entry.link_outside) return;
@@ -803,7 +876,7 @@ function EntryList({ b, height, onOpenFile }) {
   } else if (!active.data) {
     body = /* @__PURE__ */ jsx("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: "8px 12px" }, children: [0, 1, 2, 3, 4].map((i) => /* @__PURE__ */ jsx(Skeleton, { style: { height: 18, opacity: 1 - i * 0.15 } }, i)) });
   } else if (!entries.length) {
-    body = /* @__PURE__ */ jsx(EmptyState, { description: stopped ? truncationNote : void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : S.emptyFolder });
+    body = /* @__PURE__ */ jsx(EmptyState, { description: stopped ? truncationNote : void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : b.mode === "pick" ? S.emptyFolderPick : S.emptyFolder });
   } else {
     body = /* @__PURE__ */ jsxs("div", { role: "list", children: [
       entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onOpen: open, searching }, entry.abs)),
@@ -813,10 +886,11 @@ function EntryList({ b, height, onOpenFile }) {
       ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
     ] });
   }
-  return /* @__PURE__ */ jsx("div", { style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, children: body });
+  return /* @__PURE__ */ jsx("div", { ref: list, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
 }
 function EntryRow({ b, entry, onOpen, searching }) {
   const [hover, setHover] = useState(false);
+  const focus = useRowFocus();
   const checked = b.selected.has(entry.abs);
   const note = !searching && b.path === "" ? b.root?.notes?.[entry.rel] ?? b.root?.notes?.[entry.name] : void 0;
   const secondary = searching ? parentPath(entry.rel) || b.root?.label : note;
@@ -834,7 +908,10 @@ function EntryRow({ b, entry, onOpen, searching }) {
       onDoubleClick: () => onOpen(entry),
       onKeyDown: (event) => {
         if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter") onOpen(entry);
+        if (event.key === "Enter") {
+          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, entry.rel);
+          onOpen(entry);
+        }
         if (event.key === " ") {
           event.preventDefault();
           b.toggle(entry);
@@ -842,6 +919,7 @@ function EntryRow({ b, entry, onOpen, searching }) {
       },
       onMouseEnter: () => setHover(true),
       onMouseLeave: () => setHover(false),
+      ...focus.handlers,
       role: "listitem",
       style: {
         display: "grid",
@@ -854,7 +932,8 @@ function EntryRow({ b, entry, onOpen, searching }) {
         cursor: "default",
         userSelect: "none",
         opacity: entry.link_outside ? 0.5 : 1,
-        background: checked ? "var(--ui-row-active-background)" : hover ? "var(--ui-row-hover-background)" : void 0
+        background: checked ? "var(--ui-row-active-background)" : hover || focus.focused ? "var(--ui-row-hover-background)" : void 0,
+        ...focus.ring
       },
       tabIndex: 0,
       children: [
@@ -969,7 +1048,7 @@ var $driveJob = atom3(null);
 
 // src/desktop/drive-browser.tsx
 import { Button as Button2, Checkbox as Checkbox2, Codicon as Codicon2, EmptyState as EmptyState2, Skeleton as Skeleton2, useQuery as useQuery2 } from "@hermes/plugin-sdk";
-import { useState as useState2, useSyncExternalStore } from "react";
+import { useRef as useRef2, useState as useState2, useSyncExternalStore } from "react";
 import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 var muted2 = { color: "var(--ui-text-tertiary)" };
 var ellipsis2 = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
@@ -979,6 +1058,7 @@ function useDriveBrowser() {
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
   const [selected, setSelected] = useState2(/* @__PURE__ */ new Map());
   const q = search.trim() ? debounced : "";
+  const focusNext = useRef2(null);
   const goTo = (next) => {
     setTrail(next);
     setSearch("");
@@ -989,6 +1069,7 @@ function useDriveBrowser() {
     search,
     q,
     selected,
+    focusNext,
     setSearch,
     /** A folder opened from search results has no known path: it hangs directly off the Drive root. */
     open: (item) => goTo(q ? [trail[0], item] : [...trail, item]),
@@ -1004,7 +1085,18 @@ function useDriveBrowser() {
 function DriveCrumbs({ d }) {
   return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
     i > 0 && /* @__PURE__ */ jsx2(Codicon2, { name: "chevron-right", size: "0.75rem", style: muted2 }),
-    i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...ellipsis2, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.name }) : /* @__PURE__ */ jsx2(Button2, { onClick: () => d.crumb(i), size: "inline", variant: "text", children: crumb.name })
+    i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...ellipsis2, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.name }) : /* @__PURE__ */ jsx2(
+      Button2,
+      {
+        onClick: (event) => {
+          if (fromKeyboard(event)) requestFocus(d.focusNext, crumb.id);
+          d.crumb(i);
+        },
+        size: "inline",
+        variant: "text",
+        children: crumb.name
+      }
+    )
   ] }, `${i}:${crumb.id}`)) });
 }
 function DriveList({ d, height }) {
@@ -1015,6 +1107,8 @@ function DriveList({ d, height }) {
     retry: 1
   });
   const items = list.data?.items ?? [];
+  const sized = items.some((item) => item.size != null);
+  const ref = useListFocus(d.focusNext, Boolean(list.data || list.error), d.q ? null : d.folder);
   let body;
   if (list.error) {
     body = /* @__PURE__ */ jsx2(LoadError, { error: list.error, onRetry: () => void list.refetch() });
@@ -1024,14 +1118,15 @@ function DriveList({ d, height }) {
     body = /* @__PURE__ */ jsx2(EmptyState2, { title: d.q ? S.noResults : S.driveEmpty });
   } else {
     body = /* @__PURE__ */ jsxs2("div", { role: "list", children: [
-      items.map((item) => /* @__PURE__ */ jsx2(DriveRow, { d, item }, item.id)),
+      items.map((item) => /* @__PURE__ */ jsx2(DriveRow, { d, item, sized }, item.id)),
       list.data.truncated && /* @__PURE__ */ jsx2("div", { style: { ...muted2, fontSize: 11, padding: "8px 12px" }, children: S.truncated(items.length) })
     ] });
   }
-  return /* @__PURE__ */ jsx2("div", { style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, children: body });
+  return /* @__PURE__ */ jsx2("div", { ref, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
 }
-function DriveRow({ d, item }) {
+function DriveRow({ d, item, sized }) {
   const [hover, setHover] = useState2(false);
+  const focus = useRowFocus();
   const checked = d.selected.has(item.id);
   const activate = () => item.is_folder ? d.open(item) : d.toggle(item);
   return /* @__PURE__ */ jsxs2(
@@ -1043,14 +1138,16 @@ function DriveRow({ d, item }) {
       onKeyDown: (event) => {
         if (event.target !== event.currentTarget || event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
+        if (item.is_folder) requestFocus(d.focusNext, item.id);
         activate();
       },
       onMouseEnter: () => setHover(true),
       onMouseLeave: () => setHover(false),
+      ...focus.handlers,
       role: "listitem",
       style: {
         display: "grid",
-        gridTemplateColumns: "16px 16px minmax(0, 1fr) 72px 96px",
+        gridTemplateColumns: `16px 16px minmax(0, 1fr)${sized ? " 72px" : ""} 96px`,
         alignItems: "center",
         gap: 8,
         minHeight: 28,
@@ -1058,7 +1155,8 @@ function DriveRow({ d, item }) {
         fontSize: 12,
         cursor: "default",
         userSelect: "none",
-        background: checked ? "var(--ui-row-active-background)" : hover ? "var(--ui-row-hover-background)" : void 0
+        background: checked ? "var(--ui-row-active-background)" : hover || focus.focused ? "var(--ui-row-hover-background)" : void 0,
+        ...focus.ring
       },
       tabIndex: 0,
       children: [
@@ -1073,7 +1171,7 @@ function DriveRow({ d, item }) {
         ) }),
         /* @__PURE__ */ jsx2(Codicon2, { name: driveIcon(item), size: "0.875rem", style: { color: item.is_folder ? "var(--ui-accent)" : "var(--ui-text-secondary)" } }),
         /* @__PURE__ */ jsx2("span", { style: { ...ellipsis2, color: "var(--ui-text-primary)" }, children: item.name }),
-        /* @__PURE__ */ jsx2("span", { style: { ...muted2, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: item.is_folder ? "" : item.size == null ? "\u2014" : humanSize(item.size) }),
+        sized && /* @__PURE__ */ jsx2("span", { style: { ...muted2, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: item.is_folder ? "" : item.size == null ? "\u2014" : humanSize(item.size) }),
         /* @__PURE__ */ jsx2("span", { style: { ...muted2, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: item.mtime ? shortDate(Date.parse(item.mtime) / 1e3) : "" })
       ]
     }
@@ -1111,7 +1209,7 @@ import {
   Textarea,
   useValue as useValue2
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect2, useLayoutEffect, useMemo as useMemo2, useRef, useState as useState3 } from "react";
+import { useEffect as useEffect2, useLayoutEffect, useMemo as useMemo2, useRef as useRef3, useState as useState3 } from "react";
 
 // src/desktop/diff.ts
 var MAX_DIFF_LINES = 2e4;
@@ -1212,7 +1310,7 @@ function lineDiff(before, after, context = 3) {
 // src/desktop/editor.tsx
 import { Fragment, jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 var BOM = "\uFEFF";
-var mono = "var(--ui-font-mono, ui-monospace, monospace)";
+var mono = "var(--font-mono, ui-monospace, monospace)";
 var muted3 = { color: "var(--ui-text-tertiary)" };
 function decodeText(raw) {
   const bom = raw.startsWith(BOM);
@@ -1253,7 +1351,7 @@ function useOpenDoc() {
   const connectionId = useValue2(host2.state.connectionId);
   const profile = useValue2(host2.state.profile);
   const [doc, setDoc] = useState3(() => findParked({ connectionId, profile }));
-  const latest = useRef(doc);
+  const latest = useRef3(doc);
   latest.current = doc;
   useEffect2(() => {
     mounted.set(setDoc, () => latest.current);
@@ -1333,11 +1431,11 @@ function Editor({ doc, setDoc, onClose, leave }) {
   const [busy, setBusy] = useState3(false);
   const [saveError, setSaveError] = useState3("");
   const [saved, setSaved] = useState3(false);
-  const latest = useRef(doc);
+  const latest = useRef3(doc);
   latest.current = doc;
-  const popupRef = useRef(popup);
+  const popupRef = useRef3(popup);
   popupRef.current = popup;
-  const live = useRef(true);
+  const live = useRef3(true);
   useLayoutEffect(() => {
     live.current = true;
     return () => {
@@ -1451,7 +1549,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
         /* @__PURE__ */ jsx3("span", { style: { fontWeight: 600 }, children: doc.name }),
         /* @__PURE__ */ jsx3("span", { style: muted3, children: doc.pin.profile }),
         /* @__PURE__ */ jsx3("span", { style: { ...muted3, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: doc.abs }),
-        saved && /* @__PURE__ */ jsx3("span", { style: { color: "var(--ui-green)" }, children: S.saved })
+        saved && /* @__PURE__ */ jsx3("span", { "aria-live": "polite", role: "status", style: { color: "var(--ui-green)" }, children: S.saved })
       ] }),
       /* @__PURE__ */ jsx3("span", { style: { marginLeft: "auto", display: "inline-flex", gap: 6 }, children: editing ? /* @__PURE__ */ jsxs3(Fragment, { children: [
         /* @__PURE__ */ jsx3(Button3, { "aria-pressed": changes, onClick: () => setChanges(!changes), size: "sm", variant: changes ? "secondary" : "ghost", children: S.changes }),
@@ -1462,14 +1560,14 @@ function Editor({ doc, setDoc, onClose, leave }) {
         /* @__PURE__ */ jsx3(Button3, { disabled: doc.status !== "ready" || !here, onClick: () => setDoc((d) => d?.id === doc.id ? { ...d, mode: "edit" } : d), size: "sm", children: S.edit })
       ] }) })
     ] }),
-    !here && /* @__PURE__ */ jsx3("div", { role: "status", style: { margin: "0 20px 8px", padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--ui-warning-background, color-mix(in srgb, var(--ui-accent) 10%, transparent))", color: "var(--ui-warning-text, var(--ui-text-primary))" }, children: S.otherAgent(doc.pin.profile) }),
+    !here && /* @__PURE__ */ jsx3("div", { role: "status", style: { margin: "0 20px 8px", padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "color-mix(in srgb, var(--ui-yellow, #d4a72c) 14%, transparent)", color: "var(--ui-text-primary, currentColor)" }, children: S.otherAgent(doc.pin.profile) }),
     body,
     /* @__PURE__ */ jsx3(Dialog, { onOpenChange: (open) => !open && setPopup(null), open: popup === "review", children: /* @__PURE__ */ jsxs3(DialogContent, { style: { maxWidth: 760 }, children: [
       /* @__PURE__ */ jsx3(DialogHeader, { children: /* @__PURE__ */ jsx3(DialogTitle, { children: S.reviewTitle(doc.name) }) }),
       diff && !diff.tooLarge && /* @__PURE__ */ jsx3("div", { style: { ...muted3, fontSize: 12 }, children: S.diffSummary(diff.added, diff.removed) }),
       diff && /* @__PURE__ */ jsx3(DiffView, { diff, style: { maxHeight: "60vh" } }),
       doc.mixed && /* @__PURE__ */ jsx3("div", { style: { ...muted3, fontSize: 12 }, children: S.mixedEndings }),
-      saveError && /* @__PURE__ */ jsx3("div", { style: { color: "var(--ui-red)", fontSize: 12 }, children: saveError }),
+      saveError && /* @__PURE__ */ jsx3("div", { role: "alert", style: { color: "var(--ui-red)", fontSize: 12 }, children: saveError }),
       /* @__PURE__ */ jsxs3(DialogFooter, { children: [
         /* @__PURE__ */ jsx3(Button3, { onClick: () => setPopup(null), variant: "text", children: S.backToEditing }),
         /* @__PURE__ */ jsx3(Button3, { disabled: !here || !dirty || busy, loading: busy, onClick: () => void save(), children: S.save })
@@ -1603,6 +1701,9 @@ function PageBody({ profile, ...open }) {
   if (!roots.data) {
     return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx4(Skeleton4, { style: { height: 18 } }, i)) }) });
   }
+  if (roots.data.code === "no_roots") {
+    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4(NoRoots, { reason: roots.data.reason }) });
+  }
   if (roots.data.supported === false || roots.data.code === "unsupported_backend" || !roots.data.roots?.length) {
     return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4(EmptyState3, { description: roots.data.reason ?? codeText(roots.data.code, roots.data.message), title: S.unsupportedTitle }) });
   }
@@ -1610,7 +1711,7 @@ function PageBody({ profile, ...open }) {
 }
 function Frame({ children, profile, controls, onDropInput, dropLabel }) {
   const [over, setOver] = useState4(false);
-  const depth = useRef2(0);
+  const depth = useRef4(0);
   const dragOver = (event) => {
     event.preventDefault();
     if (onDropInput) event.dataTransfer.dropEffect = "copy";
@@ -1673,8 +1774,8 @@ function Files({ profile, roots, doc, setDoc }) {
   const guard = useLeaveGuard(doc);
   const queryClient = useQueryClient2();
   const [newFolder, setNewFolder] = useState4(false);
-  const filesInput = useRef2(null);
-  const folderInput = useRef2(null);
+  const filesInput = useRef4(null);
+  const folderInput = useRef4(null);
   const rootId = b.root?.id ?? "";
   const limits = { max_file_bytes: roots.max_file_bytes, chunk_bytes: roots.chunk_bytes };
   const here = baseName(b.path) || b.root?.label || "";
@@ -1694,6 +1795,7 @@ function Files({ profile, roots, doc, setDoc }) {
   const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile);
   const closeDoc = () => {
     const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null;
+    if (doc && folder !== null) requestFocus(b.focusNext, folder, doc.path);
     setDoc(null);
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder);
   };
@@ -1810,7 +1912,7 @@ function ImportStatus({ onShow, onSettled }) {
   const snap = useImport(job);
   const profile = useValue3(host3.state.profile);
   const connectionId = useValue3(host3.state.connectionId);
-  const wasRunning = useRef2(false);
+  const wasRunning = useRef4(false);
   useEffect3(() => {
     if (wasRunning.current && !snap?.running) onSettled();
     wasRunning.current = Boolean(snap?.running);
@@ -1820,7 +1922,7 @@ function ImportStatus({ onShow, onSettled }) {
   if (!here && !snap.running) return null;
   return /* @__PURE__ */ jsxs4("div", { "aria-label": S.importToCloud, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
     /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
-      /* @__PURE__ */ jsx4("span", { style: { flex: 1, minWidth: 0 }, children: importStatus(snap) }),
+      /* @__PURE__ */ jsx4("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: importStatus(snap) }),
       !snap.running && snap.imported.length > 0 && /* @__PURE__ */ jsx4(Button4, { onClick: onShow, size: "sm", variant: "text", children: S.show }),
       snap.running ? /* @__PURE__ */ jsx4(Button4, { disabled: snap.canceled, onClick: () => job?.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx4(Button4, { onClick: () => $driveJob.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
@@ -1837,6 +1939,7 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
   const [name, setName] = useState4("");
   const [error, setError] = useState4("");
   const [busy, setBusy] = useState4(false);
+  const errorId = useId();
   useEffect3(() => {
     if (open) {
       setName("");
@@ -1862,8 +1965,19 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
   };
   return /* @__PURE__ */ jsx4(Dialog2, { onOpenChange, open, children: /* @__PURE__ */ jsx4(DialogContent2, { style: { maxWidth: 380 }, children: /* @__PURE__ */ jsxs4("form", { onSubmit: submit, style: { display: "grid", gap: 12 }, children: [
     /* @__PURE__ */ jsx4(DialogHeader2, { children: /* @__PURE__ */ jsx4(DialogTitle2, { children: S.newFolder }) }),
-    /* @__PURE__ */ jsx4(Input, { "aria-label": S.folderName, autoFocus: true, onChange: (event) => setName(event.target.value), placeholder: S.folderName, value: name }),
-    error && /* @__PURE__ */ jsx4("div", { style: { color: "var(--ui-red)", fontSize: 12 }, children: error }),
+    /* @__PURE__ */ jsx4(
+      Input,
+      {
+        "aria-describedby": error ? errorId : void 0,
+        "aria-invalid": Boolean(error),
+        "aria-label": S.folderName,
+        autoFocus: true,
+        onChange: (event) => setName(event.target.value),
+        placeholder: S.folderName,
+        value: name
+      }
+    ),
+    error && /* @__PURE__ */ jsx4("div", { id: errorId, role: "alert", style: { color: "var(--ui-red)", fontSize: 12 }, children: error }),
     /* @__PURE__ */ jsxs4(DialogFooter2, { children: [
       /* @__PURE__ */ jsx4(Button4, { onClick: () => onOpenChange(false), type: "button", variant: "text", children: S.cancel }),
       /* @__PURE__ */ jsx4(Button4, { loading: busy, type: "submit", children: S.create })
@@ -1875,11 +1989,12 @@ var noop2 = () => () => void 0;
 function useBatch(batch) {
   return useSyncExternalStore2(batch?.subscribe ?? noop2, batch?.getSnapshot ?? (() => EMPTY), batch?.getSnapshot ?? (() => EMPTY));
 }
-function Bar({ value, style }) {
+function Bar({ value, label, style }) {
   const pct = Math.round(Math.min(100, Math.max(0, value * 100)));
   return /* @__PURE__ */ jsx4(
     "div",
     {
+      "aria-label": label,
       "aria-valuemax": 100,
       "aria-valuemin": 0,
       "aria-valuenow": pct,
@@ -1893,7 +2008,7 @@ function UploadDrawer({ onSettled }) {
   const batch = useValue3($batch);
   const snap = useBatch(batch);
   const [collapsed, setCollapsed] = useState4(false);
-  const wasRunning = useRef2(false);
+  const wasRunning = useRef4(false);
   useEffect3(() => {
     if (wasRunning.current && !snap.running) onSettled();
     wasRunning.current = snap.running;
@@ -1904,10 +2019,10 @@ function UploadDrawer({ onSettled }) {
   return /* @__PURE__ */ jsxs4("div", { "aria-label": S.uploads, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
     /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
       /* @__PURE__ */ jsx4(Button4, { "aria-label": collapsed ? S.expand : S.collapse, onClick: () => setCollapsed(!collapsed), size: "icon-xs", variant: "ghost", children: /* @__PURE__ */ jsx4(Codicon4, { name: collapsed ? "chevron-up" : "chevron-down", size: "0.875rem" }) }),
-      /* @__PURE__ */ jsx4("span", { style: { flex: 1, minWidth: 0 }, children: headline }),
+      /* @__PURE__ */ jsx4("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: headline }),
       snap.running ? /* @__PURE__ */ jsx4(Button4, { onClick: () => batch.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx4(Button4, { onClick: () => $batch.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
-    snap.running && /* @__PURE__ */ jsx4(Bar, { value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
+    snap.running && /* @__PURE__ */ jsx4(Bar, { label: S.uploadProgress, value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
     !collapsed && /* @__PURE__ */ jsx4("div", { style: { maxHeight: 180, overflowY: "auto", display: "grid", gap: 4 }, children: snap.items.map((item) => /* @__PURE__ */ jsx4(UploadRow, { item, onRetry: () => batch.retry(item.id) }, item.id)) })
   ] });
 }
@@ -1925,7 +2040,7 @@ function UploadRow({ item, onRetry }) {
       statusText(item),
       item.status === "failed" && item.retryable !== false && /* @__PURE__ */ jsx4(Button4, { onClick: onRetry, size: "micro", variant: "textStrong", children: S.retry })
     ] }),
-    item.status === "uploading" && /* @__PURE__ */ jsx4(Bar, { style: { gridColumn: "1 / -1", marginTop: 3 }, value: item.size ? item.sent / item.size : 0 })
+    item.status === "uploading" && /* @__PURE__ */ jsx4(Bar, { label: S.uploadProgressOf(item.path), style: { gridColumn: "1 / -1", marginTop: 3 }, value: item.size ? item.sent / item.size : 0 })
   ] });
 }
 
@@ -1942,7 +2057,7 @@ import {
   host as host4,
   useValue as useValue4
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect4, useRef as useRef3 } from "react";
+import { useEffect as useEffect4, useRef as useRef5 } from "react";
 import { Fragment as Fragment3, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 var $pickerOpen = atom6(false);
 var $insertText = atom6(null);
@@ -2007,7 +2122,7 @@ function ownerMismatch(owner, connectionId, profile) {
   return (owner.profile || "default") !== (profile || "default") || id(owner.connectionId) !== id(connectionId);
 }
 function PickerHost() {
-  const me = useRef3({}).current;
+  const me = useRef5({}).current;
   const claim = useValue4($hostClaim);
   const open = useValue4($pickerOpen);
   useEffect4(() => {
@@ -2061,6 +2176,7 @@ function PickerDialog() {
 function PickerBody({ profile, source }) {
   const roots = useRoots();
   if (roots.error) return /* @__PURE__ */ jsx5(LoadError, { error: roots.error, onRetry: () => void roots.refetch() });
+  if (roots.data?.code === "no_roots") return /* @__PURE__ */ jsx5(NoRoots, { onOpenSettings: closePicker, reason: roots.data.reason });
   if (roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
     return /* @__PURE__ */ jsx5(EmptyState4, { description: roots.data.reason, title: S.unsupportedTitle });
   }
@@ -2088,7 +2204,7 @@ function PickerBrowser({ profile, roots }) {
     /* @__PURE__ */ jsx5(EntryList, { b, height: 360 }),
     touched && /* @__PURE__ */ jsx5("div", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.chatChanged }),
     /* @__PURE__ */ jsxs5(DialogFooter3, { style: { alignItems: "center" }, children: [
-      /* @__PURE__ */ jsx5("span", { style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: S.selected(b.selected.size) }),
+      /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: S.selected(b.selected.size) }),
       skipped > 0 && /* @__PURE__ */ jsx5("span", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.lineBreakSkipped(skipped) }),
       /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
       touched ? /* @__PURE__ */ jsx5(Button5, { disabled: !insertable.length, onClick: () => copyLocations(text()), children: S.copyLocations }) : /* @__PURE__ */ jsx5(Button5, { disabled: !insertable.length, onClick: insert, children: S.insert })
@@ -2119,7 +2235,7 @@ function DrivePicker({ roots }) {
     /* @__PURE__ */ jsx5(DriveList, { d, height: 360 }),
     snap && /* @__PURE__ */ jsx5(ImportFailures, { failures: snap.failures }),
     /* @__PURE__ */ jsxs5(DialogFooter3, { style: { alignItems: "center" }, children: [
-      /* @__PURE__ */ jsx5("span", { style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: snap ? importStatus(snap) : S.selected(d.selected.size) }),
+      /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: snap ? importStatus(snap) : S.selected(d.selected.size) }),
       snap && !snap.running ? /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, children: S.close }) : /* @__PURE__ */ jsxs5(Fragment3, { children: [
         /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
         /* @__PURE__ */ jsx5(Button5, { disabled: !d.selected.size, loading: Boolean(snap), onClick: start, children: S.importAndInsert })

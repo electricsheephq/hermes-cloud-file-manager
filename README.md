@@ -34,27 +34,39 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 Cloud File Manager has two halves in one package: a small API that runs **on the agent's gateway** and the
 screens that run **in Hermes Desktop**.
 
+Cloud File Manager is in the [Hermes plugin catalog](https://hermes-agent.nousresearch.com/docs/plugins/hermes-cloud-file-manager).
+Installing from the catalog gets the reviewed release, pinned to its commit.
+
 **From Hermes Desktop (recommended):**
 
-1. Open **Capabilities → Plugins → Install from Git**, enter
-   `https://github.com/electricsheephq/hermes-cloud-file-manager`, choose **Review repository**, then **Install**.
-   Desktop installs the agent half into the connected agent and the desktop half on this computer.
-2. **Restart the agent's gateway** once. Hermes mounts plugin APIs only at startup.
+1. Open **Capabilities → Plugins**, choose **Browse** under **Plugin catalog**, find **Cloud File Manager**, and choose
+   **+ Add to this Agent**. Desktop installs the agent half into the connected agent and the desktop half on this
+   computer.
+2. On Hermes 0.21.6 or later, the agent picks the plugin up by itself within about a minute. On Hermes 0.21.5 and on
+   evaOS, **restart the agent's gateway** once.
 3. In **Capabilities → Plugins**, open **Cloud File Manager** and switch on **Desktop**. Desktop plugins stay off
    until you turn them on.
 
 The **Cloud Files** row appears in the sidebar, and **Cloud** appears in the chat **+** menu.
 
-**From the command line on the gateway machine:**
+**From the command line on the gateway machine** (Hermes 0.21.6 or later installs the catalog release by name):
 
 ```bash
-hermes plugins install electricsheephq/hermes-cloud-file-manager --no-enable
+hermes plugins install hermes-cloud-file-manager --no-enable
 hermes plugins enable hermes-cloud-file-manager
-# restart the gateway (or your hermes dashboard service) so the API is mounted
+# on Hermes 0.21.5, restart the gateway (or your hermes dashboard service) so the API is mounted
 ```
 
-Then add the desktop half on each computer that uses it: **Capabilities → Plugins → Install from Git** with the
-same repository, and switch on **Desktop** on the plugin's card.
+Then add the desktop half on each computer that uses it: in **Capabilities → Plugins**, choose **+ Add to this Agent**
+on the catalog entry, and switch on **Desktop** on the plugin's card.
+
+**Install from Git** (**Capabilities → Plugins → Install from Git** with
+`https://github.com/electricsheephq/hermes-cloud-file-manager`, or `hermes plugins install
+electricsheephq/hermes-cloud-file-manager`) also works. It follows the repository's `main` branch instead of the
+reviewed catalog release.
+
+**Updating:** a catalog install offers **Update to …** on the plugin's card in **Capabilities → Plugins** when a new
+release is pinned. After an update, restart the agent's gateway and reopen Hermes.
 
 The sidebar row and the **+ → Cloud** entry only appear for agents that have the gateway half enabled, so
 installing the desktop half is harmless for your other agents.
@@ -66,8 +78,9 @@ installing the desktop half is harmless for your other agents.
   you leave the page. Switching to another agent mid-upload pauses the batch until you switch back — files never
   land on the wrong machine.
 - **Find:** type in **Search files** (name contains, or a glob such as `*.pdf`) to search the folder you are in
-  and its subfolders. On a very large folder, search stops after 5 seconds and says that some matches may be
-  missing; open a subfolder to search inside it.
+  and its subfolders. Search skips `.git`, `node_modules`, `__pycache__`, `.venv`, `venv`, `.tox`, `.mypy_cache` and
+  `.cache` folders. On a very large folder, search stops after 5 seconds and says that some matches may be missing;
+  open a subfolder to search inside it.
 - **Read and edit Markdown:** double-click a `.md`, `.markdown` or `.txt` file (or select it and choose
   **Open**). It opens read-only, rendered like chat. Choose **Edit** to change the source, **Changes** to see
   your edits line by line, and **Review & save** to check the diff before **Save**. Nothing is written until you
@@ -127,13 +140,17 @@ For agents without it, nothing extra is shown.
 
 ## Settings
 
-All optional, under `plugins.entries.hermes-cloud-file-manager.settings` in the agent's `config.yaml`:
+All optional. Change them in Hermes Desktop: **Settings → Plugins → Cloud File Manager** on Hermes 0.21.6 or later,
+or the plugin's row in **Capabilities → Plugins** on Hermes 0.21.5 and evaOS. Changes apply on the next request; no
+restart is needed.
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `roots` | `[]` | Folders to show. Empty means the agent's own working folder (`terminal.cwd`), else the gateway user's home. |
-| `folder_notes` | `{}` | A short note per top-level folder, e.g. `{docs: "Imported into the agent's knowledge base"}`. |
-| `max_file_mb` | `100` | Largest single file accepted. Bigger files are refused before anything is sent. |
+Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.settings` in the agent's `config.yaml`:
+
+| Setting | Label in Desktop | Default | Meaning |
+|---|---|---|---|
+| `roots` | Folders to show | `[]` | Absolute folders to show. Empty means the agent's own working folder (`terminal.cwd`), else the gateway user's home. If none of the listed folders can be shown, Cloud Files says so and links to these settings. |
+| `folder_notes` | Folder notes | `{}` | A short note per top-level folder, e.g. `{"docs": "Imported into the agent's knowledge base"}`. |
+| `max_file_mb` | Largest upload (MiB) | `100` | Largest single file accepted, in MiB. Bigger files are refused before anything is sent. Decimals are rounded down; a value under 1 falls back to 100. |
 
 ## Security model
 
@@ -144,14 +161,16 @@ All optional, under `plugins.entries.hermes-cloud-file-manager.settings` in the 
   - Symlinks that point outside the shown folders are not followed. An upload never writes its final file
     through a link.
   - A listing may show such a link as not openable, with the link's own size and date. The plugin never opens
-    its target or shows the target's size or date; it only checks where the link points.
+    its target or shows the target's size or date; it only checks where the link points (the target's path and
+    identity).
   - **The agent's Hermes home (its settings and API keys) can never be listed, read or written**, even when it sits
     inside a shown folder. The exception is a folder inside it that the agent is set up to work in (`roots`,
     `terminal.cwd`, or the Docker `workspace/` folder); see [SECURITY.md](SECURITY.md).
   - When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
     are hidden and refused.
 - Uploads never overwrite, rename or delete existing files. There is no delete in this version. (Stale temporary
-  files with the plugin's reserved `.cfm-…part` name are cleaned up after 24 hours.)
+  files and folders with the plugin's reserved `.cfm-…part` and `.cfm-…dir` names are cleaned up once they are
+  more than 24 hours old, the next time an upload or Drive import starts in that folder; at most once an hour per folder.)
 - Only Save in the editor overwrites, only the file you opened, and only if it has not changed since you opened
   it. See [SECURITY.md](SECURITY.md) for the accepted race with writers outside this process.
 - Everyone who can use the agent can see its files — the same access the agent itself has.
@@ -169,6 +188,8 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
   as in Hermes's own file preview. Unsaved drafts live in memory only and are lost when Hermes quits.
 - A folder shows 500 items at a time; **Load more** adds the next 500. A folder with more than 20,000 items lists
   only the first 20,000; use **Search files** to find the rest.
+- A file changed in place outside Cloud Files (same name, new size or date) can take up to 5 seconds to show its new
+  size and date. New, removed and renamed items normally show at once.
 - A name that contains a line break can be browsed but not inserted into a chat; the picker says so.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
 - Google Drive is import-only: pick files, not folders, and nothing is ever written back to Drive.

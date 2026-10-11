@@ -15,10 +15,10 @@ import {
   useQueryClient,
   useValue
 } from '@hermes/plugin-sdk'
-import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
 import { $available, $driveAvailable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse } from './api'
-import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, RootSelect, useBrowser, useRoots } from './browser'
+import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, useBrowser, useRoots } from './browser'
 import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
@@ -96,6 +96,13 @@ function PageBody({ profile, ...open }: { profile: string } & DocProps) {
             <Skeleton key={i} style={{ height: 18 }} />
           ))}
         </div>
+      </Frame>
+    )
+  }
+  if (roots.data.code === 'no_roots') {
+    return (
+      <Frame profile={profile}>
+        <NoRoots reason={roots.data.reason} />
       </Frame>
     )
   }
@@ -206,6 +213,8 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
   const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile)
   const closeDoc = () => {
     const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null
+    // The Close button goes away with the editor: focus the file's row once the list is back (if it is listed).
+    if (doc && folder !== null) requestFocus(b.focusNext, folder, doc.path)
     setDoc(null)
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder)
   }
@@ -352,7 +361,9 @@ function ImportStatus({ onShow, onSettled }: { onShow: () => void; onSettled: ()
   return (
     <div aria-label={S.importToCloud} role="region" style={{ borderTop: '1px solid var(--ui-stroke-tertiary)', padding: '8px 20px', display: 'grid', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-        <span style={{ flex: 1, minWidth: 0 }}>{importStatus(snap)}</span>
+        <span aria-live="polite" role="status" style={{ flex: 1, minWidth: 0 }}>
+          {importStatus(snap)}
+        </span>
         {!snap.running && snap.imported.length > 0 && (
           <Button onClick={onShow} size="sm" variant="text">
             {S.show}
@@ -391,6 +402,7 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }: {
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const errorId = useId()
   useEffect(() => {
     if (open) {
       setName('')
@@ -423,8 +435,20 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }: {
           <DialogHeader>
             <DialogTitle>{S.newFolder}</DialogTitle>
           </DialogHeader>
-          <Input aria-label={S.folderName} autoFocus onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)} placeholder={S.folderName} value={name} />
-          {error && <div style={{ color: 'var(--ui-red)', fontSize: 12 }}>{error}</div>}
+          <Input
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={Boolean(error)}
+            aria-label={S.folderName}
+            autoFocus
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)}
+            placeholder={S.folderName}
+            value={name}
+          />
+          {error && (
+            <div id={errorId} role="alert" style={{ color: 'var(--ui-red)', fontSize: 12 }}>
+              {error}
+            </div>
+          )}
           <DialogFooter>
             <Button onClick={() => onOpenChange(false)} type="button" variant="text">
               {S.cancel}
@@ -447,10 +471,11 @@ function useBatch(batch: null | UploadBatch): BatchSnapshot {
 }
 
 /** Thin progress line: muted track, accent fill. Shown only while something is uploading. */
-function Bar({ value, style }: { value: number; style?: CSSProperties }) {
+function Bar({ value, label, style }: { value: number; label: string; style?: CSSProperties }) {
   const pct = Math.round(Math.min(100, Math.max(0, value * 100)))
   return (
     <div
+      aria-label={label}
       aria-valuemax={100}
       aria-valuemin={0}
       aria-valuenow={pct}
@@ -488,7 +513,9 @@ function UploadDrawer({ onSettled }: { onSettled: () => void }) {
         <Button aria-label={collapsed ? S.expand : S.collapse} onClick={() => setCollapsed(!collapsed)} size="icon-xs" variant="ghost">
           <Codicon name={collapsed ? 'chevron-up' : 'chevron-down'} size="0.875rem" />
         </Button>
-        <span style={{ flex: 1, minWidth: 0 }}>{headline}</span>
+        <span aria-live="polite" role="status" style={{ flex: 1, minWidth: 0 }}>
+          {headline}
+        </span>
         {snap.running ? (
           <Button onClick={() => batch.cancel()} size="sm" variant="text">
             {S.cancel}
@@ -499,7 +526,7 @@ function UploadDrawer({ onSettled }: { onSettled: () => void }) {
           </Button>
         )}
       </div>
-      {snap.running && <Bar value={sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0} />}
+      {snap.running && <Bar label={S.uploadProgress} value={sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0} />}
       {!collapsed && (
         <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4 }}>
           {snap.items.map(item => (
@@ -532,7 +559,7 @@ function UploadRow({ item, onRetry }: { item: UploadItem; onRetry: () => void })
         )}
       </span>
       {item.status === 'uploading' && (
-        <Bar style={{ gridColumn: '1 / -1', marginTop: 3 }} value={item.size ? item.sent / item.size : 0} />
+        <Bar label={S.uploadProgressOf(item.path)} style={{ gridColumn: '1 / -1', marginTop: 3 }} value={item.size ? item.sent / item.size : 0} />
       )}
     </div>
   )

@@ -132,7 +132,7 @@ describe('Cloud Files page', () => {
     act(() => $available.set(false))
     expect(
       await screen.findByText(
-        "Cloud Files isn't set up on default yet. Install the plugin on the agent's gateway, add it to `plugins.enabled`, and restart the gateway."
+        "Cloud Files isn't set up on default yet. Install the Cloud File Manager plugin on the agent and enable it (Capabilities ▸ Plugins, or `hermes plugins enable hermes-cloud-file-manager`). On Hermes 0.21.6 or later it appears within about a minute; on older versions, restart the agent's gateway."
       )
     ).toBeTruthy()
   })
@@ -210,7 +210,7 @@ describe('Cloud Files page', () => {
     expect(await screen.findByText('Cloud Files needs an update on this agent')).toBeTruthy()
     expect(
       screen.getByText(
-        "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there, then restart Hermes on that machine."
+        "The agent's machine has an older version of the Cloud File Manager plugin, or it isn't enabled. Update or enable it there. After an update, restart the agent's gateway."
       )
     ).toBeTruthy()
     expect(screen.queryByText("Couldn't load files")).toBeNull()

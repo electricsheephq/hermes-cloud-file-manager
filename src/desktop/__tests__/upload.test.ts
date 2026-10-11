@@ -297,3 +297,59 @@ describe('upload engine', () => {
     expect(h.batch.getSnapshot().items.map(item => item.status)).toEqual(['canceled'])
   })
 })
+
+describe('upload engine: File handles (v0.3.5)', () => {
+  /** The File handles the batch still holds (private; read here to prove they are released). */
+  const held = (batch: UploadBatch) => (batch as any).blobs as Map<number, Blob>
+
+  it('holds no File handle once 10 uploads complete', async () => {
+    const h = harness()
+    h.batch.add({ files: Array.from({ length: 10 }, (_, i) => ({ file: blob(1000 + i), rel: `f${i}.bin` })) }, { root: 'home', folder: '' })
+    expect(held(h.batch).size).toBe(10)
+    await h.batch.start()
+    expect(h.batch.getSnapshot().items.every(item => item.status === 'done')).toBe(true)
+    expect(held(h.batch).size).toBe(0)
+  })
+
+  it('keeps the bytes of a retryable failure, and Retry after a failed chunk sends them again', async () => {
+    const h = harness({ '/uploads/chunk': (_body, n) => (n === 1 ? { ok: false, code: 'io_error', message: 'disk' } : undefined) })
+    h.batch.add({ files: [{ file: blob(3 * MiB), rel: 'a.bin' }] }, { root: 'home', folder: '' })
+    await h.batch.start()
+    const [item] = h.batch.getSnapshot().items
+    expect(item).toMatchObject({ status: 'failed', error: "Something went wrong reading or writing on the agent's machine." })
+    expect(item.retryable).not.toBe(false)
+    expect(held(h.batch).size).toBe(1)
+    h.batch.retry(item.id)
+    await flush()
+    await h.batch.start()
+    expect(h.batch.getSnapshot().items[0]).toMatchObject({ status: 'done', sent: 3 * MiB })
+    expect(h.of('/uploads/chunk').at(-1)?.body).toMatchObject({ offset: 0, data: String(3 * MiB) }) // the real bytes again
+    expect(held(h.batch).size).toBe(0)
+  })
+
+  it('restarts after a server `gone` with the same bytes, then releases them', async () => {
+    const h = harness({ '/uploads/chunk': (_body, n) => (n === 2 ? { ok: false, code: 'gone' } : undefined) })
+    h.batch.add({ files: [{ file: blob(6 * MiB), rel: 'a.bin' }] }, { root: 'home', folder: '' })
+    await h.batch.start()
+    expect(h.of('/uploads/start')).toHaveLength(2)
+    expect(h.of('/uploads/chunk').map(c => c.body.offset)).toEqual([0, 4 * MiB, 0, 4 * MiB])
+    expect(h.batch.getSnapshot().items[0]).toMatchObject({ status: 'done', sent: 6 * MiB })
+    expect(held(h.batch).size).toBe(0)
+  })
+
+  it('never holds a too-large file, and cancel releases the rest', async () => {
+    const chunks: Array<(value: unknown) => void> = []
+    const h = harness({ '/uploads/chunk': () => new Promise(resolve => chunks.push(resolve)) }, { max_file_bytes: MiB, chunk_bytes: MiB })
+    h.batch.add({ files: [{ file: blob(2 * MiB), rel: 'big.bin' }, { file: blob(10), rel: 'a.txt' }, { file: blob(10), rel: 'b.txt' }, { file: blob(10), rel: 'c.txt' }] }, { root: 'home', folder: '' })
+    expect(h.batch.getSnapshot().items[0]).toMatchObject({ status: 'failed', retryable: false })
+    expect(held(h.batch).size).toBe(3)
+    const done = h.batch.start()
+    await flush()
+    h.batch.cancel()
+    expect(held(h.batch).size).toBe(0)
+    expect(chunks).toHaveLength(2) // two files in flight
+    chunks.forEach(answer => answer({ ok: true, size: 10 }))
+    await done
+    expect(h.batch.getSnapshot().items.map(item => item.status)).toEqual(['failed', 'canceled', 'canceled', 'canceled'])
+  })
+})
