@@ -169,7 +169,8 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
   - When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
     are hidden and refused.
 - Uploads never overwrite, rename or delete existing files. There is no delete in this version. (Stale temporary
-  files and folders with the plugin's reserved `.cfm-…part` and `.cfm-…dir` names are cleaned up after 24 hours.)
+  files and folders with the plugin's reserved `.cfm-…part` and `.cfm-…dir` names are cleaned up once they are
+  more than 24 hours old, the next time an upload or Drive import starts in that folder; at most once an hour per folder.)
 - Only Save in the editor overwrites, only the file you opened, and only if it has not changed since you opened
   it. See [SECURITY.md](SECURITY.md) for the accepted race with writers outside this process.
 - Everyone who can use the agent can see its files — the same access the agent itself has.

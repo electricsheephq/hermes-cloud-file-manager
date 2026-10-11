@@ -14,7 +14,7 @@ config_schema:
     type: list
     label: "Folders to show"
     default: []
-    description: "Absolute folders on the agent's machine to show in Cloud Files, as a JSON list, e.g. [\"/home/me/projects\"]. Empty = the agent's working folder (terminal.cwd), else the gateway user's home."
+    description: "Absolute folders on the agent's machine to show in Cloud Files, as a JSON list, e.g. [\"/home/me/projects\"]. Empty = the agent's working folder (terminal.cwd, else the TERMINAL_CWD or MESSAGING_CWD the gateway runs with), else the gateway user's home."
   folder_notes:
     type: dict
     label: "Folder notes"

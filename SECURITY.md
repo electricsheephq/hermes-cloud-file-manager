@@ -34,13 +34,12 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
 - Uploads and Drive imports never overwrite, rename or delete an existing file. Two reserved name patterns are
   the plugin's own temporary names: `.cfm-<32 lowercase hex>.part` (an upload or editor save in progress) and
   `.cfm-<32 lowercase hex>.dir` (a Drive import in progress):
-  - a file is never stored under either name;
+  - a file is never stored under either name, and Cloud Files never creates a folder with either name;
   - regular files with exactly the `.part` name that are older than 24 hours are removed from a folder when a new
-    upload or Drive import starts there;
+    upload or Drive import starts there (this cleanup runs at most once an hour per folder);
   - a `.dir` folder is removed when its import finishes or fails. One left behind by a gateway crash or a failed
-    cleanup stays hidden until it is older than 24 hours; then it is removed, with its contents, when the next upload
-    or Drive import starts in that folder. Only real folders with exactly that name are removed, never a link or a
-    file with that name.
+    cleanup stays hidden until it is older than 24 hours; then the same cleanup removes it, with its contents. Only
+    real folders with exactly that name are removed, never a link or a file with that name.
 - Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
   changed since you opened it. Reads and saves accept only regular `.md`, `.markdown` and `.txt` files up to
   1 MiB. Files with more than one hard link are refused: another name could alias a protected Hermes-home file.

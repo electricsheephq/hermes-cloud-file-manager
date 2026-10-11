@@ -58,7 +58,7 @@ def main():
                 if rep:  # rep 0 is warm-up
                     samples[name].append(time.perf_counter() - t)
                 results.setdefault(label, {}).setdefault("_check", {})[name] = [
-                    (b["total"], b["truncated"], [e["rel"] for e in b["entries"]][:3]) for b in bodies]
+                    (b["total"], b["truncated"], b["entries"]) for b in bodies]
         checks = results[label].pop("_check")
         same = len({json.dumps(v) for v in checks.values()}) == 1
         results[label] = {name: hb.summarize(s) for name, s in samples.items()}
