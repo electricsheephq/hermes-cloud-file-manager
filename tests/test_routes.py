@@ -63,7 +63,7 @@ def test_malformed_config_defaults(client, api, monkeypatch, tmp_path, cfg):
     assert body["roots"][0]["path"] == str(tmp_path)
 
 
-@pytest.mark.parametrize("cap", [0, -1, True, "2", 1.5, None])
+@pytest.mark.parametrize("cap", [0, -1, True, "2", 0.5, None])
 def test_invalid_size_setting(client, fs, cap):
     _, cfg = fs
     cfg["plugins"]["entries"]["hermes-cloud-file-manager"]["settings"]["max_file_mb"] = cap
