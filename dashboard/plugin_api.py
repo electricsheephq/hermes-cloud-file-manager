@@ -16,6 +16,7 @@ from functools import wraps
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -43,6 +44,9 @@ MAX_CHUNK_BYTES = 8 * 1024 * 1024
 EDIT_MAX_BYTES = 1024 * 1024
 EDIT_EXTS = {".md", ".markdown", ".txt"}
 SCAN_LIMIT = 20000
+LIST_CACHE_SECONDS = 5
+_LIST_CACHE: dict = {}
+_LIST_CACHE_LOCK = Lock()
 SEARCH_VISIT_LIMIT = 1_000_000
 SEARCH_SECONDS = 5.0
 TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.part$")
@@ -85,8 +89,15 @@ def _protocol(fn):
             return fn(*args, **kwargs)
         except GuardError as exc:
             return {"ok": False, "code": exc.code, "message": exc.message, **exc.details}
-        except OSError:
-            return {"ok": False, "code": "io_error", "message": "The filesystem operation failed."}
+        except OSError as exc:
+            code, message = {
+                errno.EACCES: ("permission_denied", "The agent's user isn't allowed to open or change this."),
+                errno.EPERM: ("permission_denied", "The agent's user isn't allowed to open or change this."),
+                errno.ENOSPC: ("no_space", "The agent's machine is out of disk space."),
+                errno.EDQUOT: ("no_space", "The agent's machine is out of disk space."),
+                errno.EROFS: ("read_only", "This location is read-only."),
+            }.get(exc.errno, ("io_error", "The filesystem operation failed."))
+            return {"ok": False, "code": code, "message": message}
     return wrapped
 
 
@@ -119,7 +130,8 @@ def _settings(cfg):
 
 def _max_bytes(cfg):
     mb = _settings(cfg).get("max_file_mb", 100)
-    return (mb if type(mb) is int and mb >= 1 else 100) * 1024 * 1024
+    valid = type(mb) is int or (type(mb) is float and math.isfinite(mb))
+    return (int(mb) if valid and mb >= 1 else 100) * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -197,7 +209,9 @@ def _roots(cfg=None):
             break
     if _identity(workspace) in protection.excluded or _home_path(workspace, protection):
         workspace = workspace / "workspace"
-        workspace.mkdir(exist_ok=True)
+        if not workspace.is_dir():
+            workspace.mkdir(exist_ok=True)
+            _clear_list_cache()
     if Path(os.path.realpath(workspace)).parent == Path(os.path.realpath(workspace)):
         raise GuardError("protected", "A filesystem root cannot be exposed.")
     identity = _identity(workspace)
@@ -257,6 +271,20 @@ def _inside(path, root):
         return False
 
 
+def _contained(path, root):
+    """Return an inside path in root's spelling; folded spelling alone never grants access."""
+    if _inside(path, root):
+        return path
+    if not _inside(_canonical(path), _canonical(root)):
+        return None
+    depth = len(root.parts)
+    ancestor = Path(*path.parts[:depth])
+    identity = _identity(root)
+    if identity is None or _identity(ancestor) != identity:
+        return None
+    return root.joinpath(*path.parts[depth:])
+
+
 def _home_root(root):
     if root.is_home is not None:
         return root.is_home
@@ -280,7 +308,8 @@ def _check_protected(target, realroot, protection=None):
     ancestor = target
     while not ancestor.exists() and ancestor != ancestor.parent:
         ancestor = ancestor.parent
-    while _inside(ancestor, realroot):
+    ancestor = _contained(ancestor, realroot)
+    while ancestor is not None and _inside(ancestor, realroot):
         identity = _identity(ancestor)
         if identity is not None and identity in excluded:
             raise GuardError("protected", "The Hermes home is protected.")
@@ -290,7 +319,8 @@ def _check_protected(target, realroot, protection=None):
 
 
 def _home_dot(root, resolved, realroot):
-    return (_home_root(root) and _inside(resolved, realroot) and resolved != realroot
+    resolved = _contained(resolved, realroot)
+    return (_home_root(root) and resolved is not None and resolved != realroot
             and resolved.relative_to(realroot).parts[0].startswith("."))
 
 
@@ -311,10 +341,10 @@ def _resolve(root: Root, rel: str, *, for_write: bool) -> Path:
             if exc.errno == errno.ENAMETOOLONG:
                 _portable(part)
             raise
-        if stat.S_ISLNK(info.st_mode) and not _inside(Path(os.path.realpath(candidate)), realroot):
+        if stat.S_ISLNK(info.st_mode) and _contained(Path(os.path.realpath(candidate)), realroot) is None:
             raise GuardError("outside_root", "The path leaves the selected root.")
-    resolved = Path(os.path.realpath(candidate))
-    if not _inside(resolved, realroot):
+    resolved = _contained(Path(os.path.realpath(candidate)), realroot)
+    if resolved is None:
         raise GuardError("outside_root", "The path leaves the selected root.")
     _check_protected(resolved, realroot, root.protection)
     if _home_root(root) and parts and parts[0].startswith("."):
@@ -346,7 +376,9 @@ def _entry(root, path):
         link = stat.S_ISLNK(link_info.st_mode)
         realpath = Path(os.path.realpath(path))
         realroot = Path(os.path.realpath(root.path))
-        outside = link and not _inside(realpath, realroot)
+        contained = _contained(realpath, realroot)
+        outside = link and contained is None
+        realpath = contained if contained is not None else realpath
         _check_protected(realpath, realroot, root.protection)
         if _home_dot(root, realpath, realroot):
             return None
@@ -369,6 +401,7 @@ def _mkdir(root, rel):
             continue
         try:
             os.mkdir(current)
+            _clear_list_cache()
             created = n == len(parts)
         except FileExistsError:
             if not current.is_dir():
@@ -547,6 +580,7 @@ def _save_file(root, target, body, data):
         except FileNotFoundError:
             raise GuardError("changed", "The file disappeared while saving.")
         os.replace(temp, target)
+        _clear_list_cache()
         _sync_dir(target.parent)
         info = os.lstat(target)
         return {"ok": True, "sha256": hashlib.sha256(data).hexdigest(),
@@ -613,8 +647,13 @@ def roots():
                 continue
         result.append({"id": root.id, "label": root.label, "path": str(root.path), "notes": kept})
     supported = _supported(cfg)
-    return {"ok": True, "supported": supported, "reason": None if supported else "The terminal backend is not local.",
+    response = {"ok": True, "supported": supported, "reason": None if supported else "The terminal backend is not local.",
             "roots": result, "max_file_bytes": _max_bytes(cfg), "chunk_bytes": CHUNK_BYTES, "highlights": ["docs", "uploads"]}
+    configured = _settings(cfg).get("roots")
+    if isinstance(configured, list) and configured and not result:
+        response.update(code="no_roots", reason="None of the folders in Cloud Files settings can be shown on this machine. "
+                        "Check the paths in the plugin's settings.")
+    return response
 
 
 @router.get("/list")
@@ -624,18 +663,83 @@ def list_files(root: str, path: str = "", offset: int = Query(0, ge=0), limit: i
     folder = _resolve(selected, path, for_write=False)
     if not folder.is_dir():
         raise GuardError("not_a_dir", "The selected path is not a directory.")
+    rel_folder = _rel(selected, folder)
+    key = _list_key(selected, folder)
+    # Serialize cache fill with invalidation: a scan begun before a write cannot refill after its clear.
+    with _LIST_CACHE_LOCK:
+        cached = _LIST_CACHE.get(key) if key is not None else None
+        if cached is not None and time.monotonic() - cached[0] < LIST_CACHE_SECONDS:
+            entries, truncated = cached[1:]
+        else:
+            entries, truncated = _scan_folder(selected, folder, rel_folder)
+            if key is not None:
+                _LIST_CACHE[key] = (time.monotonic(), entries, truncated)
+                while len(_LIST_CACHE) > 8:
+                    del _LIST_CACHE[next(iter(_LIST_CACHE))]
+    return {"ok": True, "root": root, "path": rel_folder, "entries": entries[offset:offset + limit],
+            "total": len(entries), "truncated": truncated}
+
+
+def _clear_list_cache():
+    with _LIST_CACHE_LOCK:
+        _LIST_CACHE.clear()
+
+
+def _list_key(root, folder):
+    if LIST_CACHE_SECONDS <= 0:
+        return None
+    info = os.stat(folder)
+    return (str(root.path), root.id, root.protection, root.is_home, str(folder), os.path.realpath(folder), info.st_dev, info.st_ino,
+            info.st_mtime_ns, info.st_ctime_ns, SCAN_LIMIT)
+
+
+def _scan_folder(selected, folder, rel_folder):
+    """Hoist folder guards; links and unusual entries retain the full _entry path."""
+    protection = selected.protection
+    canon_root = _canonical(selected.path)
+    canon_folder = _canonical(folder)
+    home = _home_root(selected)
+    at_home = home and _identity(folder) == _identity(selected.path)
+    homes = [h for h in protection.homes if not (canon_root != h and _inside(canon_root, h))] if protection else []
+    prefix = rel_folder + "/" if rel_folder else ""
     entries, truncated = [], False
     with os.scandir(folder) as scan:
         for n, item in enumerate(scan):
             if n >= SCAN_LIMIT:
                 truncated = True
                 break
-            entry = _entry(selected, Path(item.path))
-            if entry is not None:
-                entries.append(entry)
+            name = item.name
+            if protection is None:
+                entry = _entry(selected, Path(item.path))
+                if entry is not None:
+                    entries.append(entry)
+                continue
+            if not _encodable(item.path) or TEMP_RE.fullmatch(name.lower()) or DRIVE_TEMP_RE.fullmatch(name):
+                continue
+            if home and ((prefix or name).split("/")[0].startswith(".") or (at_home and name.startswith("."))):
+                continue
+            try:
+                info = item.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+                entry = _entry(selected, Path(item.path))
+                if entry is not None:
+                    entries.append(entry)
+                continue
+            canon_name = unicodedata.normalize("NFD", name) if sys.platform == "darwin" else name
+            if sys.platform in {"darwin", "win32"}:
+                canon_name = canon_name.casefold()
+            canon_target = os.path.join(canon_folder, canon_name)
+            if any(_inside(canon_target, h) for h in homes):
+                continue
+            is_dir = stat.S_ISDIR(info.st_mode)
+            if is_dir and (info.st_dev, info.st_ino) in protection.excluded:
+                continue
+            entries.append({"name": name, "rel": prefix + name, "abs": item.path, "is_dir": is_dir,
+                            "size": None if is_dir else info.st_size, "mtime": info.st_mtime, "link_outside": False})
     entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower(), e["name"]))
-    return {"ok": True, "root": root, "path": _rel(selected, folder), "entries": entries[offset:offset + limit],
-            "total": len(entries), "truncated": truncated}
+    return entries, truncated
 
 
 @router.get("/search")
@@ -711,6 +815,7 @@ def search(root: str, q: str, limit: int = Query(100, ge=1, le=200), path: str =
 def mkdir(body: Target):
     root, _ = _request_root(body.root)
     path, created = _mkdir(root, body.path)
+    _clear_list_cache()
     return {"ok": True, "created": created, "entry": _entry(root, path)}
 
 
@@ -721,15 +826,26 @@ def _sweep(parent):
             return
         _LAST_SWEEP[key] = now
     cutoff = time.time() - 24 * 3600
-    with os.scandir(parent) as scan:
-        for item in scan:
-            if TEMP_RE.fullmatch(item.name):  # exact case: only names this plugin creates
+    try:
+        with os.scandir(parent) as scan:
+            for item in scan:
+                part, directory = TEMP_RE.fullmatch(item.name), DRIVE_TEMP_RE.fullmatch(item.name)
+                if not (part or directory):  # exact case: only names this plugin creates
+                    continue
                 try:
                     info = os.lstat(item.path)
-                    if stat.S_ISREG(info.st_mode) and info.st_mtime < cutoff:
+                    if info.st_mtime >= cutoff:
+                        continue
+                    if part and stat.S_ISREG(info.st_mode):
                         os.unlink(item.path)
-                except OSError:  # cleanup is incidental: gone, locked or not ours to delete never blocks an upload
+                        _clear_list_cache()
+                    elif directory and stat.S_ISDIR(info.st_mode):
+                        shutil.rmtree(item.path)
+                        _clear_list_cache()
+                except OSError:
                     pass
+    except OSError:  # even opening/iterating a write-only folder must never block an upload
+        pass
 
 
 @router.post("/uploads/start")
@@ -748,6 +864,7 @@ def upload_start(body: SizedTarget):
     temp = target.parent / f".cfm-{upload_id}.part"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     os.close(os.open(temp, flags, 0o666))
+    _clear_list_cache()
     return {"ok": True, "upload_id": upload_id, "chunk_bytes": CHUNK_BYTES, "max_file_bytes": cap}
 
 
@@ -778,6 +895,7 @@ def upload_chunk(body: Chunk):
             remaining = remaining[written:]
     finally:
         os.close(fd)
+    _clear_list_cache()
     return {"ok": True, "size": os.lstat(temp).st_size}
 
 
@@ -873,6 +991,7 @@ def _publish(root, target, temp):
         os.close(fd)
         try:
             os.replace(temp, candidate)
+            _clear_list_cache()
         except OSError:
             try:
                 current = os.lstat(candidate)
@@ -892,6 +1011,7 @@ def upload_abort(body: UploadTarget):
     if info is not None:
         try:
             os.unlink(temp)
+            _clear_list_cache()
         except FileNotFoundError:
             pass
     return {"ok": True}
@@ -1039,6 +1159,7 @@ def drive_import(body: DriveImport):
     _drive_id(body.id)
     root, cfg = _request_root(body.root)
     dest, _ = _mkdir(root, body.dest)
+    _sweep(dest)
     metadata = _drive_command(["get", body.id])
     try:
         name, mime = metadata["name"], metadata["mimeType"]
@@ -1065,6 +1186,7 @@ def drive_import(body: DriveImport):
     live = replace(root, protection=None)
     tempdir = _resolve(live, tmp_rel, for_write=True)
     os.mkdir(tempdir)
+    _clear_list_cache()
     try:
         _resolve(live, tmp_rel, for_write=True)
         _drive_command(["download", body.id, "--output", str(tempdir / "download")], 300, json_output=False)
@@ -1079,5 +1201,6 @@ def drive_import(body: DriveImport):
     finally:
         try:
             shutil.rmtree(tempdir)
+            _clear_list_cache()
         except OSError:  # cleanup is incidental; never turn a published import into a failure
             pass
