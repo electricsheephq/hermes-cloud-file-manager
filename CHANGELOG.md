@@ -2,7 +2,9 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## [Unreleased]
+## [0.3.8] - 2026-10-12
+
+Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.
 
 ### Fixed
 - A Google Drive picker kept open across two agent switches no longer shows "Google Drive isn't available" for the
