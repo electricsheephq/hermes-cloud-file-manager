@@ -618,14 +618,19 @@ var LIST_PAGE_MAX = 2e3;
 var SEARCH_LIMIT = 200;
 var DEBOUNCE_MS = 300;
 var SETTINGS_PATH = "/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager";
+function requestFocus(request, want) {
+  request.current = { want, from: document.activeElement };
+}
 function useListFocus(request, ready) {
   const list = useRef(null);
   useEffect(() => {
-    const want = request.current;
-    if (!want || !ready || !list.current) return;
+    const req = request.current;
+    if (!req || !ready || !list.current) return;
     request.current = null;
+    const now = document.activeElement;
+    if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return;
     const rows = [...list.current.querySelectorAll("[role=listitem]")];
-    (rows.find((row) => row.getAttribute("data-entry") === want) ?? rows[0] ?? list.current).focus();
+    (rows.find((row) => row.getAttribute("data-entry") === req.want) ?? rows[0] ?? list.current).focus();
   });
   return list;
 }
@@ -733,8 +738,8 @@ function NoRoots({ reason, onOpenSettings }) {
       Button,
       {
         onClick: () => {
-          host.navigate(SETTINGS_PATH);
           onOpenSettings?.();
+          host.navigate(SETTINGS_PATH);
         },
         size: "sm",
         variant: "secondary",
@@ -770,7 +775,7 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
           Button,
           {
             onClick: (event) => {
-              if (fromKeyboard(event)) b.focusNext.current = true;
+              if (fromKeyboard(event)) requestFocus(b.focusNext, true);
               onNavigate(crumb.path);
             },
             size: "inline",
@@ -904,7 +909,7 @@ function EntryRow({ b, entry, onOpen, searching }) {
       onKeyDown: (event) => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter") {
-          if (entry.is_dir && !entry.link_outside) b.focusNext.current = true;
+          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, true);
           onOpen(entry);
         }
         if (event.key === " ") {
@@ -1084,7 +1089,7 @@ function DriveCrumbs({ d }) {
       Button2,
       {
         onClick: (event) => {
-          if (fromKeyboard(event)) d.focusNext.current = true;
+          if (fromKeyboard(event)) requestFocus(d.focusNext, true);
           d.crumb(i);
         },
         size: "inline",
@@ -1133,7 +1138,7 @@ function DriveRow({ d, item, sized }) {
       onKeyDown: (event) => {
         if (event.target !== event.currentTarget || event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        if (item.is_folder && event.key === "Enter") d.focusNext.current = true;
+        if (item.is_folder && event.key === "Enter") requestFocus(d.focusNext, true);
         activate();
       },
       onMouseEnter: () => setHover(true),
@@ -1790,7 +1795,7 @@ function Files({ profile, roots, doc, setDoc }) {
   const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile);
   const closeDoc = () => {
     const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null;
-    if (doc && folder !== null) b.focusNext.current = doc.path;
+    if (doc && folder !== null) requestFocus(b.focusNext, doc.path);
     setDoc(null);
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder);
   };
