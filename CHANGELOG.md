@@ -2,6 +2,36 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.3.5] - 2026-10-11
+
+Faster big folders, clearer messages and keyboard use. Both halves changed: after updating, restart the agent's gateway
+and reopen Hermes. Checked against Hermes v0.21.6 and evaOS Desktop es.16.
+
+### Changed
+- Big folders open much faster. A 20,000-item folder lists in about a tenth of the time it took, and **Load more**
+  reuses the folder it already read instead of reading it again, so going from 500 to 2,500 items takes a fraction of
+  a second instead of several seconds. The listing is the same as before, item for item. A file changed in place
+  outside Cloud Files can take up to 5 seconds to show its new size and date.
+- Settings have plain labels in Hermes Desktop: **Folders to show**, **Folder notes** and **Largest upload (MiB)**.
+  **Largest upload** accepts decimals (rounded down) instead of silently using 100.
+- The install guide leads with the Hermes plugin catalog, which installs the reviewed release, and says how to update.
+  On Hermes 0.21.6 or later, enabling the plugin needs no gateway restart.
+
+### Fixed
+- Errors say what went wrong: a folder the agent's user can't open or change, a full disk, or a read-only location,
+  instead of "The filesystem operation failed." Every error the agent's machine can return now has a plain message.
+- If none of the folders in **Folders to show** can be shown, Cloud Files says so and offers **Open settings**, instead
+  of "Something went wrong".
+- Keyboard users can see which row has focus, and focus stays in the list after opening a folder or closing a file.
+  Upload, import and save progress, and dialog errors, are announced to screen readers.
+- An upload into a folder the agent can write to but not read (a "drop box") no longer fails.
+- A folder spelled with different capitals from the disk (on macOS) no longer treats links inside it as outside.
+- Finished uploads no longer keep their files referenced until **Clear**.
+- The **+ → Cloud** picker no longer suggests uploading into an empty folder, and the Google Drive view hides its size
+  column when Drive gives no sizes.
+- A Drive import interrupted by a gateway crash no longer leaves its hidden staging folder forever: it is removed after
+  24 hours.
+
 ## [0.3.4] - 2026-10-03
 
 Big folders and the **+ → Cloud** picker. Only the Desktop half changed: reopen Hermes after updating. The agent's
