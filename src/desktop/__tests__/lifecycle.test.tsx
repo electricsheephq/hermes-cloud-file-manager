@@ -96,7 +96,9 @@ it.each(['profile', 'connectionId'] as const)('Cloud picker pinned elsewhere sur
   await waitFor(() => expect($available.get()).toBe(false))
   expect($pickerOpen.get()).toBe(true)
   expect(['picker-host', 'nav', 'attach-cloud', 'attach-drive'].map(id => t.live.has(id))).toEqual([true, false, false, false])
-  expect(screen.getByText(`Cloud Files isn't set up on ${host.state.profile.get()}. Switch back to default to keep picking files there.`)).toBeTruthy()
+  expect(screen.getByText(key === 'profile'
+    ? "Cloud Files isn't set up on agent-b. Switch back to default to keep picking files there."
+    : "Cloud Files isn't set up on the agent you switched to. Switch back to the agent you opened this on to keep picking files there.")).toBeTruthy()
   expect(screen.queryByText(S.needsUpdateTitle)).toBeNull()
   expect(fileCalls(backend.calls.slice(beforeSwitch))).toEqual([])
   expect(screen.queryByRole('button', { name: 'Insert locations' })).toBeNull()
@@ -225,6 +227,44 @@ it.each(['cloud-404', 'drive-false', 'drive-404'])('Drive picker pinned elsewher
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   await start.mock.results[0].value
   expect(job.getSnapshot().canceled).toBe(true)
+})
+
+it.each(['drive-false', 'drive-404'])('Drive picker closes when its own agent answers %s after a round trip', async answer => {
+  let driveGone = false, finish!: () => void
+  const backend = fakeBackend({
+    '/drive/available': () => {
+      if (host.state.profile.get() === 'agent-b' || driveGone) {
+        if (answer === 'drive-404') throw new Error('404: Drive not mounted')
+        return { available: false }
+      }
+      return { available: true }
+    },
+    '/drive/import': opts => new Promise(resolve => { finish = () => resolve({ ok: true, entry: importedEntry(opts.body.id) }) })
+  }, undefined, path => {
+    if (host.state.profile.get() === 'agent-b' && path.startsWith('/drive/') && path !== '/drive/available') noPlugin()
+  })
+  const t = context(backend.rest)
+  plugin.register(t.ctx as any); await flush()
+  host.state.focusedSessionOwner.set(null)
+  const start = vi.spyOn(DriveImport.prototype, 'start'), insertText = vi.fn()
+  render(t.live.get('picker-host').render())
+  act(() => t.live.get('attach-drive').data.run({ insertText }))
+  fireEvent.click(await screen.findByText('Plan'))
+  fireEvent.click(screen.getByText('report.pdf'))
+  fireEvent.click(screen.getByRole('button', { name: 'Import and insert' }))
+  const job = start.mock.contexts[0] as DriveImport
+  act(() => host.state.profile.set('agent-b'))
+  await screen.findByText(S.drivePinnedElsewhere('agent-b', 'default'))
+  // Back on the pinned agent, whose Drive is now gone: the provider was already dropped by the switch, and the
+  // picker must still close (not sit on a busy body) and stop its import.
+  driveGone = true
+  act(() => host.state.profile.set('default'))
+  await waitFor(() => expect($driveAvailable.get()).toBe(false))
+  expect($pickerOpen.get()).toBe(false)
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(job.getSnapshot().canceled).toBe(true)
+  finish?.()
+  expect(insertText).not.toHaveBeenCalled()
 })
 
 it('Cloud picker stays open on a round trip after B\'s 404 and registers its host exactly once', async () => {

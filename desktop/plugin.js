@@ -76,8 +76,9 @@ var S = {
   tooLarge: (max) => `Too large (max ${mb(max)})`,
   // Picker
   pickerTitle: "Attach from Cloud Files",
-  pickerPinnedElsewhere: (current, pinned) => `Cloud Files isn't set up on ${current}. Switch back to ${pinned} to keep picking files there.`,
-  drivePinnedElsewhere: (current, pinned) => `Google Drive isn't available on ${current}. Switch back to ${pinned} to keep importing; an import already started there continues when you switch back.`,
+  // Same profile name means only the connection changed, so the names wouldn't tell the agents apart.
+  pickerPinnedElsewhere: (current, pinned) => current === pinned ? "Cloud Files isn't set up on the agent you switched to. Switch back to the agent you opened this on to keep picking files there." : `Cloud Files isn't set up on ${current}. Switch back to ${pinned} to keep picking files there.`,
+  drivePinnedElsewhere: (current, pinned) => current === pinned ? "Google Drive isn't available on the agent you switched to. Switch back to the agent you opened this on to keep importing; an import already started there continues when you switch back." : `Google Drive isn't available on ${current}. Switch back to ${pinned} to keep importing; an import already started there continues when you switch back.`,
   selected: (n) => `${n} selected`,
   insert: "Insert locations",
   lineBreakSkipped: (n) => n === 1 ? "A selected name has a line break, so it won\u2019t be inserted." : `${n} selected names have a line break, so they won\u2019t be inserted.`,
@@ -2271,10 +2272,10 @@ function registerAvailabilityGate(ctx, onChange) {
   const setDrive = (available) => {
     if (disposed) return;
     if ($driveAvailable.get() !== available) $driveAvailable.set(available);
+    if (!available && $pickerOpen.get() && $pickerSource.get() === "drive" && !pickerPinnedElsewhere()) closePicker();
     if (available && !driveRemover) {
       driveRemover = ctx.register({ id: "attach-drive", area: COMPOSER_AREAS.attachments, data: driveProvider });
     } else if (!available && driveRemover) {
-      if ($pickerSource.get() === "drive" && !pickerPinnedElsewhere()) closePicker();
       driveRemover();
       driveRemover = null;
     }

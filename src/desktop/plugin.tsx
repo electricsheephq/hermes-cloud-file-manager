@@ -36,10 +36,11 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   const setDrive = (available: boolean) => {
     if (disposed) return
     if ($driveAvailable.get() !== available) $driveAvailable.set(available)
+    // An agent switch already dropped the provider, so a "no" for the picker's own agent closes it either way.
+    if (!available && $pickerOpen.get() && $pickerSource.get() === 'drive' && !pickerPinnedElsewhere()) closePicker()
     if (available && !driveRemover) {
       driveRemover = ctx.register({ id: 'attach-drive', area: COMPOSER_AREAS.attachments, data: driveProvider })
     } else if (!available && driveRemover) {
-      if ($pickerSource.get() === 'drive' && !pickerPinnedElsewhere()) closePicker()
       driveRemover()
       driveRemover = null
     }
