@@ -13,7 +13,7 @@ from conftest import error, get, post
     (errno.EACCES, "permission_denied", "The agent's user isn't allowed to open or change this."),
     (errno.EPERM, "permission_denied", "The agent's user isn't allowed to open or change this."),
     (errno.ENOSPC, "no_space", "The agent's machine is out of disk space."),
-    (errno.EDQUOT, "no_space", "The agent's machine is out of disk space."),
+    *([(errno.EDQUOT, "no_space", "The agent's machine is out of disk space.")] if hasattr(errno, "EDQUOT") else []),
     (errno.EROFS, "read_only", "This location is read-only."),
     (errno.EIO, "io_error", "The filesystem operation failed."),
 ])

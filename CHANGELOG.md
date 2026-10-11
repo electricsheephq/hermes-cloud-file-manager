@@ -30,7 +30,9 @@ and reopen Hermes. Checked against Hermes v0.21.6 and evaOS Desktop es.16.
 - The **+ → Cloud** picker no longer suggests uploading into an empty folder, and the Google Drive view hides its size
   column when Drive gives no sizes.
 - A Drive import interrupted by a gateway crash no longer leaves its hidden staging folder forever: it is removed after
-  24 hours.
+  24 hours. **New folder** refuses the two names Cloud Files keeps for its own temporary files, so that cleanup never
+  removes a folder you made.
+- A gateway on Windows no longer fails every filesystem error with a server error.
 
 ## [0.3.4] - 2026-10-03
 
