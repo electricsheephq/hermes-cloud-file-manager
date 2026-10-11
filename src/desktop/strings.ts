@@ -71,6 +71,10 @@ export const S = {
   tooLarge: (max: number) => `Too large (max ${mb(max)})`,
   // Picker
   pickerTitle: 'Attach from Cloud Files',
+  pickerPinnedElsewhere: (current: string, pinned: string) =>
+    `Cloud Files isn't set up on ${current}. Switch back to ${pinned} to keep picking files there.`,
+  drivePinnedElsewhere: (current: string, pinned: string) =>
+    `Google Drive isn't available on ${current}. Switch back to ${pinned} to keep importing; an import already started there continues when you switch back.`,
   selected: (n: number) => `${n} selected`,
   insert: 'Insert locations',
   lineBreakSkipped: (n: number) => n === 1 ? 'A selected name has a line break, so it won’t be inserted.' : `${n} selected names have a line break, so they won’t be inserted.`,

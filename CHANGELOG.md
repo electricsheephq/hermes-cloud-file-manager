@@ -8,8 +8,9 @@ Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works wi
 
 ### Fixed
 - Switching to an agent without Cloud Files (or without Google Drive) no longer closes a **+ → Cloud** or
-  **+ → Google Drive** picker you opened on the previous agent, or stops its import. It stays open, offers
-  **Copy locations**, and closes when you close it.
+  **+ → Google Drive** picker you opened on the previous agent. It stays open with a note to switch back;
+  an import already started on the previous agent continues when you switch back. Closing the picker closes it
+  and stops its import.
 
 ## [0.3.6] - 2026-10-12
 

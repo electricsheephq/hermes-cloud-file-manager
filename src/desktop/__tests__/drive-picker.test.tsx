@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
 import { fakeBackend, importedEntry } from './fake-backend'
-import { bindContext } from '../api'
+import { $available, $driveAvailable, bindContext } from '../api'
 import { formatInsertText } from '../format'
 import { $pickerOpen, cloudProvider, driveProvider, PickerHost } from '../picker'
 
@@ -37,6 +37,7 @@ async function pickTwo() {
 }
 
 beforeEach(() => {
+  $available.set(true); $driveAvailable.set(true) // Direct mounts stand in for registered providers.
   resetQueryCache()
   resetHost()
 })

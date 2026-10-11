@@ -69,13 +69,14 @@ export interface Recorded {
   profile: string
 }
 
-export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}, texts: Record<string, string> = TEXTS) {
+export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}, texts: Record<string, string> = TEXTS, before?: (path: string) => void) {
   const calls: Recorded[] = []
   const files = new Map(Object.entries(texts))
   const rest = async (full: string, opts?: any) => {
     const [path, qs = ''] = full.split('?')
     const params = Object.fromEntries(new URLSearchParams(qs))
     calls.push({ path, params, opts, connectionId: host.state.connectionId.get(), profile: host.state.profile.get() })
+    before?.(path)
     if (overrides[path]) return overrides[path](opts)
     if (path === '/available') return { ok: true, plugin: 'hermes-cloud-file-manager', version: '0.1.0' }
     if (path === '/roots') return ROOTS

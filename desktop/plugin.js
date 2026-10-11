@@ -76,6 +76,8 @@ var S = {
   tooLarge: (max) => `Too large (max ${mb(max)})`,
   // Picker
   pickerTitle: "Attach from Cloud Files",
+  pickerPinnedElsewhere: (current, pinned) => `Cloud Files isn't set up on ${current}. Switch back to ${pinned} to keep picking files there.`,
+  drivePinnedElsewhere: (current, pinned) => `Google Drive isn't available on ${current}. Switch back to ${pinned} to keep importing; an import already started there continues when you switch back.`,
   selected: (n) => `${n} selected`,
   insert: "Insert locations",
   lineBreakSkipped: (n) => n === 1 ? "A selected name has a line break, so it won\u2019t be inserted." : `${n} selected names have a line break, so they won\u2019t be inserted.`,
@@ -2078,6 +2080,7 @@ var stopWatching = () => void 0;
 function pickerPinnedElsewhere() {
   return $pickerOpen.get() && openPin !== null && (openPin.profile !== host4.state.profile.get() || openPin.connectionId !== host4.state.connectionId.get());
 }
+var pickerPinProfile = () => openPin?.profile;
 function watchOpen() {
   unwatch();
   const { connectionId, profile } = host4.state;
@@ -2166,13 +2169,17 @@ function PickerDialog() {
   const source = useValue4($pickerSource);
   const finished = useValue4($finished);
   const job = useImport(useValue4($pickerJob));
-  const notice = finished ? S.importedTo(finished.pin.profile) : mismatch ? S.ownerMismatch(owner.profile, profile) : null;
+  const available = useValue4($available);
+  const driveAvailable = useValue4($driveAvailable);
+  const unavailable = available === false || source === "drive" && driveAvailable === false;
+  const pending = available === null || source === "drive" && driveAvailable !== true && driveAvailable !== false;
+  const notice = finished ? S.importedTo(finished.pin.profile) : !pending && unavailable && pickerPinnedElsewhere() ? (source === "drive" ? S.drivePinnedElsewhere : S.pickerPinnedElsewhere)(profile, pickerPinProfile()) : mismatch && !pending ? S.ownerMismatch(owner.profile, profile) : null;
   return /* @__PURE__ */ jsx5(Dialog3, { onOpenChange: (next) => !next && closePicker(), open: true, children: /* @__PURE__ */ jsxs5(DialogContent3, { style: { maxWidth: 720, width: "92vw" }, children: [
     /* @__PURE__ */ jsx5(DialogHeader3, { children: /* @__PURE__ */ jsx5(DialogTitle3, { children: source === "drive" ? S.drivePickerTitle : S.pickerTitle }) }),
     notice ? /* @__PURE__ */ jsxs5(Fragment3, { children: [
       /* @__PURE__ */ jsx5("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: notice }),
       finished && job && /* @__PURE__ */ jsx5(ImportFailures, { failures: job.failures })
-    ] }) : /* @__PURE__ */ jsx5(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
+    ] }) : pending || unavailable ? /* @__PURE__ */ jsx5("div", { "aria-busy": "true", style: { height: 360 } }) : /* @__PURE__ */ jsx5(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
     notice && /* @__PURE__ */ jsxs5(DialogFooter3, { children: [
       /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
       finished && /* @__PURE__ */ jsx5(Button5, { onClick: () => copyLocations(finished.text), children: S.copyLocations })
