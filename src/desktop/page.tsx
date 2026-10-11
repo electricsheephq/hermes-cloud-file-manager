@@ -214,7 +214,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
   const closeDoc = () => {
     const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null
     // The Close button goes away with the editor: focus the file's row once the list is back (if it is listed).
-    if (doc && folder !== null) requestFocus(b.focusNext, doc.path)
+    if (doc && folder !== null) requestFocus(b.focusNext, folder, doc.path)
     setDoc(null)
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder)
   }

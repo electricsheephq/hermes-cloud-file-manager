@@ -618,14 +618,14 @@ var LIST_PAGE_MAX = 2e3;
 var SEARCH_LIMIT = 200;
 var DEBOUNCE_MS = 300;
 var SETTINGS_PATH = "/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager";
-function requestFocus(request, want) {
-  request.current = { want, from: document.activeElement };
+function requestFocus(request, at, want = true) {
+  request.current = { at, want, from: document.activeElement };
 }
-function useListFocus(request, ready) {
+function useListFocus(request, ready, at) {
   const list = useRef(null);
   useEffect(() => {
     const req = request.current;
-    if (!req || !ready || !list.current) return;
+    if (!req || !ready || !list.current || req.at !== at) return;
     request.current = null;
     const now = document.activeElement;
     if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return;
@@ -775,7 +775,7 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
           Button,
           {
             onClick: (event) => {
-              if (fromKeyboard(event)) requestFocus(b.focusNext, true);
+              if (fromKeyboard(event)) requestFocus(b.focusNext, crumb.path);
               onNavigate(crumb.path);
             },
             size: "inline",
@@ -864,7 +864,7 @@ function EntryList({ b, height, onOpenFile }) {
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === "results" ? S.searchMore(entries.length) : S.truncated(entries.length);
-  const list = useListFocus(b.focusNext, Boolean(active.data || active.error));
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path);
   const open = (entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry);
     if (!entry.is_dir || entry.link_outside) return;
@@ -909,7 +909,7 @@ function EntryRow({ b, entry, onOpen, searching }) {
       onKeyDown: (event) => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter") {
-          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, true);
+          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, entry.rel);
           onOpen(entry);
         }
         if (event.key === " ") {
@@ -1089,7 +1089,7 @@ function DriveCrumbs({ d }) {
       Button2,
       {
         onClick: (event) => {
-          if (fromKeyboard(event)) requestFocus(d.focusNext, true);
+          if (fromKeyboard(event)) requestFocus(d.focusNext, crumb.id);
           d.crumb(i);
         },
         size: "inline",
@@ -1108,7 +1108,7 @@ function DriveList({ d, height }) {
   });
   const items = list.data?.items ?? [];
   const sized = items.some((item) => item.size != null);
-  const ref = useListFocus(d.focusNext, Boolean(list.data || list.error));
+  const ref = useListFocus(d.focusNext, Boolean(list.data || list.error), d.q ? null : d.folder);
   let body;
   if (list.error) {
     body = /* @__PURE__ */ jsx2(LoadError, { error: list.error, onRetry: () => void list.refetch() });
@@ -1138,7 +1138,7 @@ function DriveRow({ d, item, sized }) {
       onKeyDown: (event) => {
         if (event.target !== event.currentTarget || event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        if (item.is_folder) requestFocus(d.focusNext, true);
+        if (item.is_folder) requestFocus(d.focusNext, item.id);
         activate();
       },
       onMouseEnter: () => setHover(true),
@@ -1795,7 +1795,7 @@ function Files({ profile, roots, doc, setDoc }) {
   const docHere = () => Boolean(doc && doc.pin.connectionId === currentPin().connectionId && doc.pin.profile === currentPin().profile);
   const closeDoc = () => {
     const folder = doc && docHere() && doc.root === rootId ? parentPath(doc.path) : null;
-    if (doc && folder !== null) requestFocus(b.focusNext, doc.path);
+    if (doc && folder !== null) requestFocus(b.focusNext, folder, doc.path);
     setDoc(null);
     if (folder !== null && (folder !== b.path || b.query)) b.navigate(folder);
   };

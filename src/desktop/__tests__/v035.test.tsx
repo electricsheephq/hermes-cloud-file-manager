@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
 import { fakeBackend, ROOTS } from './fake-backend'
 import { $available, $driveAvailable, bindContext } from '../api'
-import { SETTINGS_PATH } from '../browser'
+import { type FocusRequest, requestFocus, SETTINGS_PATH, useListFocus } from '../browser'
 import { $driveJob } from '../drive'
 import { $drafts } from '../editor'
 import { $batch, CloudFilesPage } from '../page'
@@ -86,6 +86,22 @@ describe('D1 visible keyboard focus', () => {
 })
 
 describe('D2 focus follows keyboard navigation', () => {
+  it('a render of the previous folder never takes a request meant for the next one', () => {
+    const request: FocusRequest = { current: null }
+    function List({ at }: { at: string }) {
+      const ref = useListFocus(request, true, at)
+      return <div ref={ref} tabIndex={-1}><div data-entry={`${at}/x`} role="listitem" tabIndex={0} /></div>
+    }
+    const { rerender } = render(<List at="old" />)
+    requestFocus(request, 'new')
+    rerender(<List at="old" />) // e.g. React flushing the old commit's effects before the folder changes
+    expect(request.current).not.toBeNull()
+    expect(focusedEntry()).toBeNull()
+    rerender(<List at="new" />)
+    expect(request.current).toBeNull()
+    expect(focusedEntry()).toBe('new/x')
+  })
+
   it('Enter on a folder focuses the first row of the opened folder', async () => {
     setup()
     await screen.findByText('docs')

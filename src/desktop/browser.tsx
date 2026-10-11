@@ -34,21 +34,22 @@ export const DEBOUNCE_MS = 300
 /** Plugin settings in Hermes Desktop; older hosts redirect it to Capabilities ▸ Plugins. */
 export const SETTINGS_PATH = '/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager'
 
-/** Where focus goes once the next listing has loaded: the row whose data-entry is `want`, else (or for
+/** Where focus goes once the listing of folder `at` has loaded: the row whose data-entry is `want`, else (or for
  *  `true`) the first row, else the list itself. Set by keyboard navigation and by closing the editor. */
-export type FocusRequest = MutableRefObject<null | { want: true | string; from: Element | null }>
+export type FocusRequest = MutableRefObject<null | { at: string; want: true | string; from: Element | null }>
 
-/** Asks for focus to move into the list after the next load, remembering where focus is now. */
-export function requestFocus(request: FocusRequest, want: true | string) {
-  request.current = { want, from: document.activeElement }
+/** Asks for focus to move into folder `at`'s list once it has loaded, remembering where focus is now. */
+export function requestFocus(request: FocusRequest, at: string, want: true | string = true) {
+  request.current = { at, want, from: document.activeElement }
 }
 
-/** The ref for a list's scroller: after a focus request, moves focus into the list once `ready` (loaded). */
-export function useListFocus(request: FocusRequest, ready: boolean) {
+/** The ref for a list's scroller: after a focus request for `at`, the folder on screen, moves focus into the list
+ *  once `ready` (loaded). Matching `at` keeps a render of the previous folder from taking the request. */
+export function useListFocus(request: FocusRequest, ready: boolean, at: string | null) {
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const req = request.current
-    if (!req || !ready || !list.current) return
+    if (!req || !ready || !list.current || req.at !== at) return
     request.current = null
     // The user moved on while the listing loaded (into Search, a dialog, ...): leave their focus where it is.
     const now = document.activeElement
@@ -267,7 +268,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
             ) : (
               <Button
                 onClick={(event?: MouseEvent) => {
-                  if (fromKeyboard(event)) requestFocus(b.focusNext, true)
+                  if (fromKeyboard(event)) requestFocus(b.focusNext, crumb.path)
                   onNavigate(crumb.path)
                 }}
                 size="inline"
@@ -371,7 +372,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const stopped = reason === 'time' || reason === 'visits'
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
 
-  const list = useListFocus(b.focusNext, Boolean(active.data || active.error))
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path)
 
   const open = (entry: Entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
@@ -439,7 +440,7 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
         // Only keys aimed at the row itself: Space on the nested checkbox is the checkbox's own toggle.
         if (event.target !== event.currentTarget) return
         if (event.key === 'Enter') {
-          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, true)
+          if (entry.is_dir && !entry.link_outside) requestFocus(b.focusNext, entry.rel)
           onOpen(entry)
         }
         if (event.key === ' ') {

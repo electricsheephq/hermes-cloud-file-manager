@@ -63,7 +63,7 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
           ) : (
             <Button
               onClick={(event?: MouseEvent) => {
-                if (fromKeyboard(event)) requestFocus(d.focusNext, true)
+                if (fromKeyboard(event)) requestFocus(d.focusNext, crumb.id)
                 d.crumb(i)
               }}
               size="inline"
@@ -88,7 +88,7 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
   const items = list.data?.items ?? []
   // Drive search answers carry no sizes: the size column shows only when some item has one.
   const sized = items.some(item => item.size != null)
-  const ref = useListFocus(d.focusNext, Boolean(list.data || list.error))
+  const ref = useListFocus(d.focusNext, Boolean(list.data || list.error), d.q ? null : d.folder)
 
   let body: ReactNode
   if (list.error) {
@@ -133,7 +133,7 @@ function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized:
       onKeyDown={event => {
         if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
-        if (item.is_folder) requestFocus(d.focusNext, true)
+        if (item.is_folder) requestFocus(d.focusNext, item.id)
         activate()
       }}
       onMouseEnter={() => setHover(true)}
