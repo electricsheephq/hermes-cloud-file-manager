@@ -199,7 +199,8 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 Requires Hermes **0.21.5 or newer**, with its Desktop (`requires_hermes: ">=0.21.5"`). CI checks every change
 against pinned builds of upstream [Hermes Agent](https://github.com/NousResearch/hermes-agent) and one downstream
 Desktop fork (see `HERMES_*_SHA` in `.github/workflows/ci.yml`). Those pins are bumped deliberately, after the
-suite passes against the new builds.
+suite passes against the new builds. A weekly run checks the same suite against both repos' newest `main`, so a
+breaking change upstream is spotted before it reaches a release.
 
 ## Uninstall
 

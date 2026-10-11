@@ -4,16 +4,22 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Early warning: once a week (or on demand) the same suite runs against each repo's newest `main`, so a breaking
+  # change shows up before a pin bump or release. A red run here blocks nothing; it means "look before bumping".
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
   # Hermes builds the plugin is checked against. Bump deliberately (see README "Compatibility").
+  # Pushes and pull requests use the pinned SHAs below; scheduled and manual runs use each repo's `main`.
   HERMES_UPSTREAM_REPO: NousResearch/hermes-agent
-  HERMES_UPSTREAM_SHA: 818c13be1dc4fd28987e1e881a9408224afd4535
+  HERMES_UPSTREAM_SHA: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main' || '818c13be1dc4fd28987e1e881a9408224afd4535' }}
   HERMES_FORK_REPO: electricsheephq/evaOS-hermes-desktop-app-adapter
-  HERMES_FORK_SHA: 9edf23c47c1e1b04515c966717ddce6008c1d2dd
+  HERMES_FORK_SHA: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main' || '9edf23c47c1e1b04515c966717ddce6008c1d2dd' }}
 
 jobs:
   desktop:
