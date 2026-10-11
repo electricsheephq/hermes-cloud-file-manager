@@ -109,7 +109,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   const onAgentChange = () => {
     if (!disposed) {
       set(null)
-      if ($driveAvailable.get() === true) $driveAvailable.set(null)
+      if ($driveAvailable.get() !== null) $driveAvailable.set(null)
       driveRemover?.()
       driveRemover = null
     }

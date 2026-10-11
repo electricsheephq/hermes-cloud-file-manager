@@ -171,6 +171,36 @@ it.each(['cloud', 'drive-cloud', 'drive-probe'])('picker waits without file requ
   expect(insertText).not.toHaveBeenCalled()
 })
 
+it.each(['pending', 'transport error'])('a Drive no from B does not carry over to C while C\'s Drive probe is %s (#48)', async state => {
+  const backend = fakeBackend({
+    '/drive/available': () => {
+      const profile = host.state.profile.get()
+      if (profile === 'agent-b') return { available: false }
+      if (profile === 'agent-c') return state === 'pending' ? new Promise(() => {}) : Promise.reject(new Error('fetch failed'))
+      return { available: true }
+    }
+  }, undefined, path => {
+    if (host.state.profile.get() !== 'default' && path.startsWith('/drive/') && path !== '/drive/available') noPlugin()
+  })
+  const t = context(backend.rest)
+  plugin.register(t.ctx as any); await flush()
+  const insertText = vi.fn()
+  const { container } = render(t.live.get('picker-host').render())
+  act(() => t.live.get('attach-drive').data.run({ insertText }))
+  await screen.findByText('Plan')
+  act(() => host.state.profile.set('agent-b'))
+  await screen.findByText(S.drivePinnedElsewhere('agent-b', 'default'))
+  act(() => host.state.profile.set('agent-c'))
+  await waitFor(() => expect($available.get()).toBe(true))
+  await flush()
+  expect($driveAvailable.get()).toBeNull()
+  expect(screen.queryByText(S.drivePinnedElsewhere('agent-c', 'default'))).toBeNull()
+  expect(container.querySelector('[aria-busy="true"]')?.getAttribute('style')).toContain('height: 360px')
+  expect(fileCalls(backend.calls.filter(c => c.profile === 'agent-c'))).toEqual([])
+  expect($pickerOpen.get()).toBe(true)
+  expect(insertText).not.toHaveBeenCalled()
+})
+
 it.each(['cloud-404', 'drive-false', 'drive-404'])('Drive picker pinned elsewhere keeps its paused import after B answers %s', async answer => {
   let finish!: () => void
   const backend = fakeBackend({
