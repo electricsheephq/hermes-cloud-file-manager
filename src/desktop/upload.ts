@@ -160,7 +160,8 @@ export class UploadBatch {
     for (const { file, rel } of input.files) {
       const id = this.nextId++
       const tooBig = file.size > this.limits.max_file_bytes
-      this.blobs.set(id, file)
+      // Only a file that can still be sent keeps its handle; the rest are released as they settle.
+      if (!tooBig) this.blobs.set(id, file)
       items.push({
         id,
         root: dest.root,
@@ -204,6 +205,7 @@ export class UploadBatch {
       canceled: true,
       items: this.snapshot.items.map(item => (item.status === 'queued' || item.status === 'uploading' ? { ...item, status: 'canceled' } : item))
     })
+    this.blobs.clear() // nothing in a canceled batch is sent again; a running upload keeps its own reference
     for (const id of [...this.inFlight.keys()]) this.abort(id)
     this.wake()
   }
@@ -263,6 +265,7 @@ export class UploadBatch {
           const fin = await this.send('/uploads/finish', { upload_id: uploadId, root, path, size }, false)
           if (fin.ok) {
             this.inFlight.delete(item.id)
+            this.blobs.delete(item.id)
             if (this.snapshot.canceled) return // the row stays canceled, like the rest of the batch
             const finalName = baseName(fin.entry?.rel ?? fin.entry?.name ?? path)
             this.patch(item.id, { status: 'done', sent: size, ...(fin.renamed ? { savedAs: finalName } : {}) })
