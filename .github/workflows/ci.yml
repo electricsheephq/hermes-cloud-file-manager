@@ -4,16 +4,23 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Early warning: once a week (or on demand) the same suite runs against each repo's newest `main`, so a breaking
+  # change shows up before a pin bump or release. A red run here blocks nothing; it means "look before bumping".
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
   # Hermes builds the plugin is checked against. Bump deliberately (see README "Compatibility").
+  # Pushes and pull requests use the pinned SHAs below; scheduled and manual runs use each repo's `main`.
+  HERMES_REVISION: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main' || 'pinned' }}
   HERMES_UPSTREAM_REPO: NousResearch/hermes-agent
-  HERMES_UPSTREAM_SHA: 818c13be1dc4fd28987e1e881a9408224afd4535
+  HERMES_UPSTREAM_SHA: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main' || '818c13be1dc4fd28987e1e881a9408224afd4535' }}
   HERMES_FORK_REPO: electricsheephq/evaOS-hermes-desktop-app-adapter
-  HERMES_FORK_SHA: 9edf23c47c1e1b04515c966717ddce6008c1d2dd
+  HERMES_FORK_SHA: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main' || '9edf23c47c1e1b04515c966717ddce6008c1d2dd' }}
 
 jobs:
   desktop:
@@ -30,7 +37,7 @@ jobs:
       - run: npm test
       - name: Committed bundle matches source
         run: npm run check:bundle
-      - name: Fetch pinned Hermes Desktop SDKs
+      - name: Fetch ${{ env.HERMES_REVISION }} Hermes Desktop SDKs
         run: |
           for pair in "upstream $HERMES_UPSTREAM_REPO $HERMES_UPSTREAM_SHA" "fork $HERMES_FORK_REPO $HERMES_FORK_SHA"; do
             set -- $pair
@@ -41,9 +48,9 @@ jobs:
             git -C "pinned/$1" fetch -q --depth 1 origin "$3"
             git -C "pinned/$1" checkout -q FETCH_HEAD
           done
-      - name: Every imported SDK name exists in both pinned SDKs
+      - name: Every imported SDK name exists in both ${{ env.HERMES_REVISION }} SDKs
         run: node scripts/check-sdk-exports.mjs pinned/upstream/apps/desktop/src/sdk/index.ts pinned/fork/apps/desktop/src/sdk/index.ts
-      - name: Both pinned runtime loaders accept the bundle (import scanner), and the trap fixture is caught
+      - name: Both ${{ env.HERMES_REVISION }} runtime loaders accept the bundle (import scanner), and the trap fixture is caught
         run: |
           node scripts/check-loader-scan.mjs pinned/upstream/apps/desktop/src/contrib/runtime-loader.ts pinned/fork/apps/desktop/src/contrib/runtime-loader.ts
           node scripts/check-loader-scan.mjs --self-test pinned/upstream/apps/desktop/src/contrib/runtime-loader.ts pinned/fork/apps/desktop/src/contrib/runtime-loader.ts
@@ -70,7 +77,7 @@ jobs:
       - run: python -m pytest
 
   hermes:
-    name: Against pinned Hermes (${{ matrix.target }})
+    name: Against ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'main' || 'pinned' }} Hermes (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -80,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: plugin
-      - name: Resolve pinned Hermes
+      - name: Resolve ${{ env.HERMES_REVISION }} Hermes
         id: pin
         run: |
           if [ "${{ matrix.target }}" = upstream ]; then
