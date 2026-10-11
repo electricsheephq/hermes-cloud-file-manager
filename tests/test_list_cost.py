@@ -112,3 +112,68 @@ def test_cache_eight_folder_limit_and_alias_paths(client, api, fs):
     assert body["entries"][0]["rel"] == "alias/file"
     assert body["entries"][0]["abs"] == str(root / "alias/file")
     assert len(api._LIST_CACHE) == 8
+
+
+def test_scan_runs_outside_the_lock_and_a_write_during_it_is_not_cached_over(client, api, fs, monkeypatch):
+    import threading
+    root, _ = fs
+    (root / "file").touch()
+    scan, finished = api._scan_folder, []
+    def scan_with_write(*args):
+        # A plugin write lands mid-scan; it must not wait for the scan.
+        writer = threading.Thread(target=api._clear_list_cache)
+        writer.start()
+        writer.join(timeout=5)
+        finished.append(not writer.is_alive())
+        return scan(*args)
+    monkeypatch.setattr(api, "_scan_folder", scan_with_write)
+    assert [e["name"] for e in get(client, "list", root="r0")["entries"]] == ["file"]
+    assert finished == [True]
+    assert api._LIST_CACHE == {}  # the overlapping scan did not store a listing
+
+
+def test_two_roots_over_one_folder_keep_their_own_paths(client, api, fs):
+    root, cfg = fs
+    (root / "sub").mkdir()
+    (root / "sub" / "f").touch()
+    cfg["plugins"]["entries"]["hermes-cloud-file-manager"]["settings"]["roots"] = [str(root), str(root / "sub")]
+    assert get(client, "list", root="r0", path="sub")["entries"][0]["rel"] == "sub/f"
+    assert get(client, "list", root="r1")["entries"][0]["rel"] == "f"
+
+
+def test_expired_listings_are_dropped(client, api, fs, monkeypatch):
+    root, _ = fs
+    for name in ("a", "b"):
+        (root / name).mkdir()
+    clock = [100.0]
+    monkeypatch.setattr(api.time, "monotonic", lambda: clock[0])
+    get(client, "list", root="r0", path="a")
+    clock[0] = 106.0
+    get(client, "list", root="r0", path="b")
+    assert len(api._LIST_CACHE) == 1
+
+
+def test_upload_chunks_keep_the_listing_cached(client, api, fs):
+    root, _ = fs
+    start = post(client, "uploads/start", root="r0", path="new", size=3)
+    get(client, "list", root="r0")
+    post(client, "uploads/chunk", root="r0", path="new", upload_id=start["upload_id"], offset=0,
+         data=base64.b64encode(b"new").decode())
+    assert api._LIST_CACHE  # the hidden .part file changes nothing a listing shows
+
+
+def test_windows_folders_take_the_full_entry_check(client, api, fs, monkeypatch):
+    import sys
+    import types
+    root, _ = fs
+    (root / "d").mkdir()
+    (root / "f").touch()
+    native = get(client, "list", root="r0")["entries"]
+    api._clear_list_cache()
+    checked = []
+    entry = api._entry
+    monkeypatch.setattr(api, "_entry", lambda selected, path: checked.append(path.name) or entry(selected, path))
+    monkeypatch.setattr(api, "sys", types.SimpleNamespace(
+        platform="win32", getfilesystemencoding=sys.getfilesystemencoding, executable=sys.executable))
+    assert get(client, "list", root="r0")["entries"] == native
+    assert checked == ["d"]

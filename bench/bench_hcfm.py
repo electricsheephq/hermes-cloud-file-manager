@@ -66,7 +66,7 @@ def timed(fn, reps, warmup=1):
 def _touch_many(folder: Path, names):
     folder.mkdir(parents=True, exist_ok=True)
     for name in names:
-        os.close(os.open(folder / name, os.O_WRONLY | os.O_CREAT, 0o644))
+        os.close(os.open(folder / name, os.O_WRONLY | os.O_CREAT, 0o600))
 
 
 def build_flat(work: Path, n: int) -> Path:

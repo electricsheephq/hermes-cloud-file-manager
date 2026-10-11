@@ -133,7 +133,7 @@ function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized:
       onKeyDown={event => {
         if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
-        if (item.is_folder && event.key === 'Enter') requestFocus(d.focusNext, true)
+        if (item.is_folder) requestFocus(d.focusNext, true)
         activate()
       }}
       onMouseEnter={() => setHover(true)}

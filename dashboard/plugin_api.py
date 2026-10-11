@@ -47,6 +47,7 @@ SCAN_LIMIT = 20000
 LIST_CACHE_SECONDS = 5
 _LIST_CACHE: dict = {}
 _LIST_CACHE_LOCK = Lock()
+_LIST_GEN = 0  # bumped by every clear: a scan that overlapped a write never stores its result
 SEARCH_VISIT_LIMIT = 1_000_000
 SEARCH_SECONDS = 5.0
 TEMP_RE = re.compile(r"^\.cfm-[0-9a-f]{32}\.part$")
@@ -82,6 +83,14 @@ class GuardError(Exception):
         self.code, self.message, self.details = code, message, details
 
 
+_DENIED = ("permission_denied", "The agent's user isn't allowed to open or change this.")
+_NO_SPACE = ("no_space", "The agent's machine is out of disk space.")
+_ERRNO_CODES = {errno.EACCES: _DENIED, errno.EPERM: _DENIED, errno.ENOSPC: _NO_SPACE,
+                errno.EROFS: ("read_only", "This location is read-only.")}
+if hasattr(errno, "EDQUOT"):  # not defined on Windows
+    _ERRNO_CODES[errno.EDQUOT] = _NO_SPACE
+
+
 def _protocol(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
@@ -90,13 +99,7 @@ def _protocol(fn):
         except GuardError as exc:
             return {"ok": False, "code": exc.code, "message": exc.message, **exc.details}
         except OSError as exc:
-            code, message = {
-                errno.EACCES: ("permission_denied", "The agent's user isn't allowed to open or change this."),
-                errno.EPERM: ("permission_denied", "The agent's user isn't allowed to open or change this."),
-                errno.ENOSPC: ("no_space", "The agent's machine is out of disk space."),
-                errno.EDQUOT: ("no_space", "The agent's machine is out of disk space."),
-                errno.EROFS: ("read_only", "This location is read-only."),
-            }.get(exc.errno, ("io_error", "The filesystem operation failed."))
+            code, message = _ERRNO_CODES.get(exc.errno, ("io_error", "The filesystem operation failed."))
             return {"ok": False, "code": code, "message": message}
     return wrapped
 
@@ -399,6 +402,9 @@ def _mkdir(root, rel):
         current = _resolve(root, current_rel, for_write=False)
         if current.is_dir():
             continue
+        # The upload sweep deletes stale folders with the import staging name: never create one.
+        if TEMP_RE.fullmatch(parts[n - 1].lower()) or DRIVE_TEMP_RE.fullmatch(parts[n - 1]):
+            raise GuardError("bad_path", "This name is reserved for Cloud Files' temporary files.")
         try:
             os.mkdir(current)
             _clear_list_cache()
@@ -665,23 +671,31 @@ def list_files(root: str, path: str = "", offset: int = Query(0, ge=0), limit: i
         raise GuardError("not_a_dir", "The selected path is not a directory.")
     rel_folder = _rel(selected, folder)
     key = _list_key(selected, folder)
-    # Serialize cache fill with invalidation: a scan begun before a write cannot refill after its clear.
     with _LIST_CACHE_LOCK:
+        now = time.monotonic()
+        for old in [k for k, v in _LIST_CACHE.items() if now - v[0] >= LIST_CACHE_SECONDS]:
+            del _LIST_CACHE[old]
         cached = _LIST_CACHE.get(key) if key is not None else None
-        if cached is not None and time.monotonic() - cached[0] < LIST_CACHE_SECONDS:
-            entries, truncated = cached[1:]
-        else:
-            entries, truncated = _scan_folder(selected, folder, rel_folder)
-            if key is not None:
-                _LIST_CACHE[key] = (time.monotonic(), entries, truncated)
-                while len(_LIST_CACHE) > 8:
-                    del _LIST_CACHE[next(iter(_LIST_CACHE))]
+        generation = _LIST_GEN
+    if cached is not None:
+        entries, truncated = cached[1:]
+    else:
+        # Scan without the lock, so a slow folder holds up no other listing and no write.
+        entries, truncated = _scan_folder(selected, folder, rel_folder)
+        if key is not None:
+            with _LIST_CACHE_LOCK:
+                if generation == _LIST_GEN:  # no plugin write since the scan began
+                    _LIST_CACHE[key] = (time.monotonic(), entries, truncated)
+                    while len(_LIST_CACHE) > 8:
+                        del _LIST_CACHE[next(iter(_LIST_CACHE))]
     return {"ok": True, "root": root, "path": rel_folder, "entries": entries[offset:offset + limit],
             "total": len(entries), "truncated": truncated}
 
 
 def _clear_list_cache():
+    global _LIST_GEN
     with _LIST_CACHE_LOCK:
+        _LIST_GEN += 1
         _LIST_CACHE.clear()
 
 
@@ -722,7 +736,9 @@ def _scan_folder(selected, folder, rel_folder):
                 info = item.stat(follow_symlinks=False)
             except OSError:
                 continue
-            if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+            # Windows reports a junction as a plain folder with no identity: folders there take the full path.
+            if not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)) or (
+                    sys.platform == "win32" and stat.S_ISDIR(info.st_mode)):
                 entry = _entry(selected, Path(item.path))
                 if entry is not None:
                     entries.append(entry)
@@ -895,7 +911,6 @@ def upload_chunk(body: Chunk):
             remaining = remaining[written:]
     finally:
         os.close(fd)
-    _clear_list_cache()
     return {"ok": True, "size": os.lstat(temp).st_size}
 
 

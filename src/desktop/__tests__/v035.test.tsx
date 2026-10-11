@@ -151,13 +151,13 @@ describe('D2 focus follows keyboard navigation', () => {
     await waitFor(() => expect(focusedEntry()).toBe('readme.md'))
   })
 
-  it('Enter on a Drive folder focuses its first row', async () => {
+  it.each(['Enter', ' '])('%j on a Drive folder focuses its first row', async key => {
     setup()
     act(() => $driveAvailable.set(true))
     await screen.findByText('notes.txt')
     fireEvent.click(screen.getAllByRole('option').find(el => el.textContent === 'Google Drive')!)
     await screen.findByText('Projects')
-    fireEvent.keyDown(rowOf('Projects'), { key: 'Enter' })
+    fireEvent.keyDown(rowOf('Projects'), { key })
     await screen.findByText('Budget')
     await waitFor(() => expect(focusedEntry()).toBe('sheet1'))
   })

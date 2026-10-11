@@ -24,6 +24,21 @@ def test_filesystem_error_codes(client, api, fs, monkeypatch, number, code, mess
     assert post(client, "mkdir", root="r0", path="new") == {"ok": False, "code": code, "message": message}
 
 
+def test_error_codes_without_edquot(monkeypatch):
+    # Windows has no errno.EDQUOT: the module still loads and maps the other codes.
+    from conftest import load_plugin_api
+    monkeypatch.delattr(errno, "EDQUOT")
+    module = load_plugin_api("hcfm_no_edquot")
+
+    def failing(number):
+        def fn():
+            raise OSError(number, "fixture")
+        return module._protocol(fn)
+    assert failing(errno.EACCES)()["code"] == "permission_denied"
+    assert failing(errno.EIO)()["code"] == "io_error"
+    assert None not in module._ERRNO_CODES
+
+
 @pytest.mark.parametrize("mb,expected", [(250.5, 250), (1.0, 1), (1.5, 1), (0.5, 100),
     (True, 100), (float("inf"), 100), (float("nan"), 100), (0, 100), (-1, 100), ("250", 100), (250, 250)])
 def test_decimal_file_limit(api, fs, mb, expected):
@@ -160,3 +175,16 @@ def test_drive_import_sweeps_staging(client, api, fs, monkeypatch):
     monkeypatch.setattr(api, "_drive_command", command)
     assert post(client, "drive/import", root="r0", dest="dest", id="abcdefghij")["ok"]
     assert not stale.exists()
+
+
+@pytest.mark.parametrize("path", [".cfm-" + "a" * 32 + ".dir", ".cfm-" + "b" * 32 + ".part",
+                                  ".CFM-" + "C" * 32 + ".PART", "x/.cfm-" + "d" * 32 + ".dir/y"])
+def test_mkdir_refuses_reserved_temporary_names(client, api, fs, path):
+    root, _ = fs
+    error(post(client, "mkdir", root="r0", path=path), "bad_path")
+    assert not any(p.name.lower().startswith(".cfm-") for p in root.rglob("*"))
+
+
+def test_mkdir_allows_an_upper_case_staging_lookalike(client, api, fs):
+    # Only the exact lower-case .dir name is swept, so only that one (and any .part spelling) is reserved.
+    assert post(client, "mkdir", root="r0", path=".cfm-" + "E" * 32 + ".dir")["ok"]
