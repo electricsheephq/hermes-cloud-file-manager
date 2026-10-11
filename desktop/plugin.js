@@ -2075,6 +2075,9 @@ var pinReady = (pin) => host4.state.profile.get() === pin.profile && host4.state
 var $touched = atom6(false);
 var openPin = null;
 var stopWatching = () => void 0;
+function pickerPinnedElsewhere() {
+  return $pickerOpen.get() && openPin !== null && (openPin.profile !== host4.state.profile.get() || openPin.connectionId !== host4.state.connectionId.get());
+}
 function watchOpen() {
   unwatch();
   const { connectionId, profile } = host4.state;
@@ -2264,7 +2267,7 @@ function registerAvailabilityGate(ctx, onChange) {
     if (available && !driveRemover) {
       driveRemover = ctx.register({ id: "attach-drive", area: COMPOSER_AREAS.attachments, data: driveProvider });
     } else if (!available && driveRemover) {
-      if ($pickerSource.get() === "drive") closePicker();
+      if ($pickerSource.get() === "drive" && !pickerPinnedElsewhere()) closePicker();
       driveRemover();
       driveRemover = null;
     }
@@ -2292,7 +2295,7 @@ function registerAvailabilityGate(ctx, onChange) {
     }
     if (available && !pickerRemover) {
       pickerRemover = ctx.register({ id: "picker-host", area: COMPOSER_AREAS.underside, render: () => /* @__PURE__ */ jsx6(PickerHost, {}) });
-    } else if (available === false) {
+    } else if (available === false && !pickerPinnedElsewhere()) {
       closePicker();
       pickerRemover?.();
       pickerRemover = null;
@@ -2330,7 +2333,16 @@ function registerAvailabilityGate(ctx, onChange) {
     }
     void probe();
   };
-  const unsubscribers = [host5.state.profile.listen(onAgentChange), host5.state.connectionId.listen(onAgentChange)];
+  const unsubscribers = [
+    host5.state.profile.listen(onAgentChange),
+    host5.state.connectionId.listen(onAgentChange),
+    $pickerOpen.listen((open) => {
+      if (!open && known === false && !disposed) {
+        pickerRemover?.();
+        pickerRemover = null;
+      }
+    })
+  ];
   ctx.onDispose(() => {
     disposed = true;
     unsubscribers.forEach((stop) => stop());

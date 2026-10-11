@@ -54,6 +54,12 @@ const $touched = atom(false)
 let openPin: null | AgentPin = null
 let stopWatching: () => void = () => undefined
 
+/** True only while the open picker is pinned to a different agent than the selected one. */
+export function pickerPinnedElsewhere(): boolean {
+  return $pickerOpen.get() && openPin !== null &&
+    (openPin.profile !== host.state.profile.get() || openPin.connectionId !== host.state.connectionId.get())
+}
+
 function watchOpen() {
   unwatch()
   const { connectionId, profile } = host.state
