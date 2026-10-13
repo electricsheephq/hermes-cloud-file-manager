@@ -286,7 +286,7 @@ ${items.map(formatLocation).join("\n")}`;
 function formatRef(value) {
   const quotes = [TICK, '"', "'"];
   if (hasLineBreak(value) || quotes.every((quote2) => value.includes(quote2))) return null;
-  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some((quote2) => value.includes(quote2)) && !/[,.;!?]$/.test(value)) return value;
+  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some((quote2) => value.includes(quote2)) && !/[,.;!?]$|:\d+(-\d+)?$/.test(value)) return value;
   const quote = quotes.find((quote2) => !value.includes(quote2));
   return `${quote}${value}${quote}`;
 }
@@ -2441,6 +2441,7 @@ function Files({ profile, roots, doc, setDoc }) {
     guard.leave(() => {
       setDoc(null);
       setSource("cloud");
+      void queryClient.invalidateQueries({ queryKey: ["hcfm", pin2.connectionId ?? "local", pin2.profile, "list", dest2.root, dest2.folder] });
       if (dest2.root !== rootId) b.switchRoot(dest2.root);
       b.navigate(dest2.folder);
       if (want) requestFocus(b.focusNext, dest2.folder, want);

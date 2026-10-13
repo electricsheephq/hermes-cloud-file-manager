@@ -258,6 +258,8 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
     guard.leave(() => {
       setDoc(null)
       setSource('cloud')
+      // A batch or import still running hasn't refreshed the listing yet: refetch, so the focus waits for the new row.
+      void queryClient.invalidateQueries({ queryKey: ['hcfm', pin.connectionId ?? 'local', pin.profile, 'list', dest.root, dest.folder] })
       if (dest.root !== rootId) b.switchRoot(dest.root)
       b.navigate(dest.folder)
       if (want) requestFocus(b.focusNext, dest.folder, want)

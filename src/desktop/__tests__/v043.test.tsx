@@ -84,6 +84,25 @@ describe('finished uploads: Show', () => {
     await waitFor(() => expect(document.activeElement).toBe(row('a (1).txt')))
   })
 
+  it('refreshes the open folder before focusing a row from a batch still running', async () => {
+    doneBatch({ path: 'new.txt', savedAs: undefined })
+    let fresh = false
+    const backend = fakeBackend()
+    const rest = async (path: string, opts?: any) => {
+      const reply = await backend.rest(path, opts)
+      if (!fresh || !path.startsWith('/list?') || (new URLSearchParams(path.split('?')[1]).get('path') ?? '') !== '') return reply
+      return { ...reply, entries: [...reply.entries, file('new.txt')], total: reply.total + 1 }
+    }
+    bindContext(createTestContext({ rest }).ctx as any)
+    render(<CloudFilesPage />)
+    await screen.findByText('notes.txt')
+    await flush() // let the mount's own effects run first, as they have long before anyone clicks Show
+    fresh = true
+    click('Show')
+    // The drawer row shows the name too: check the focused listing row itself.
+    await waitFor(() => expect(document.activeElement?.getAttribute('data-entry')).toBe('new.txt'))
+  })
+
   it('shows a directory row in its parent, switching source and root', async () => {
     doneBatch({ root: 'work', path: 'docs/new', isDir: true, savedAs: undefined })
     const backend = page({ '/roots': () => roots, '/list': () => ({ ok: true, entries: [file('docs/new', { is_dir: true })], total: 1 }) })
@@ -225,7 +244,8 @@ describe('Add to chat', () => {
   it.each<[string, string | null]>([
     ['/home/a.txt', '/home/a.txt'], ['/home/a b', '`/home/a b`'], ['/home/a`b', '"/home/a`b"'],
     ['/home/a.', '`/home/a.`'], ['/home/(paren)', '`/home/(paren)`'], ['/home/a`"\'b', null],
-    ['/home/a`"b', "'/home/a`\"b'"], ['/home/a\nb', null], ['/home/a\rb', null], ...[',', ';', '!', '?'].map(ch => [`/home/a${ch}`, '`/home/a' + ch + '`'] as [string, string])
+    ['/home/a`"b', "'/home/a`\"b'"], ['/home/a\nb', null], ['/home/a\rb', null],
+    ['/work/report:12', '`/work/report:12`'], ['/work/report:12-20', '`/work/report:12-20`'], ['/work/a:b', '/work/a:b'], ...[',', ';', '!', '?'].map(ch => [`/home/a${ch}`, '`/home/a' + ch + '`'] as [string, string])
   ])('quotes %s exactly', (path, expected) => expect(formatRef(path!)).toBe(expected))
 
   it('sends a file and folder in shown order, skipping outside links, with inline active-composer text', async () => {
