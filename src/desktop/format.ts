@@ -112,7 +112,8 @@ export const isOpenable = (entry: { name: string; is_dir: boolean; link_outside?
   !entry.is_dir && !entry.link_outside && (EDITABLE.has(extension(entry.name)) || previewKind(entry.name) !== null)
 
 /** CSV (or TSV with a tab) by RFC 4180: quoted fields, doubled quotes, line breaks inside quotes. Stops after
- *  `maxRows` rows; `more` says rows were left. A CRLF or LF ends a row; a final line break adds no empty row. */
+ *  `maxRows` rows; `more` says rows were left. A CRLF or LF ends a row; a final line break adds no empty row.
+ *  One leading byte-order mark (Excel's "CSV UTF-8" writes it) is skipped, so a quoted first field still parses. */
 export function parseDelimited(text: string, sep: string, maxRows: number): { rows: string[][]; more: boolean } {
   const rows: string[][] = []
   let row: string[] = []
@@ -123,7 +124,7 @@ export function parseDelimited(text: string, sep: string, maxRows: number): { ro
     row.push(field)
     field = ''
   }
-  for (let i = 0; i < text.length; i++) {
+  for (let i = text.startsWith('﻿') ? 1 : 0; i < text.length; i++) {
     const ch = text[i]
     if (quoted) {
       if (ch !== '"') field += ch
