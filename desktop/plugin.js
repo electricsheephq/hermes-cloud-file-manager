@@ -2395,15 +2395,17 @@ function registerAvailabilityGate(ctx, onChange) {
     }
   };
   let generation2 = 0;
-  const probe = () => {
+  const probe = (byRetry = false) => {
     const mine = ++generation2;
+    const stored = $unreachable.get();
+    if (stored?.retrying && !byRetry) $unreachable.set({ ...stored, retrying: false });
     const settle = (which, ok) => {
       if (mine !== generation2 || disposed) return;
       if (!ok) {
         const retry = () => {
           const now = $unreachable.get();
           if (now) $unreachable.set({ ...now, retrying: true });
-          void probe();
+          void probe(true);
         };
         $unreachable.set({ probe: which, retry });
       } else if ($unreachable.get()?.probe === which) $unreachable.set(null);

@@ -328,6 +328,25 @@ describe('C. Picker (#51)', () => {
     expect(screen.queryByText(/Couldn't reach/)).toBeNull()
   })
 
+  it('the 60 s re-check supersedes a hanging Retry: Retry is enabled again and the error stays until it settles', async () => {
+    const pending: Array<(value: unknown) => void> = []
+    const { counts, t } = await openOnDefault((_, n) => (n === 1 ? Promise.reject(new Error('fetch failed'))
+      : new Promise(yes => { pending.push(yes) })))
+    act(() => host.state.profile.set('agent-b'))
+    await screen.findByText("Couldn't reach agent-b's Cloud Files.")
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await flush()
+    expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true)
+    act(() => t.tickIntervals()); await flush()
+    expect(counts['agent-b']).toBe(3)
+    expect(screen.getByText("Couldn't reach agent-b's Cloud Files.")).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => pending[0]({ ok: true })); await flush()
+    expect(screen.getByText("Couldn't reach agent-b's Cloud Files.")).toBeTruthy() // the superseded Retry's answer is ignored
+    await act(async () => pending[1]({ ok: true }))
+    expect(await screen.findByText('notes.txt')).toBeTruthy()
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull()
+  })
+
   it('a Drive picker whose agent fails the Cloud Files probe names Cloud Files, not Google Drive', async () => {
     const backend = fakeBackend({ '/available': () => (host.state.profile.get() === 'default' ? { ok: true } : Promise.reject(new Error('fetch failed'))) })
     const t = register(backend.rest); await flush()

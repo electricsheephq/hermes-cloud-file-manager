@@ -79,8 +79,11 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   // Only the newest probe may change the row: when the agent changes mid-flight, a late answer about the
   // previous agent must not show or hide the row for the current one.
   let generation = 0
-  const probe = (): Promise<void> => {
+  const probe = (byRetry = false): Promise<void> => {
     const mine = ++generation
+    // Any other probe (the 60 s re-check) supersedes a Retry, so Retry is no longer busy; the error stays until it settles.
+    const stored = $unreachable.get()
+    if (stored?.retrying && !byRetry) $unreachable.set({ ...stored, retrying: false })
     // Answered (`ok`) or failed in transport, for the newest probe only: the open picker's error state follows it.
     // A new probe does not clear a stored error: it is this agent's (an agent change clears it), and clearing it at
     // probe start would bring back the endless busy placeholder (#51) whenever that probe hangs.
@@ -92,7 +95,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
         const retry = () => {
           const now = $unreachable.get()
           if (now) $unreachable.set({ ...now, retrying: true })
-          void probe()
+          void probe(true)
         }
         $unreachable.set({ probe: which, retry })
       }
