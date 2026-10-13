@@ -82,6 +82,8 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   const probe = (): Promise<void> => {
     const mine = ++generation
     // Answered (`ok`) or failed in transport, for the newest probe only: the open picker's error state follows it.
+    // A new probe does not clear a stored error: it is this agent's (an agent change clears it), and clearing it at
+    // probe start would bring back the endless busy placeholder (#51) whenever that probe hangs.
     const settle = (which: 'cloud' | 'drive', ok: boolean) => {
       if (mine !== generation || disposed) return
       if (!ok) $unreachable.set({ probe: which, retry: () => ($unreachable.set(null), void probe()) })

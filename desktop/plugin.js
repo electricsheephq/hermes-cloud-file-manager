@@ -835,8 +835,12 @@ function useBrowser(roots, mode) {
     }),
     selectOnly: (entry) => setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]])),
     setShown,
-    /** The save for `entry` only while it is in the list's current data, captured with that data. */
-    saveFor: (entry) => shown?.entries.some((e) => e.abs === entry.abs) && shown.save || null
+    /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
+     *  link outside the shown folders), captured with that data. A selection keeps its old flags across a refresh. */
+    saveFor: (entry) => {
+      const now = shown?.entries.find((e) => e.abs === entry.abs);
+      return now && !now.is_dir && !now.link_outside && shown?.save || null;
+    }
   };
 }
 var muted = { color: "var(--ui-text-tertiary)" };
@@ -1864,7 +1868,7 @@ function Files({ profile, roots, doc, setDoc }) {
     if (!driveOn) setSource("cloud");
   }, [driveOn]);
   const only = b.selected.size === 1 ? [...b.selected.values()][0] : void 0;
-  const save = only && !only.is_dir && !only.link_outside ? b.saveFor(only) : null;
+  const save = only ? b.saveFor(only) : null;
   const openFile = (entry) => {
     if (!b.root || doc?.root === b.root.id && doc.path === entry.rel) return;
     const root = b.root;

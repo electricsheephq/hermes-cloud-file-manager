@@ -88,6 +88,20 @@ describe('A. Download', () => {
     }
   })
 
+  it('a refresh that turns the selected file into a folder or an outside link hides Download', async () => {
+    captures()
+    for (const flags of [{ is_dir: true }, { link_outside: true }]) {
+      let now = {}
+      const view = page({ '/list': () => ({ ok: true, entries: [file('a.txt', now)], total: 1, truncated: false }) }).view
+      fireEvent.click(await screen.findByText('a.txt'))
+      expect(download()).not.toBeNull()
+      now = flags
+      fireEvent.click(screen.getByText('Invalidate')); await flush()
+      expect(download()).toBeNull()
+      view.unmount(); resetQueryCache()
+    }
+  })
+
   it('captures with each listing and search fetch, never on a click', async () => {
     const { capture, saves } = captures()
     page()

@@ -168,8 +168,12 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
       }),
     selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]])),
     setShown,
-    /** The save for `entry` only while it is in the list's current data, captured with that data. */
-    saveFor: (entry: Entry) => (shown?.entries.some(e => e.abs === entry.abs) && shown.save) || null
+    /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
+     *  link outside the shown folders), captured with that data. A selection keeps its old flags across a refresh. */
+    saveFor: (entry: Entry) => {
+      const now = shown?.entries.find(e => e.abs === entry.abs)
+      return (now && !now.is_dir && !now.link_outside && shown?.save) || null
+    }
   }
 }
 

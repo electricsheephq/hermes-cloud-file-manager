@@ -212,7 +212,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
     if (!driveOn) setSource('cloud')
   }, [driveOn])
   const only = b.selected.size === 1 ? [...b.selected.values()][0] : undefined
-  const save = only && !only.is_dir && !only.link_outside ? b.saveFor(only) : null
+  const save = only ? b.saveFor(only) : null
   const openFile = (entry: Entry) => {
     if (!b.root || (doc?.root === b.root.id && doc.path === entry.rel)) return
     const root = b.root
