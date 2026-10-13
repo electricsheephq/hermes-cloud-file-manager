@@ -22,7 +22,8 @@ Desktop half only; the agent's side is unchanged from 0.4.1.
 ### Added
 - **Show** on a finished upload opens its folder and puts the focus on the file, using the name it was saved under.
 - **Add to chat** in the toolbar, and while viewing or editing a file: the same `@file:` / `@folder:` references as
-  dragging, inserted into the chat beside Cloud Files, refused when that chat belongs to another agent. It needs a
+  dragging, inserted into the chat beside Cloud Files, refused when that chat belongs to another agent. A path that
+  no chat reference can hold (a line break, or all three quote characters) is skipped with a notice. It needs a
   Hermes Desktop with the composer API; without it the button doesn't show.
 - **Retry** on a preview that failed to arrive (a timeout or network error). A refusal, such as a file that is too
   large, doesn't offer it.
