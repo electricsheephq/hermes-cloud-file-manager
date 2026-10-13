@@ -2,6 +2,19 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.4] - 2026-10-14
+
+Desktop half only; the agent's side is unchanged from 0.4.1.
+
+### Added
+- **The file list follows the agent.** While Cloud Files is open, a file the agent writes, moves or deletes shows up
+  in the open folder or search within about a second, without Refresh. Only that agent's list refreshes, at most once
+  a second, and not while the window is hidden (once when you come back). A file edited in place can show its old
+  size for a few seconds. Needs a Hermes Desktop that passes tool events to plugins; without it, nothing changes.
+- **Drive keyboard navigation** on the page and in the **+ → Google Drive** picker: one tab stop, arrow keys, Home and
+  End, Page Up and Page Down, and Backspace (or Alt+Up) for the parent folder. Checkboxes are mouse-only, as in the
+  Cloud list; Space and Enter work on the row.
+
 ## [0.4.3] - 2026-10-14
 
 Desktop half only; the agent's side is unchanged from 0.4.1.

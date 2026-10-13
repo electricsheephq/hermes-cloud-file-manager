@@ -9,6 +9,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
   never overwrite — a name clash keeps both files. **Show** on a finished upload opens its folder at the file.
+  While the page is open, files the agent writes, moves or deletes show up within about a second, for that
+  agent only (a file edited in place can show its old size for a few seconds).
 - **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
   The file list also works from the keyboard: arrow keys, Home and End, Page Up and Page Down, Enter to open,
   Space to select, and Alt+Up for the parent folder.
@@ -142,7 +144,8 @@ files from that Drive onto the agent's machine:
 On the Cloud Files page, imports land in the folder you were in before switching to Google Drive; from the
 **+ → Google Drive** picker they land in `uploads/drive/` in the first shown folder. One file at a time. Google Docs and Slides arrive as
 PDF, Sheets as CSV and Drawings as PNG; other files arrive as they are. A name clash keeps both files, and
-`max_file_mb` applies.
+`max_file_mb` applies. The Drive list works from the keyboard like the Cloud list: arrow keys, Home and End, Page Up and Page Down, Space
+or Enter, and Backspace for the parent folder.
 
 **Setup:** sign the agent in to Google through its `google-workspace` skill, with Drive access. Follow the
 skill's own setup, or ask the agent to do it. Within about a minute, **Google Drive** appears for that agent.
