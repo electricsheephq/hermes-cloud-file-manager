@@ -843,6 +843,48 @@ function useScope() {
   const profile = useValue(host2.state.profile);
   return [connectionId ?? "local", profile];
 }
+var MUTATING_TOOL_RE = /terminal|shell|exec|bash|command|write|edit|patch|replace|apply|create|delete|remove|move|rename|mkdir|format/i;
+function toolMayChangeFiles(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  const tool = payload;
+  if (typeof tool.inline_diff === "string" && tool.inline_diff.trim()) return true;
+  const name = String(tool.name ?? tool.tool ?? "");
+  return MUTATING_TOOL_RE.test(name);
+}
+function useLiveRefresh() {
+  const [connectionId, profile] = useScope();
+  const client = useQueryClient();
+  useEffect(() => {
+    const ctx = pluginCtx();
+    if (typeof ctx.onEvent !== "function") return;
+    let timer;
+    let missed = false;
+    const refresh = () => {
+      void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "list"] });
+      void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "search"] });
+    };
+    const dispose = ctx.onEvent("tool.complete", (event) => {
+      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== connectionId || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || !toolMayChangeFiles(event.payload)) return;
+      if (timer !== void 0) return;
+      timer = window.setTimeout(() => {
+        timer = void 0;
+        if (document.visibilityState === "hidden") missed = true;
+        else refresh();
+      }, 1e3);
+    });
+    const visible = () => {
+      if (document.visibilityState !== "visible" || !missed) return;
+      missed = false;
+      refresh();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      dispose();
+      if (timer !== void 0) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [connectionId, profile]);
+}
 function useRoots() {
   const scope = useScope();
   return useQuery({ queryKey: ["hcfm", ...scope, "roots"], queryFn: () => call("/roots"), retry: 1 });
@@ -1036,6 +1078,7 @@ async function listUpTo([connectionId, profile], root, path, count, shown) {
 }
 function EntryList({ b, height, onOpenFile, dragOut }) {
   const [connectionId, profile] = useScope();
+  useLiveRefresh();
   const rootId = b.root?.id ?? "";
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`;
   const [range, setRange] = useState({ folder, count: LIST_LIMIT });
@@ -1277,6 +1320,23 @@ function DriveList({ d, height }) {
   const items = list.data?.items ?? [];
   const sized = items.some((item) => item.size != null);
   const ref = useListFocus(d.focusNext, Boolean(list.data || list.error), d.q ? null : d.folder);
+  const [lastFocused, setLastFocused] = useState2(null);
+  const tabStop = (items.find((item) => item.id === lastFocused) ?? items.find((item) => d.selected.has(item.id)) ?? items[0])?.id;
+  const step = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity };
+  const navKey = (item, event) => {
+    if (event.altKey && event.key === "ArrowUp" || event.key === "Backspace") {
+      event.preventDefault();
+      if (d.q || d.trail.length < 2) return;
+      requestFocus(d.focusNext, d.trail[d.trail.length - 2].id, d.folder);
+      return d.crumb(d.trail.length - 2);
+    }
+    if (!(event.key in step) || event.altKey) return;
+    event.preventDefault();
+    const next = Math.max(0, Math.min(items.length - 1, items.indexOf(item) + step[event.key]));
+    const row = ref.current?.querySelectorAll("[role=listitem]")[next];
+    row?.focus();
+    row?.scrollIntoView?.({ block: "nearest" });
+  };
   let body;
   if (list.error) {
     body = /* @__PURE__ */ jsx2(LoadError, { error: list.error, onRetry: () => void list.refetch() });
@@ -1286,13 +1346,13 @@ function DriveList({ d, height }) {
     body = /* @__PURE__ */ jsx2(EmptyState2, { title: d.q ? S.noResults : S.driveEmpty });
   } else {
     body = /* @__PURE__ */ jsxs2("div", { role: "list", children: [
-      items.map((item) => /* @__PURE__ */ jsx2(DriveRow, { d, item, sized }, item.id)),
+      items.map((item) => /* @__PURE__ */ jsx2(DriveRow, { d, item, onFocus: () => setLastFocused(item.id), onNavKey: navKey, sized, tabStop: item.id === tabStop }, item.id)),
       list.data.truncated && /* @__PURE__ */ jsx2("div", { style: { ...muted2, fontSize: 11, padding: "8px 12px" }, children: S.truncated(items.length) })
     ] });
   }
   return /* @__PURE__ */ jsx2("div", { ref, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
 }
-function DriveRow({ d, item, sized }) {
+function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }) {
   const [hover, setHover] = useState2(false);
   const focus = useRowFocus();
   const checked = d.selected.has(item.id);
@@ -1304,14 +1364,18 @@ function DriveRow({ d, item, sized }) {
       "data-entry": item.id,
       onClick: activate,
       onKeyDown: (event) => {
-        if (event.target !== event.currentTarget || event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        if (item.is_folder) requestFocus(d.focusNext, item.id);
-        activate();
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          if (item.is_folder) requestFocus(d.focusNext, item.id);
+          activate();
+        }
+        onNavKey(item, event);
       },
       onMouseEnter: () => setHover(true),
       onMouseLeave: () => setHover(false),
       ...focus.handlers,
+      onFocus: () => (focus.handlers.onFocus(), onFocus()),
       role: "listitem",
       style: {
         display: "grid",
@@ -1326,14 +1390,15 @@ function DriveRow({ d, item, sized }) {
         background: checked ? "var(--ui-row-active-background)" : hover || focus.focused ? "var(--ui-row-hover-background)" : void 0,
         ...focus.ring
       },
-      tabIndex: 0,
+      tabIndex: tabStop ? 0 : -1,
       children: [
-        /* @__PURE__ */ jsx2("span", { onClick: (event) => event.stopPropagation(), style: { display: "inline-flex" }, children: !item.is_folder && /* @__PURE__ */ jsx2(
+        /* @__PURE__ */ jsx2("span", { "aria-hidden": true, onClick: (event) => event.stopPropagation(), onMouseDown: (event) => event.preventDefault(), style: { display: "inline-flex" }, children: !item.is_folder && /* @__PURE__ */ jsx2(
           Checkbox2,
           {
             "aria-label": item.name,
             checked,
             onCheckedChange: () => d.toggle(item),
+            tabIndex: -1,
             style: checked ? void 0 : { borderColor: "var(--ui-stroke-secondary)" }
           }
         ) }),

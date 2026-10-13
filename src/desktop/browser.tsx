@@ -22,7 +22,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
+import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, pluginCtx, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
 import { baseName, entryIcon, humanSize, isOpenable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
@@ -79,6 +79,54 @@ export function useScope(): [string, string] {
   const connectionId = useValue(host.state.connectionId)
   const profile = useValue(host.state.profile)
   return [connectionId ?? 'local', profile]
+}
+
+const MUTATING_TOOL_RE =
+  /terminal|shell|exec|bash|command|write|edit|patch|replace|apply|create|delete|remove|move|rename|mkdir|format/i
+export function toolMayChangeFiles(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false
+  const tool = payload as { name?: unknown; tool?: unknown; inline_diff?: unknown }
+  if (typeof tool.inline_diff === 'string' && tool.inline_diff.trim()) return true
+  const name = String(tool.name ?? tool.tool ?? '')
+  return MUTATING_TOOL_RE.test(name)
+}
+
+/** Only the open agent's Cloud listings follow tool events; older hosts have no event subscription. */
+function useLiveRefresh() {
+  const [connectionId, profile] = useScope()
+  const client = useQueryClient()
+  useEffect(() => {
+    const ctx = pluginCtx()
+    if (typeof ctx.onEvent !== 'function') return
+    let timer: number | undefined
+    let missed = false
+    const refresh = () => {
+      // Folder mtime bypasses the gateway cache for new/deleted/renamed files; an edited size can lag 5 s.
+      void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
+      void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'search'] })
+    }
+    const dispose = ctx.onEvent('tool.complete', event => {
+      if (event.profile === undefined || ((event.connectionId ?? '').trim() || 'local') !== connectionId ||
+        ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || !toolMayChangeFiles(event.payload)) return
+      if (timer !== undefined) return
+      timer = window.setTimeout(() => {
+        timer = undefined
+        if (document.visibilityState === 'hidden') missed = true
+        else refresh()
+      }, 1000)
+    })
+    const visible = () => {
+      if (document.visibilityState !== 'visible' || !missed) return
+      missed = false
+      refresh()
+    }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      dispose()
+      if (timer !== undefined) window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [connectionId, profile])
 }
 
 export function useRoots() {
@@ -363,6 +411,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   dragOut?: (event: DragEvent, scope: [string, string]) => boolean
 }) {
   const [connectionId, profile] = useScope()
+  useLiveRefresh()
   const rootId = b.root?.id ?? ''
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
   const [range, setRange] = useState({ folder, count: LIST_LIMIT })

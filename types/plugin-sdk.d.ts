@@ -43,8 +43,18 @@ declare module '@hermes/plugin-sdk' {
     remove(key: string): void
   }
 
+  export interface GatewayEventLike {
+    type: string
+    payload?: unknown
+    profile?: string
+    connectionId?: string
+    session_id?: string
+    replayed?: boolean
+  }
+
   export interface PluginContext {
     register(contribution: Contribution<any>): () => void
+    onEvent?(type: string, listener: (event: GatewayEventLike) => void): () => void
     onDispose(fn: () => void): void
     /** Both return a cancel function (not a timer id). */
     setTimeout(fn: () => void, ms: number): () => void
