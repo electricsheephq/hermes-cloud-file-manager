@@ -29,7 +29,7 @@ export const S = {
   addToChat: 'Add to chat',
   addedToChat: (n: number) => (n === 1 ? 'Added to the chat' : `Added ${n} items to the chat`),
   openChatFirst: 'Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar → Open in split), then try again.',
-  refSkipped: (n: number) => `Skipped ${n} ${n === 1 ? 'path' : 'paths'} containing all three quote characters.`,
+  refSkipped: (n: number) => `Skipped ${n} ${n === 1 ? 'path' : 'paths'} with a line break or all three quote characters.`,
   addOtherAgent: (owner: string, profile: string) =>
     `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   showOtherAgent: (profile: string) => `Switch back to ${agentName(profile)} to show this upload.`,

@@ -104,13 +104,13 @@ export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData
   const last = useRef<{ data: T; queryKey: readonly unknown[] } | undefined>(undefined)
   const key = JSON.stringify(queryKey)
   const [, force] = useReducer((n: number) => n + 1, 0)
-  const fn = useRef(queryFn)
-  fn.current = queryFn
+  // Each key keeps the query function it was last rendered with, as React Query keeps a query's options: a
+  // refetch of a key this hook has moved away from must not run the current key's function.
+  entryFor(key).fn = queryFn
   useEffect(() => {
     const entry = entryFor(key)
     entry.listeners.add(force)
     entry.enabled = enabled
-    entry.fn = () => fn.current()
     if (enabled && !('data' in entry) && !entry.error && !entry.pending) void fetchEntry(entry)
     return () => void entry.listeners.delete(force)
   }, [key, enabled])
