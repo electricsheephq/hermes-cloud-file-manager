@@ -335,7 +335,7 @@ function parseDelimited(text, sep, maxRows) {
     row.push(field);
     field = "";
   };
-  for (let i = 0; i < text.length; i++) {
+  for (let i = text.startsWith("\uFEFF") ? 1 : 0; i < text.length; i++) {
     const ch = text[i];
     if (quoted) {
       if (ch !== '"') field += ch;

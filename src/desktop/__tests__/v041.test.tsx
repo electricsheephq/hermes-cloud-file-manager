@@ -99,6 +99,15 @@ describe('format: what opens where', () => {
     expect(parseDelimited('1\n2', ',', 2)).toEqual({ rows: [['1'], ['2']], more: false })
     expect(parseDelimited('', ',', 2)).toEqual({ rows: [], more: false })
   })
+
+  it('parseDelimited skips one leading byte-order mark, as Excel writes, so a quoted first header still parses', () => {
+    expect(parseDelimited('﻿"Last, First",Age\r\n"Smith, Ann",42', ',', 10).rows).toEqual([['Last, First', 'Age'], ['Smith, Ann', '42']])
+    expect(parseDelimited('﻿a,b\n1,2', ',', 10).rows).toEqual([['a', 'b'], ['1', '2']])
+    // Only the leading mark is skipped: a second one, or one later in the text, stays as data.
+    expect(parseDelimited('﻿﻿a', ',', 10).rows).toEqual([['﻿a']])
+    expect(parseDelimited('a,﻿b', ',', 10).rows).toEqual([['a', '﻿b']])
+    expect(parseDelimited('﻿', ',', 10)).toEqual({ rows: [], more: false })
+  })
 })
 
 describe('the read-only viewer', () => {
