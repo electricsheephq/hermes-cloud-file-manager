@@ -20,10 +20,11 @@ import {
   useQueryClient,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
-import { entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
+import { captureFor, type SaveFile } from './download'
+import { baseName, entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
 import { transportText } from './upload'
 
@@ -54,7 +55,7 @@ export function useListFocus(request: FocusRequest, ready: boolean, at: string |
     // The user moved on while the listing loaded (into Search, a dialog, ...): leave their focus where it is.
     const now = document.activeElement
     if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return
-    const rows = [...list.current.querySelectorAll<HTMLElement>('[role=listitem]')]
+    const rows = [...list.current.querySelectorAll<HTMLElement>('[data-entry]')]
     ;(rows.find(row => row.getAttribute('data-entry') === req.want) ?? rows[0] ?? list.current).focus()
   })
   return list
@@ -134,6 +135,8 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const root: Root | undefined = roots.roots.find(r => r.id === rootId) ?? roots.roots[0]
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS)
   const focusNext: FocusRequest = useRef(null)
+  // What the list shows now: its entries and the save captured with the read that fetched them (null: none).
+  const [shown, setShown] = useState<null | { entries: readonly Entry[]; save: SaveFile | null }>(null)
 
   const navigate = (next: string) => {
     setPath(next)
@@ -163,13 +166,17 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
         if (!next.delete(entry.abs)) next.set(entry.abs, entry)
         return next
       }),
-    selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]]))
+    selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]])),
+    setShown,
+    /** The save for `entry` only while it is in the list's current data, captured with that data. */
+    saveFor: (entry: Entry) => (shown?.entries.some(e => e.abs === entry.abs) && shown.save) || null
   }
 }
 
 export type Browser = ReturnType<typeof useBrowser>
 
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
+const hidden: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 /** A failed load. A 404 on our own route means the agent's gateway half is missing, disabled or older than
@@ -350,15 +357,22 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const listing = useQuery({
     queryKey: listingKey,
     // A first read of this count is a Load more: hand it the listing on screen (the previous count).
-    queryFn: () => listUpTo([connectionId, profile], rootId, b.path, count,
-      client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 6), count - LIST_LIMIT]) : undefined),
+    // The save is captured with the read, never at click time: it belongs to the agent that answered.
+    queryFn: async () => {
+      const save = captureFor([connectionId, profile])
+      return { ...await listUpTo([connectionId, profile], rootId, b.path, count,
+        client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 6), count - LIST_LIMIT]) : undefined), save }
+    },
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
     retry: 1
   })
   const found = useQuery({
     queryKey: ['hcfm', connectionId, profile, 'search', rootId, b.path, b.query],
-    queryFn: () => call<SearchResponse>(query('/search', { root: rootId, path: b.path, q: b.query, limit: SEARCH_LIMIT })),
+    queryFn: async () => {
+      const save = captureFor([connectionId, profile])
+      return { ...await call<SearchResponse>(query('/search', { root: rootId, path: b.path, q: b.query, limit: SEARCH_LIMIT })), save }
+    },
     enabled: Boolean(rootId) && searching,
     retry: 1
   })
@@ -373,6 +387,34 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
 
   const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path)
+  const { setShown } = b
+  useEffect(() => setShown(active.data && !active.error ? { entries, save: active.data.save ?? null } : null), [active.data, active.error, entries, setShown])
+  // One tab stop: the last focused row, else the first selected, else the first.
+  const [lastFocused, setLastFocused] = useState<string | null>(null)
+  const tabStop = (entries.find(e => e.abs === lastFocused) ?? entries.find(e => b.selected.has(e.abs)) ?? entries[0])?.abs
+  const total = listing.data?.total ?? entries.length
+  const announce = active.error ? S.folderFailed : !active.data ? '' : searching ? S.results(entries.length)
+    : count === LIST_LIMIT || entries.length >= total ? S.items(total) : listing.isFetching ? '' : S.showingOf(entries.length, total)
+
+  const step: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity }
+  const navKey = (entry: Entry, event: KeyboardEvent) => {
+    if ((event.altKey && event.key === 'ArrowUp') || event.key === 'Backspace') {
+      event.preventDefault()
+      if (!b.path) return
+      requestFocus(b.focusNext, parentPath(b.path), b.path)
+      return b.navigate(parentPath(b.path))
+    }
+    if (!(event.key in step) || event.altKey) return
+    event.preventDefault()
+    const at = entries.indexOf(entry)
+    const next = Math.max(0, Math.min(entries.length - 1, at + step[event.key]))
+    if (event.shiftKey && b.mode === 'pick' && Math.abs(step[event.key]) === 1) {
+      for (const e of new Set([entry, entries[next]])) if (!b.selected.has(e.abs)) b.toggle(e)
+    }
+    const row = list.current?.querySelectorAll<HTMLElement>('[role=option]')[next]
+    row?.focus()
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }
 
   const open = (entry: Entry) => {
     if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
@@ -395,10 +437,12 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
     body = <EmptyState description={stopped ? truncationNote : undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
   } else {
     body = (
-      <div role="list">
-        {entries.map(entry => (
-          <EntryRow b={b} entry={entry} key={entry.abs} onOpen={open} searching={searching} />
-        ))}
+      <>
+        <div aria-label={searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || '')} aria-multiselectable="true" role="listbox">
+          {entries.map(entry => (
+            <EntryRow b={b} entry={entry} key={entry.abs} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
+          ))}
+        </div>
         {searching ? truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div> :
           (listing.data?.total ?? 0) > entries.length ? (
             <div style={{ ...muted, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -406,7 +450,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
               <Button disabled={listing.isFetching} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
             </div>
           ) : truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.firstOnly(entries.length)}</div>}
-      </div>
+      </>
     )
   }
 
@@ -415,11 +459,20 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   return (
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
+      <div aria-live="polite" style={hidden}>{announce}</div>
     </div>
   )
 }
 
-function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; onOpen: (entry: Entry) => void; searching: boolean }) {
+function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
+  b: Browser
+  entry: Entry
+  onOpen: (entry: Entry) => void
+  searching: boolean
+  tabStop: boolean
+  onFocus: () => void
+  onNavKey: (entry: Entry, event: KeyboardEvent) => void
+}) {
   const [hover, setHover] = useState(false)
   const focus = useRowFocus()
   const checked = b.selected.has(entry.abs)
@@ -447,11 +500,13 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
           event.preventDefault()
           b.toggle(entry)
         }
+        onNavKey(entry, event)
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       {...focus.handlers}
-      role="listitem"
+      onFocus={() => (focus.handlers.onFocus(), onFocus())}
+      role="option"
       style={{
         display: 'grid',
         gridTemplateColumns: '16px 16px minmax(0, 1fr) 72px 96px',
@@ -466,14 +521,16 @@ function EntryRow({ b, entry, onOpen, searching }: { b: Browser; entry: Entry; o
         background: checked ? 'var(--ui-row-active-background)' : hover || focus.focused ? 'var(--ui-row-hover-background)' : undefined,
         ...focus.ring
       }}
-      tabIndex={0}
+      tabIndex={tabStop ? 0 : -1}
     >
-      <span onClick={event => event.stopPropagation()} style={{ display: 'inline-flex' }}>
+      {/* An option holds no focusable control: the row's aria-selected carries the state; the box is mouse-only. */}
+      <span aria-hidden onClick={event => event.stopPropagation()} onMouseDown={event => event.preventDefault()} style={{ display: 'inline-flex' }}>
         {/* The kit's unchecked border token can match the page background; give it a visible stroke. */}
         <Checkbox
           aria-label={entry.name}
           checked={checked}
           onCheckedChange={() => b.toggle(entry)}
+          tabIndex={-1}
           style={checked ? undefined : { borderColor: 'var(--ui-stroke-secondary)' }}
         />
       </span>

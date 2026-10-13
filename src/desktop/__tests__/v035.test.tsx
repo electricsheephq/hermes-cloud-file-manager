@@ -22,7 +22,7 @@ function setup(overrides?: Parameters<typeof fakeBackend>[0]) {
 const flush = async (rounds = 10) => {
   for (let i = 0; i < rounds; i++) await act(() => new Promise(resolve => setTimeout(resolve, 0)))
 }
-const rowOf = (name: string) => screen.getByText(name).closest('[role=listitem]') as HTMLElement
+const rowOf = (name: string) => screen.getByText(name).closest('[data-entry]') as HTMLElement
 const focusedEntry = () => document.activeElement?.getAttribute('data-entry')
 const fileInputs = (container: HTMLElement) => [...container.querySelectorAll<HTMLInputElement>('input[type=file]')]
 const NO_ROOTS = {

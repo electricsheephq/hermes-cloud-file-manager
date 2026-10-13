@@ -97,8 +97,8 @@ it.each(['profile', 'connectionId'] as const)('Cloud picker pinned elsewhere sur
   expect($pickerOpen.get()).toBe(true)
   expect(['picker-host', 'nav', 'attach-cloud', 'attach-drive'].map(id => t.live.has(id))).toEqual([true, false, false, false])
   expect(screen.getByText(key === 'profile'
-    ? "Cloud Files isn't set up on agent-b. Switch back to default to keep picking files there."
-    : "Cloud Files isn't set up on the agent you switched to. Switch back to the agent you opened this on to keep picking files there.")).toBeTruthy()
+    ? "Cloud Files isn't set up on agent-b. This picker picks up again if you switch back to default; Cancel closes it."
+    : "Cloud Files isn't set up on the agent you switched to. This picker picks up again if you switch back to the agent you opened it on; Cancel closes it.")).toBeTruthy()
   expect(screen.queryByText(S.needsUpdateTitle)).toBeNull()
   expect(fileCalls(backend.calls.slice(beforeSwitch))).toEqual([])
   expect(screen.queryByRole('button', { name: 'Insert locations' })).toBeNull()
@@ -195,7 +195,9 @@ it.each(['pending', 'transport error'])('a Drive no from B does not carry over t
   await flush()
   expect($driveAvailable.get()).toBeNull()
   expect(screen.queryByText(S.drivePinnedElsewhere('agent-c', 'default'))).toBeNull()
-  expect(container.querySelector('[aria-busy="true"]')?.getAttribute('style')).toContain('height: 360px')
+  // C's own newest probe failing in transport shows the bounded error state (#51) instead of the busy placeholder.
+  if (state === 'pending') expect(container.querySelector('[aria-busy="true"]')?.getAttribute('style')).toContain('height: 360px')
+  else expect(screen.getByText(S.unreachable('agent-c', true))).toBeTruthy()
   expect(fileCalls(backend.calls.filter(c => c.profile === 'agent-c'))).toEqual([])
   expect($pickerOpen.get()).toBe(true)
   expect(insertText).not.toHaveBeenCalled()
@@ -228,7 +230,7 @@ it.each(['cloud-404', 'drive-false', 'drive-404'])('Drive picker pinned elsewher
   const job = start.mock.contexts[0] as DriveImport
   expect(job.getSnapshot()).toMatchObject({ running: true, canceled: false })
   act(() => host.state.profile.set('agent-b'))
-  await screen.findByText("Google Drive isn't available on agent-b. Switch back to default to keep importing; an import already started there continues when you switch back.")
+  await screen.findByText("Google Drive isn't available on agent-b. This picker picks up again if you switch back to default, and an import already started there continues; Cancel closes it.")
   expect(screen.queryByText(S.needsUpdateTitle)).toBeNull()
   expect(fileCalls(backend.calls.filter(c => c.profile === 'agent-b'))).toEqual([])
   expect(screen.queryByRole('button', { name: 'Copy locations' })).toBeNull()

@@ -50,6 +50,12 @@ export function resetHost() {
   host.state.activeSessionId.set('session-1')
 }
 
+/** Download: absent by default, like SDKs before it (0.21.5). A live binding, so `import * as sdk` sees changes. */
+export let captureGatewayFileDownload: undefined | (() => (path: string, suggestedName: string) => Promise<void>)
+export function setDownloadCapture(capture: typeof captureGatewayFileDownload) {
+  captureGatewayFileDownload = capture
+}
+
 export const ROUTES_AREA = 'routes'
 export const SIDEBAR_NAV_AREA = 'sidebar.nav'
 export const COMPOSER_AREAS = { underside: 'composer.underside', attachments: 'composer.attachments' } as const
@@ -139,8 +145,8 @@ export const ErrorState = ({ title, description, children }: { title: ReactNode;
   createElement('div', { role: 'alert' }, createElement('h2', null, title), description, children)
 export const SearchField = ({ value, onChange, placeholder, 'aria-label': label }: any) =>
   createElement('input', { 'aria-label': label ?? placeholder, placeholder, value, onChange: (e: any) => onChange(e.target.value) })
-export const Checkbox = ({ checked, onCheckedChange, 'aria-label': label }: any) =>
-  createElement('input', { type: 'checkbox', 'aria-label': label, checked: Boolean(checked), onChange: () => onCheckedChange?.(!checked) })
+export const Checkbox = ({ checked, onCheckedChange, 'aria-label': label, tabIndex }: any) =>
+  createElement('input', { type: 'checkbox', 'aria-label': label, checked: Boolean(checked), onChange: () => onCheckedChange?.(!checked), tabIndex })
 export const Input = passthrough('input')
 export const Skeleton = passthrough('div')
 export const Streamdown = ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'md' }, children)

@@ -62,7 +62,7 @@ it.each([false, true])('%s: L1/L6 keeps 500 rows during Load more, then shows al
   expect(rows()).toHaveLength(812)
   expect(screen.queryByText(/Showing/)).toBeNull()
   expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
-  if (picker) expect(within(dialog()).getAllByRole('listitem')).toHaveLength(812)
+  if (picker) expect(within(dialog()).getAllByRole('option')).toHaveLength(812)
 })
 it('L2: each Load more reads only the new slice; a refetch re-reads the whole range in capped chunks', async () => {
   const { calls } = setup({ '': files(2600) })
@@ -73,7 +73,8 @@ it('L2: each Load more reads only the new slice; a refetch re-reads the whole ra
   expect(lists(start)).toEqual([['499', '501'], ['999', '501'], ['1499', '501'], ['1999', '501']])
   expect(rows()).toHaveLength(2500)
   expect(new Set(rows()).size).toBe(2500)
-  expect(screen.getByText(`Showing ${(2500).toLocaleString()} of ${(2600).toLocaleString()} items`)).toBeTruthy()
+  // The footer, and the list's live region announcing it.
+  expect(screen.getAllByText(`Showing ${(2500).toLocaleString()} of ${(2600).toLocaleString()} items`)).toHaveLength(2)
   start = calls.length
   fireEvent.click(button('Invalidate')); await flush()
   expect(lists(start)).toContainEqual(['2000', '500'])
@@ -152,7 +153,7 @@ it.each(['\n', '\r'])('N1: skips a %s name from Insert and Copy locations, disab
   const { insert, ctx } = setup({ '': [bad, good] }, true)
   const copy = vi.spyOn(ctx.os, 'writeClipboard')
   await flush()
-  const boxes = () => within(dialog()).getAllByRole('checkbox')
+  const boxes = () => within(dialog()).getAllByRole('checkbox', { hidden: true })
   fireEvent.click(boxes()[0]); fireEvent.click(boxes()[1])
   expect(screen.getByText('A selected name has a line break, so it won’t be inserted.')).toBeTruthy()
   fireEvent.click(button('Insert locations'))
@@ -179,7 +180,7 @@ it('P1: composer handoff keeps folder, search and two selected files', async () 
   expect((screen.getByLabelText('Search files') as HTMLInputElement).value).toBe('pdf')
   expect(screen.getByRole('navigation').textContent).toContain('docs')
   expect(screen.getByText('2 selected')).toBeTruthy()
-  expect(within(dialog()).getAllByRole('checkbox').every(el => (el as HTMLInputElement).checked)).toBe(true)
+  expect(within(dialog()).getAllByRole('checkbox', { hidden: true }).every(el => (el as HTMLInputElement).checked)).toBe(true)
   expect(calls.slice(start).some(c => c.path === '/list' && c.params.path === '')).toBe(false)
 })
 it.each(['reopen', 'agent'] as const)('P1 control: %s starts fresh', async action => {

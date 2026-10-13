@@ -212,6 +212,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
     if (!driveOn) setSource('cloud')
   }, [driveOn])
   const only = b.selected.size === 1 ? [...b.selected.values()][0] : undefined
+  const save = only && !only.is_dir && !only.link_outside ? b.saveFor(only) : null
   const openFile = (entry: Entry) => {
     if (!b.root || (doc?.root === b.root.id && doc.path === entry.rel)) return
     const root = b.root
@@ -291,6 +292,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
                 <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
                 <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
                 <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
+                {only && save && <ToolButton icon="cloud-download" label={S.download} onClick={() => void save(only.abs, only.name)} />}
                 {only && isEditable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
               </>
             )}
