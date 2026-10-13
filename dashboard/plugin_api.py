@@ -35,7 +35,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, StrictInt
 
 PLUGIN_NAME = "hermes-cloud-file-manager"
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 
 router = APIRouter()
 

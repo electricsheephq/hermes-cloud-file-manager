@@ -2,6 +2,22 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.2] - 2026-10-13
+
+Desktop half only; the agent's side is unchanged from 0.4.1.
+
+### Added
+- **Drag files into the chat.** Drag a file or folder row, or the current selection, from the Cloud Files page into
+  a chat. It becomes the same `@file:` / `@folder:` reference Hermes's own Files tree makes. Hermes includes the
+  contents of files in the agent's working folder; files elsewhere are passed by location with a note.
+  - Cloud Files refuses the drag, with a notice, when the chat belongs to a different agent than the files.
+  - The **+ → Cloud** picker, Google Drive rows and links that point outside the shown folders can't be dragged.
+  - Tip: right-click **Cloud Files** in the sidebar and choose **Open in split** to keep it beside the chat.
+
+### Fixed
+- Dragging something that isn't a file from your computer (such as a row) over the Cloud Files page no longer
+  shows the upload highlight.
+
 ## [0.4.1] - 2026-10-13
 
 Both halves. Previews need 0.4.1 on the agent too; with an older agent side, Cloud Files says so and everything else works as before.
