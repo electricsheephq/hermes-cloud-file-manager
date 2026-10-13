@@ -36,7 +36,7 @@ var S = {
   addToChat: "Add to chat",
   addedToChat: (n) => n === 1 ? "Added to the chat" : `Added ${n} items to the chat`,
   openChatFirst: "Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar \u2192 Open in split), then try again.",
-  refSkipped: (n) => `Skipped ${n} ${n === 1 ? "path" : "paths"} containing all three quote characters.`,
+  refSkipped: (n) => `Skipped ${n} ${n === 1 ? "path" : "paths"} with a line break or all three quote characters.`,
   addOtherAgent: (owner, profile) => `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   showOtherAgent: (profile) => `Switch back to ${agentName(profile)} to show this upload.`,
   copyPath: "Copy path",
@@ -285,7 +285,7 @@ ${items.map(formatLocation).join("\n")}`;
 }
 function formatRef(value) {
   const quotes = [TICK, '"', "'"];
-  if (quotes.every((quote2) => value.includes(quote2))) return null;
+  if (hasLineBreak(value) || quotes.every((quote2) => value.includes(quote2))) return null;
   if (!/[\s()[\]{}<>]/.test(value) && !quotes.some((quote2) => value.includes(quote2)) && !/[,.;!?]$/.test(value)) return value;
   const quote = quotes.find((quote2) => !value.includes(quote2));
   return `${quote}${value}${quote}`;
@@ -816,16 +816,18 @@ var SETTINGS_PATH = "/settings?tab=plugins&agent=hermes-cloud-file-manager&plugi
 function requestFocus(request, at, want = true) {
   request.current = { at, want, from: document.activeElement };
 }
-function useListFocus(request, ready, at) {
+function useListFocus(request, ready, at, fetching = false) {
   const list = useRef(null);
   useEffect(() => {
     const req = request.current;
     if (!req || !ready || !list.current || req.at !== at) return;
+    const rows = [...list.current.querySelectorAll("[data-entry]")];
+    const wanted = rows.find((row) => row.getAttribute("data-entry") === req.want);
+    if (!wanted && typeof req.want === "string" && fetching) return;
     request.current = null;
     const now = document.activeElement;
     if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return;
-    const rows = [...list.current.querySelectorAll("[data-entry]")];
-    (rows.find((row) => row.getAttribute("data-entry") === req.want) ?? rows[0] ?? list.current).focus();
+    (wanted ?? rows[0] ?? list.current).focus();
   });
   return list;
 }
@@ -1080,7 +1082,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === "results" ? S.searchMore(entries.length) : S.truncated(entries.length);
-  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path);
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching);
   const { setShown } = b;
   useEffect(() => setShown(active.data && !active.error ? { entries, save: active.data.save ?? null } : null), [active.data, active.error, entries, setShown]);
   const [lastFocused, setLastFocused] = useState(null);

@@ -1,7 +1,7 @@
 // v0.4.3: finished upload navigation, current-folder Drive imports, preview retry and composer references.
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
-import { createTestContext, host, resetHost, resetQueryCache } from './sdk-mock'
+import { createTestContext, host, resetHost, resetQueryCache, useQueryClient } from './sdk-mock'
 import { fakeBackend, ROOTS } from './fake-backend'
 import { $available, $driveAvailable, bindContext } from '../api'
 import { $driveJob, DriveImport } from '../drive'
@@ -52,6 +52,34 @@ describe('finished uploads: Show', () => {
     await screen.findByText('notes.txt')
     expect(backend.calls.filter(c => c.path === '/list').every(c => c.params.path === '')).toBe(true)
     click('Show')
+    await screen.findByText('a (1).txt')
+    await waitFor(() => expect(document.activeElement).toBe(row('a (1).txt')))
+  })
+
+  it('waits for the refetch when the cached folder lacks the saved name', async () => {
+    doneBatch()
+    let fresh = false
+    let release: (() => void) | undefined
+    const backend = fakeBackend()
+    const rest = async (path: string, opts?: any) => {
+      const reply = await backend.rest(path, opts)
+      if (!path.startsWith('/list?') || new URLSearchParams(path.split('?')[1]).get('path') !== 'docs') return reply
+      if (fresh) await new Promise<void>(resolve => { release = resolve })
+      return { ok: true, entries: [file('docs/old.txt'), ...(fresh ? [file('docs/a (1).txt')] : [])], total: fresh ? 2 : 1 }
+    }
+    bindContext(createTestContext({ rest }).ctx as any)
+    render(<CloudFilesPage />)
+    fireEvent.doubleClick(await screen.findByText('docs'))
+    await screen.findByText('old.txt')
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Home' }))
+    await screen.findByText('notes.txt')
+    fresh = true
+    void useQueryClient().invalidateQueries({ queryKey: ['hcfm'] })
+    await waitFor(() => expect(release).toBeDefined())
+    click('Show')
+    await screen.findByText('old.txt')
+    expect(document.activeElement).not.toBe(row('old.txt'))
+    await act(async () => release!())
     await screen.findByText('a (1).txt')
     await waitFor(() => expect(document.activeElement).toBe(row('a (1).txt')))
   })
@@ -197,7 +225,7 @@ describe('Add to chat', () => {
   it.each<[string, string | null]>([
     ['/home/a.txt', '/home/a.txt'], ['/home/a b', '`/home/a b`'], ['/home/a`b', '"/home/a`b"'],
     ['/home/a.', '`/home/a.`'], ['/home/(paren)', '`/home/(paren)`'], ['/home/a`"\'b', null],
-    ['/home/a`"b', "'/home/a`\"b'"], ...[',', ';', '!', '?'].map(ch => [`/home/a${ch}`, '`/home/a' + ch + '`'] as [string, string])
+    ['/home/a`"b', "'/home/a`\"b'"], ['/home/a\nb', null], ['/home/a\rb', null], ...[',', ';', '!', '?'].map(ch => [`/home/a${ch}`, '`/home/a' + ch + '`'] as [string, string])
   ])('quotes %s exactly', (path, expected) => expect(formatRef(path!)).toBe(expected))
 
   it('sends a file and folder in shown order, skipping outside links, with inline active-composer text', async () => {

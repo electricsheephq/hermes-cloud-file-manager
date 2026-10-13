@@ -46,17 +46,20 @@ export function requestFocus(request: FocusRequest, at: string, want: true | str
 
 /** The ref for a list's scroller: after a focus request for `at`, the folder on screen, moves focus into the list
  *  once `ready` (loaded). Matching `at` keeps a render of the previous folder from taking the request. */
-export function useListFocus(request: FocusRequest, ready: boolean, at: string | null) {
+export function useListFocus(request: FocusRequest, ready: boolean, at: string | null, fetching = false) {
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const req = request.current
     if (!req || !ready || !list.current || req.at !== at) return
+    const rows = [...list.current.querySelectorAll<HTMLElement>('[data-entry]')]
+    const wanted = rows.find(row => row.getAttribute('data-entry') === req.want)
+    // A cached listing can lack a file just written (Show after an upload): wait for the refetch under way.
+    if (!wanted && typeof req.want === 'string' && fetching) return
     request.current = null
     // The user moved on while the listing loaded (into Search, a dialog, ...): leave their focus where it is.
     const now = document.activeElement
     if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return
-    const rows = [...list.current.querySelectorAll<HTMLElement>('[data-entry]')]
-    ;(rows.find(row => row.getAttribute('data-entry') === req.want) ?? rows[0] ?? list.current).focus()
+    ;(wanted ?? rows[0] ?? list.current).focus()
   })
   return list
 }
@@ -403,7 +406,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   const stopped = reason === 'time' || reason === 'visits'
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
 
-  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path)
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching)
   const { setShown } = b
   useEffect(() => setShown(active.data && !active.error ? { entries, save: active.data.save ?? null } : null), [active.data, active.error, entries, setShown])
   // One tab stop: the last focused row, else the first selected, else the first.
