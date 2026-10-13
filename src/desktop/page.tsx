@@ -23,6 +23,7 @@ import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
 import { baseName, humanSize, isOpenable, joinPath, parentPath } from './format'
+import { ownerMismatch } from './picker'
 import { Preview } from './preview'
 import { codeText, S } from './strings'
 import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
@@ -37,6 +38,16 @@ export const $batch = atom<null | UploadBatch>(null)
 /** The agent selected right now. Read it synchronously in the event handler that picked the files: a folder
  *  walk is async, and the files belong to the agent they were picked on even if the user switches meanwhile. */
 export const currentPin = (): AgentPin => ({ connectionId: host.state.connectionId.get(), profile: host.state.profile.get() })
+
+/** Live dragstart guard: paths have no agent identity, so the listing, selected agent and chat must agree. */
+export function dragFromPage(event: DragEvent, [connectionId, profile]: [string, string]): boolean {
+  const pin = currentPin()
+  const owner = host.state.focusedSessionOwner?.get() ?? null
+  if ((pin.connectionId ?? 'local') === connectionId && pin.profile === profile && !ownerMismatch(owner, pin.connectionId, pin.profile)) return true
+  event.preventDefault()
+  host.notify({ kind: 'warning', message: S.dragOtherAgent(owner?.profile ?? pin.profile, profile) })
+  return false
+}
 
 /** Queue files on the batch for `pin`'s agent. A batch for another agent pauses until it is selected again;
  *  it is never re-pinned. `limits` are the current /roots limits. */
@@ -139,13 +150,13 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
   // preventDefault on dragover AND drop, always: otherwise Electron navigates the window to the file.
   const dragOver = (event: DragEvent) => {
     event.preventDefault()
-    if (onDropInput) event.dataTransfer.dropEffect = 'copy'
+    event.dataTransfer.dropEffect = onDropInput && event.dataTransfer.types.includes('Files') ? 'copy' : 'none'
   }
   const drop = (event: DragEvent) => {
     event.preventDefault()
     depth.current = 0
     setOver(false)
-    if (!onDropInput) return
+    if (!onDropInput || !event.dataTransfer.types.includes('Files')) return
     const { entries, files } = collectDropEntries(event.dataTransfer) // synchronous: the list dies after this handler
     onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)), currentPin())
   }
@@ -153,8 +164,9 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
     <section
       onDragEnter={event => {
         event.preventDefault()
+        if (!event.dataTransfer.types.includes('Files')) return
         depth.current += 1
-        if (onDropInput && event.dataTransfer.types.includes('Files')) setOver(true)
+        if (onDropInput) setOver(true)
       }}
       onDragLeave={() => {
         depth.current = Math.max(0, depth.current - 1)
@@ -313,7 +325,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
           ) : doc ? (
             <Editor doc={doc} leave={guard.leave} onClose={closeDoc} setDoc={setDoc} />
           ) : (
-            <EntryList b={b} onOpenFile={openFile} />
+            <EntryList b={b} dragOut={dragFromPage} onOpenFile={openFile} />
           )}
         </>
       )}

@@ -48,6 +48,8 @@ export const S = {
     `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : 'early'}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: 'No matches found so far',
   dropTo: (folder: string) => `Drop to upload to ${folder}`,
+  dragOtherAgent: (owner: string, profile: string) =>
+    `The chat you'd drop into is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   copied: (n: number) => (n === 1 ? 'Path copied' : `${n} paths copied`),
   copyFailed: "Couldn't copy to the clipboard",
   breadcrumbs: 'Folder path',
