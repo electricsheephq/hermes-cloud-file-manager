@@ -17,7 +17,7 @@ const entry = (rel: string, is_dir = false) => ({
   mtime: 1767225600,
   link_outside: false
 })
-const ENTRIES = [entry('docs', true), entry('readme.md'), entry('notes.txt'), entry('other.md'), entry('script.py'), entry('crlf.md')]
+const ENTRIES = [entry('docs', true), entry('readme.md'), entry('notes.txt'), entry('other.md'), entry('tool.exe'), entry('crlf.md')]
 const list = () => ({ ok: true, entries: ENTRIES, total: ENTRIES.length, truncated: false })
 
 function setup(overrides: Parameters<typeof fakeBackend>[0] = {}, texts = TEXTS) {
@@ -88,12 +88,12 @@ describe('editor: View and Edit', () => {
     expect(screen.queryByTestId('md')).toBeNull()
   })
 
-  it('does nothing on a .py double-click (no /file call)', async () => {
+  it('does nothing on a .exe double-click (no /file or /file/preview call; .py previews since v0.4.1)', async () => {
     const { calls } = setup()
-    fireEvent.doubleClick(await screen.findByText('script.py'))
-    fireEvent.click(screen.getByText('script.py'))
+    fireEvent.doubleClick(await screen.findByText('tool.exe'))
+    fireEvent.click(screen.getByText('tool.exe'))
     await flush()
-    expect(calls.some(c => c.path === '/file')).toBe(false)
+    expect(calls.some(c => c.path === '/file' || c.path === '/file/preview')).toBe(false)
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open' })).toBeNull()
     expect(screen.getByText('readme.md')).toBeTruthy()

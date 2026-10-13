@@ -24,7 +24,7 @@ import { type CSSProperties, type KeyboardEvent, type MouseEvent, type MutableRe
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
-import { baseName, entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
+import { baseName, entryIcon, humanSize, isOpenable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
 import { transportText } from './upload'
 
@@ -347,7 +347,7 @@ async function listUpTo([connectionId, profile]: [string, string], root: string,
 }
 
 /** The scrolling list: folder listing, or search results while a query is active. With `onOpenFile`, opening
- *  an editable file (double-click / Enter) hands it to the editor; other files stay inert. */
+ *  an editable or previewable file (double-click / Enter) hands it to the page; other files stay inert. */
 export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: number; onOpenFile?: (entry: Entry) => void }) {
   const [connectionId, profile] = useScope()
   const rootId = b.root?.id ?? ''
@@ -421,7 +421,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   }
 
   const open = (entry: Entry) => {
-    if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
+    if (onOpenFile && isOpenable(entry)) return onOpenFile(entry)
     if (!entry.is_dir || entry.link_outside) return
     b.navigate(entry.rel)
   }
