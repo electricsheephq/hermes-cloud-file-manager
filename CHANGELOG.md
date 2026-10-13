@@ -2,6 +2,22 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.1] - 2026-10-13
+
+Both halves. Previews need 0.4.1 on the agent too; with an older agent side, Cloud Files says so and everything else works as before.
+
+### Added
+- **Read-only previews** of images, PDFs, and code and data files. Double-click a file, or select it and choose **Open**.
+  - Images: PNG, JPEG, GIF, WebP, BMP, ICO and SVG.
+  - PDFs.
+  - Text and code: JSON, YAML, TOML, CSV/TSV (shown as a table, or as text), logs, XML, HTML and most source languages. Previews of text and code show the first 1 MB.
+  - Images and PDFs up to 10 MB. Larger files say so; use **Download** instead.
+  - Previews are read-only. Only `.md`, `.markdown` and `.txt` files can be edited and saved, as before.
+  - HTML and SVG are never run: HTML shows as text, and SVG shows as an image.
+
+### Fixed
+- The docs said Download needs Hermes v0.21.6. It works in every Hermes Desktop this plugin supports (v0.21.5 and newer).
+
 ## [0.4.0] - 2026-10-13
 
 Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.
