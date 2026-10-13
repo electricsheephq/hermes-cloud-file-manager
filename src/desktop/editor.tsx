@@ -78,7 +78,7 @@ export const encodeText = (text: string, { bom, crlf }: { bom: boolean; crlf: bo
 
 export const isDirty = (doc: Doc | null) => Boolean(doc && doc.status === 'ready' && doc.draft !== doc.base)
 
-const isCurrent = (pin: AgentPin) => pin.connectionId === host.state.connectionId.get() && pin.profile === host.state.profile.get()
+export const isCurrent = (pin: AgentPin) => pin.connectionId === host.state.connectionId.get() && pin.profile === host.state.profile.get()
 
 // ---- Drafts that outlive the page (memory only).
 export const $drafts = atom<ReadonlyMap<string, Doc>>(new Map())

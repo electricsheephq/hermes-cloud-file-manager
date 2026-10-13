@@ -118,6 +118,7 @@ export function parseDelimited(text: string, sep: string, maxRows: number): { ro
   let row: string[] = []
   let field = ''
   let quoted = false
+  let open = false // the last record has begun, even if only with an empty quoted field
   const end = () => {
     row.push(field)
     field = ''
@@ -138,11 +139,14 @@ export function parseDelimited(text: string, sep: string, maxRows: number): { ro
       if (rows.length === maxRows) return { rows, more: true }
       rows.push(row)
       row = []
+      open = false
+      continue
     } else {
       field += ch
     }
+    open = true
   }
-  if (field !== '' || row.length) {
+  if (open) {
     end()
     if (rows.length === maxRows) return { rows, more: true }
     rows.push(row)

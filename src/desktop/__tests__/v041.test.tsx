@@ -1,5 +1,6 @@
 // v0.4.1: read-only previews of images, PDFs and code/data files through GET /file/preview. Save stays md/txt only.
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useLayoutEffect } from 'react'
 
 import { createTestContext, host, resetHost, resetQueryCache, setDownloadCapture } from './sdk-mock'
 import { fakeBackend } from './fake-backend'
@@ -92,6 +93,9 @@ describe('format: what opens where', () => {
     })
     expect(parseDelimited('a\tb,c\n1\t2', '\t', 10).rows).toEqual([['a', 'b,c'], ['1', '2']])
     expect(parseDelimited('1\n2\n3\n', ',', 2)).toEqual({ rows: [['1'], ['2']], more: true })
+    // A last record that is only an empty quoted field is still a record (review finding).
+    expect(parseDelimited('a\n""', ',', 10).rows).toEqual([['a'], ['']])
+    expect(parseDelimited('a\n', ',', 10).rows).toEqual([['a']])
     expect(parseDelimited('1\n2', ',', 2)).toEqual({ rows: [['1'], ['2']], more: false })
     expect(parseDelimited('', ',', 2)).toEqual({ rows: [], more: false })
   })
@@ -264,6 +268,29 @@ describe('the pinned agent and the open file', () => {
     expect(backend.calls.filter(c => c.path === '/file/preview').map(c => c.profile)).toEqual(['default'])
     expect(document.querySelector('pre')?.textContent).toBe('{"a": 1}\n')
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('an agent switch between the render and the load effect sends nothing to the new agent (review P1)', async () => {
+    const backend = fakeBackend()
+    bindContext(createTestContext({ rest: backend.rest }).ctx as any)
+    // Mounts in the same commit as the viewer: its layout effect runs before the viewer's passive load effect.
+    function Switch() {
+      useLayoutEffect(() => host.state.profile.set('eva'), [])
+      return null
+    }
+    function SwitchingHarness() {
+      const [doc, setDoc] = useOpenDoc()
+      harness.setDoc = setDoc
+      return doc ? <><Preview doc={doc} onClose={() => setDoc(null)} setDoc={setDoc} /><Switch /></> : null
+    }
+    render(<SwitchingHarness />)
+    act(() => openDoc(file('data.json'), { id: 'home', label: 'Home', path: '/home/agent' }, { connectionId: 'conn-1', profile: 'default' }, harness.setDoc!))
+    await flush()
+    expect(host.state.profile.get()).toBe('eva')
+    expect(backend.calls.filter(c => c.path === '/file/preview')).toHaveLength(0)
+    act(() => host.state.profile.set('default'))
+    await flush()
+    expect(backend.calls.filter(c => c.path === '/file/preview').map(c => c.profile)).toEqual(['default'])
   })
 
   it('another file opened in its place revokes the old URL', async () => {

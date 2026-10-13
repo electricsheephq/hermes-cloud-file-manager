@@ -6,7 +6,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 
 import { ApiError, call, isNotFoundError, query } from './api'
 import { captureFor } from './download'
-import { copy, type Doc, nextId, type SetDoc } from './editor'
+import { copy, type Doc, isCurrent, nextId, type SetDoc } from './editor'
 import { humanSize, parseDelimited, type PreviewKind } from './format'
 import { fileCodeText, S } from './strings'
 import { transportText } from './upload'
@@ -50,6 +50,9 @@ function toBlob(data: string, mime: string): Blob {
 /** Read `doc`'s preview into a fresh generation of it; the answer lands only if that generation is still open.
  *  Download is captured with the read, and kept on a refusal (the file may still be saved, just not shown). */
 function load(doc: Doc, setDoc: SetDoc) {
+  // Checked live, not from the render: the agent can change between the render and this effect, and ctx.rest goes
+  // to whichever agent is selected now. The effect runs again once the doc's agent is back.
+  if (!isCurrent(doc.pin)) return
   const id = nextId()
   setDoc({ ...doc, id, status: 'loading', error: undefined, save: null })
   const save = captureFor([doc.pin.connectionId ?? 'local', doc.pin.profile])

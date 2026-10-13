@@ -329,6 +329,7 @@ function parseDelimited(text, sep, maxRows) {
   let row = [];
   let field = "";
   let quoted = false;
+  let open = false;
   const end = () => {
     row.push(field);
     field = "";
@@ -349,11 +350,14 @@ function parseDelimited(text, sep, maxRows) {
       if (rows.length === maxRows) return { rows, more: true };
       rows.push(row);
       row = [];
+      open = false;
+      continue;
     } else {
       field += ch;
     }
+    open = true;
   }
-  if (field !== "" || row.length) {
+  if (open) {
     end();
     if (rows.length === maxRows) return { rows, more: true };
     rows.push(row);
@@ -1785,6 +1789,7 @@ function toBlob(data, mime) {
   return new Blob([bytes], { type: mime });
 }
 function load2(doc, setDoc) {
+  if (!isCurrent(doc.pin)) return;
   const id = nextId();
   setDoc({ ...doc, id, status: "loading", error: void 0, save: null });
   const save = captureFor([doc.pin.connectionId ?? "local", doc.pin.profile]);
