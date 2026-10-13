@@ -66,7 +66,7 @@ export const $available = atom<boolean | null>(null)
 export const $driveAvailable = atom<boolean | null>(null)
 /** The newest /available (`cloud`) or /drive/available (`drive`) probe for the selected agent failed in transport,
  *  not with a 404. Only the open picker shows it, with `retry` (one immediate probe); the rest keep the last answer. */
-export const $unreachable = atom<null | { probe: 'cloud' | 'drive'; retry: () => void }>(null)
+export const $unreachable = atom<null | { probe: 'cloud' | 'drive'; retry: () => void; retrying?: boolean }>(null)
 
 export function bindContext(ctx: PluginContext) {
   bound = ctx

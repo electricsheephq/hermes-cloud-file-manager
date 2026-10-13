@@ -309,6 +309,36 @@ describe('C. Picker (#51)', () => {
     expect($unreachable.get()).toBeNull()
   })
 
+  it('Retry keeps the error on screen, busy, while its probe hangs; a new failure re-enables it', async () => {
+    const pending: Array<{ yes: (value: unknown) => void; no: (error: Error) => void }> = []
+    const { counts, view } = await openOnDefault((_, n) => (n === 1 ? Promise.reject(new Error('fetch failed'))
+      : new Promise((yes, no) => { pending.push({ yes, no }) })))
+    act(() => host.state.profile.set('agent-b'))
+    await screen.findByText("Couldn't reach agent-b's Cloud Files.")
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await flush()
+    expect(counts['agent-b']).toBe(2)
+    expect(screen.getByText("Couldn't reach agent-b's Cloud Files.")).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(view.container.querySelector('[aria-busy="true"]')).toBeNull()
+    await act(async () => pending[0].no(new Error('fetch failed'))); await flush()
+    expect((screen.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' })); await flush()
+    await act(async () => pending[1].yes({ ok: true }))
+    expect(await screen.findByText('notes.txt')).toBeTruthy()
+    expect(screen.queryByText(/Couldn't reach/)).toBeNull()
+  })
+
+  it('a Drive picker whose agent fails the Cloud Files probe names Cloud Files, not Google Drive', async () => {
+    const backend = fakeBackend({ '/available': () => (host.state.profile.get() === 'default' ? { ok: true } : Promise.reject(new Error('fetch failed'))) })
+    const t = register(backend.rest); await flush()
+    host.state.focusedSessionOwner.set(null)
+    render(t.live.get('picker-host').render())
+    await act(async () => t.live.get('attach-drive').data.run({ insertText: vi.fn() })); await flush()
+    act(() => host.state.profile.set('agent-b'))
+    expect(await screen.findByText("Couldn't reach agent-b's Cloud Files.")).toBeTruthy()
+    expect(screen.queryByText(/Google Drive\.$/)).toBeNull()
+  })
+
   it("an older agent's late error never shows; a 404 still means not set up", async () => {
     const rejects: Record<string, (error: Error) => void> = {}
     const { view } = await openOnDefault(profile => new Promise((_yes, no) => { rejects[profile] = no }))

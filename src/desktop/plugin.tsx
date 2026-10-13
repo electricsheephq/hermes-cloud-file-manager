@@ -86,7 +86,16 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     // probe start would bring back the endless busy placeholder (#51) whenever that probe hangs.
     const settle = (which: 'cloud' | 'drive', ok: boolean) => {
       if (mine !== generation || disposed) return
-      if (!ok) $unreachable.set({ probe: which, retry: () => ($unreachable.set(null), void probe()) })
+      if (!ok) {
+        // Retry keeps the error on screen (Retry shows busy) until the new probe settles: clearing it first would
+        // bring back the endless placeholder whenever that probe hangs (#51).
+        const retry = () => {
+          const now = $unreachable.get()
+          if (now) $unreachable.set({ ...now, retrying: true })
+          void probe()
+        }
+        $unreachable.set({ probe: which, retry })
+      }
       else if ($unreachable.get()?.probe === which) $unreachable.set(null)
     }
     return ctx.rest('/available').then(

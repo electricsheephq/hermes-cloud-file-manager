@@ -178,8 +178,9 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
   it. See [SECURITY.md](SECURITY.md) for the accepted race with writers outside this process.
 - Everyone who can use the agent can see its files — the same access the agent itself has.
 - **Download** goes through Hermes Desktop's own authenticated download, the same one its file tree uses. The
-  plugin only offers it for files the list shows, which are inside the shown folders and never in the agent's
-  Hermes home. Hermes's own checks still apply: for example, it refuses credential files.
+  plugin only offers it for files the list shows: files inside the shown folders, never from the agent's Hermes
+  home except a working folder inside it, as above. Hermes's own checks still apply: for example, it refuses
+  credential files.
 
 Found a security problem? See [SECURITY.md](SECURITY.md).
 

@@ -203,8 +203,8 @@ function PickerDialog() {
           </>
         ) : failed ? (
           <div style={{ display: 'grid', gap: 8, justifyItems: 'center', padding: 32 }}>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--ui-text-secondary)' }}>{S.unreachable(profile, source === 'drive')}</p>
-            <Button onClick={failed.retry} size="sm" variant="secondary">
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--ui-text-secondary)' }}>{S.unreachable(profile, failed.probe === 'drive')}</p>
+            <Button loading={failed.retrying} onClick={failed.retry} size="sm" variant="secondary">
               {S.retry}
             </Button>
           </div>

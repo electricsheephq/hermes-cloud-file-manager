@@ -2263,8 +2263,8 @@ function PickerDialog() {
       /* @__PURE__ */ jsx5("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: notice }),
       finished && job && /* @__PURE__ */ jsx5(ImportFailures, { failures: job.failures })
     ] }) : failed ? /* @__PURE__ */ jsxs5("div", { style: { display: "grid", gap: 8, justifyItems: "center", padding: 32 }, children: [
-      /* @__PURE__ */ jsx5("p", { style: { margin: 0, fontSize: 13, color: "var(--ui-text-secondary)" }, children: S.unreachable(profile, source === "drive") }),
-      /* @__PURE__ */ jsx5(Button5, { onClick: failed.retry, size: "sm", variant: "secondary", children: S.retry })
+      /* @__PURE__ */ jsx5("p", { style: { margin: 0, fontSize: 13, color: "var(--ui-text-secondary)" }, children: S.unreachable(profile, failed.probe === "drive") }),
+      /* @__PURE__ */ jsx5(Button5, { loading: failed.retrying, onClick: failed.retry, size: "sm", variant: "secondary", children: S.retry })
     ] }) : pending || unavailable ? /* @__PURE__ */ jsx5("div", { "aria-busy": "true", style: { height: 360 } }) : /* @__PURE__ */ jsx5(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
     (notice || failed) && /* @__PURE__ */ jsxs5(DialogFooter3, { children: [
       /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
@@ -2399,8 +2399,14 @@ function registerAvailabilityGate(ctx, onChange) {
     const mine = ++generation2;
     const settle = (which, ok) => {
       if (mine !== generation2 || disposed) return;
-      if (!ok) $unreachable.set({ probe: which, retry: () => ($unreachable.set(null), void probe()) });
-      else if ($unreachable.get()?.probe === which) $unreachable.set(null);
+      if (!ok) {
+        const retry = () => {
+          const now = $unreachable.get();
+          if (now) $unreachable.set({ ...now, retrying: true });
+          void probe();
+        };
+        $unreachable.set({ probe: which, retry });
+      } else if ($unreachable.get()?.probe === which) $unreachable.set(null);
     };
     return ctx.rest("/available").then(
       () => {
