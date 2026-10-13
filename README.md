@@ -109,8 +109,8 @@ installing the desktop half is harmless for your other agents.
 - **Drag into the chat:** drag a file or folder row (or a selection) from the Cloud Files page into a chat. It
   becomes the same `@file:` / `@folder:` reference that Hermes's own Files tree makes. Hermes includes the contents
   of a file in the agent's working folder in your message; a file elsewhere is passed by its location, with a note
-  that it is outside the working folder. Cloud Files refuses the drag when the chat belongs to a different agent
-  than the files. The **+ → Cloud** picker still inserts locations only, exactly as before.
+  that it is outside the working folder. Cloud Files refuses the drag when the chat in focus belongs to a
+  different agent than the files. The **+ → Cloud** picker still inserts locations only, exactly as before.
 
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
 

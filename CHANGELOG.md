@@ -10,7 +10,7 @@ Desktop half only; the agent's side is unchanged from 0.4.1.
 - **Drag files into the chat.** Drag a file or folder row, or the current selection, from the Cloud Files page into
   a chat. It becomes the same `@file:` / `@folder:` reference Hermes's own Files tree makes. Hermes includes the
   contents of files in the agent's working folder; files elsewhere are passed by location with a note.
-  - Cloud Files refuses the drag, with a notice, when the chat belongs to a different agent than the files.
+  - Cloud Files refuses the drag, with a notice, when the chat in focus belongs to a different agent than the files.
   - The **+ → Cloud** picker, Google Drive rows and links that point outside the shown folders can't be dragged.
   - Tip: right-click **Cloud Files** in the sidebar and choose **Open in split** to keep it beside the chat.
 

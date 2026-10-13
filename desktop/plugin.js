@@ -1093,7 +1093,8 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   };
   const startDrag = (entry, event) => {
     if (!dragOut?.(event, [connectionId, profile])) return;
-    const picked = (b.selected.has(entry.abs) ? entries.filter((e) => b.selected.has(e.abs)) : [entry]).filter((e) => !e.link_outside);
+    const shown = new Set(entries.map((e) => e.abs));
+    const picked = (b.selected.has(entry.abs) ? [...entries.filter((e) => b.selected.has(e.abs)), ...[...b.selected.values()].filter((e) => !shown.has(e.abs))] : [entry]).filter((e) => !e.link_outside);
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-hermes-paths", JSON.stringify(picked.map((e) => ({ isDirectory: e.is_dir, path: e.abs }))));
     event.dataTransfer.setData("text/plain", picked.map((e) => e.abs).join("\n"));

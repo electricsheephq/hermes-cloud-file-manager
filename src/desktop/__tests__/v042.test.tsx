@@ -110,6 +110,23 @@ describe('page row payloads', () => {
       ['text/plain', '/home/agent/docs/z.txt\n/home/agent/docs/a.txt']
     ])
   })
+
+  it('a selection keeps rows a search hides, after the shown ones', async () => {
+    page({ '/search': () => ({ ok: true, results: [file('docs/z.txt')], truncated: false, reason: null, visited: 1 }) })
+    await screen.findByText('notes.txt')
+    fireEvent.click(screen.getByLabelText('notes.txt'))
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'z' } })
+    await act(() => new Promise(resolve => setTimeout(resolve, 350)))
+    await screen.findByRole('listbox', { name: 'Search results' })
+    expect(screen.queryByText('notes.txt')).toBeNull()
+    fireEvent.click(screen.getByLabelText('z.txt'))
+    const dataTransfer = transfer()
+    fireEvent.dragStart(row('z.txt'), { dataTransfer })
+    expect(dataTransfer.setData.mock.calls).toEqual([
+      ['application/x-hermes-paths', '[{"isDirectory":false,"path":"/home/agent/docs/z.txt"},{"isDirectory":false,"path":"/home/agent/notes.txt"}]'],
+      ['text/plain', '/home/agent/docs/z.txt\n/home/agent/notes.txt']
+    ])
+  })
 })
 
 describe('live agent guard', () => {

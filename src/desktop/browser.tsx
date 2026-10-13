@@ -434,7 +434,11 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
 
   const startDrag = (entry: Entry, event: DragEvent) => {
     if (!dragOut?.(event, [connectionId, profile])) return
-    const picked = (b.selected.has(entry.abs) ? entries.filter(e => b.selected.has(e.abs)) : [entry]).filter(e => !e.link_outside)
+    // Selected rows a search hides still count, as they do for the toolbar: shown order first, then the rest.
+    const shown = new Set(entries.map(e => e.abs))
+    const picked = (b.selected.has(entry.abs)
+      ? [...entries.filter(e => b.selected.has(e.abs)), ...[...b.selected.values()].filter(e => !shown.has(e.abs))]
+      : [entry]).filter(e => !e.link_outside)
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('application/x-hermes-paths', JSON.stringify(picked.map(e => ({ isDirectory: e.is_dir, path: e.abs }))))
     // The host's HTML5Backend requires a native type to let dragstart proceed.
