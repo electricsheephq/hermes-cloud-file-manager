@@ -89,6 +89,8 @@ function fetchEntry(entry: CacheEntry): Promise<void> {
       entry.error = error
     }
   )
+  // Observers hear the start too (isFetching turns true), as React Query notifies them.
+  entry.listeners.forEach(fn => fn())
   return entry.pending.finally(() => {
     entry.pending = undefined
     entry.listeners.forEach(fn => fn())

@@ -877,7 +877,7 @@ function useLiveRefresh() {
     const visible = () => {
       if (document.visibilityState !== "visible" || !missed) return;
       missed = false;
-      refresh();
+      if (timer === void 0) refresh();
     };
     document.addEventListener("visibilitychange", visible);
     return () => {
@@ -1131,7 +1131,8 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   const [lastFocused, setLastFocused] = useState(null);
   const tabStop = (entries.find((e) => e.abs === lastFocused) ?? entries.find((e) => b.selected.has(e.abs)) ?? entries[0])?.abs;
   const total = listing.data?.total ?? entries.length;
-  const announce = active.error ? S.folderFailed : !active.data ? "" : searching ? S.results(entries.length) : count === LIST_LIMIT || entries.length >= total ? S.items(total) : listing.isFetching ? "" : S.showingOf(entries.length, total);
+  const loadingMore = listing.isFetching && client.getQueryData(listingKey) === void 0;
+  const announce = active.error ? S.folderFailed : !active.data ? "" : searching ? S.results(entries.length) : count === LIST_LIMIT || entries.length >= total ? S.items(total) : loadingMore ? "" : S.showingOf(entries.length, total);
   const step = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity };
   const navKey = (entry, event) => {
     if (event.altKey && event.key === "ArrowUp" || event.key === "Backspace") {
@@ -1175,7 +1176,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       /* @__PURE__ */ jsx("div", { "aria-label": searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || ""), "aria-multiselectable": "true", role: "listbox", children: entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onDragStart: dragOut && !entry.link_outside ? (event) => startDrag(entry, event) : void 0, onFocus: () => setLastFocused(entry.abs), onNavKey: navKey, onOpen: open, searching, tabStop: entry.abs === tabStop }, entry.abs)) }),
       searching ? truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: truncationNote }) : (listing.data?.total ?? 0) > entries.length ? /* @__PURE__ */ jsxs("div", { style: { ...muted, fontSize: 11, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }, children: [
         /* @__PURE__ */ jsx("span", { children: S.showingOf(entries.length, listing.data.total) }),
-        /* @__PURE__ */ jsx(Button, { disabled: listing.isFetching, onClick: () => setRange({ folder, count: count + LIST_LIMIT }), size: "sm", variant: "text", children: S.loadMore })
+        /* @__PURE__ */ jsx(Button, { disabled: loadingMore, onClick: () => setRange({ folder, count: count + LIST_LIMIT }), size: "sm", variant: "text", children: S.loadMore })
       ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
     ] });
   }
@@ -1394,7 +1395,7 @@ function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }) {
       },
       tabIndex: tabStop ? 0 : -1,
       children: [
-        /* @__PURE__ */ jsx2("span", { "aria-hidden": true, onClick: (event) => event.stopPropagation(), onMouseDown: (event) => event.preventDefault(), style: { display: "inline-flex" }, children: !item.is_folder && /* @__PURE__ */ jsx2(
+        /* @__PURE__ */ jsx2("span", { onClick: (event) => event.stopPropagation(), onMouseDown: (event) => event.preventDefault(), style: { display: "inline-flex" }, children: !item.is_folder && /* @__PURE__ */ jsx2(
           Checkbox2,
           {
             "aria-label": item.name,

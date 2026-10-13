@@ -156,6 +156,46 @@ describe('Cloud live refresh', () => {
     expect(backend.calls.slice(start)).toHaveLength(1)
   })
 
+  it('refreshes once when the window returns with a refresh already pending', async () => {
+    const backend = page()
+    await flush()
+    const start = backend.calls.length
+    const visibility = vi.spyOn(document, 'visibilityState', 'get')
+    visibility.mockReturnValue('hidden')
+    act(() => backend.emitEvent(event()))
+    await advance(1000)
+    act(() => backend.emitEvent(event()))
+    await advance(500)
+    visibility.mockReturnValue('visible')
+    fireEvent(document, new Event('visibilitychange'))
+    await flush()
+    expect(backend.calls.slice(start)).toHaveLength(0)
+    await advance(500)
+    expect(backend.calls.slice(start).map(c => c.path)).toEqual(['/list'])
+  })
+
+  it('keeps Load more enabled and focused through a live refresh', async () => {
+    const many = Array.from({ length: 600 }, (_, i) => ({ name: `f${String(i).padStart(3, '0')}.txt`, rel: `f${String(i).padStart(3, '0')}.txt`, abs: `/home/agent/f${String(i).padStart(3, '0')}.txt`, is_dir: false, size: 1, mtime: 0 }))
+    let release: (() => void) | undefined
+    let hold = false
+    const backend = page(true, { '/list': async () => {
+      if (hold) await new Promise<void>(resolve => { release = resolve })
+      return { ok: true, entries: many.slice(0, 500), total: many.length }
+    } })
+    await flush()
+    const more = screen.getByRole('button', { name: 'Load more' }) as HTMLButtonElement
+    focus(more)
+    hold = true
+    act(() => backend.emitEvent(event()))
+    await advance(1000)
+    expect(release).toBeDefined()
+    expect(more.disabled).toBe(false)
+    expect(document.activeElement).toBe(more)
+    await act(async () => release!())
+    await flush()
+    expect(document.activeElement).toBe(more)
+  })
+
   it('disposes the subscription and pending timer and visibility listener on unmount', async () => {
     const backend = page()
     await flush()
@@ -222,7 +262,7 @@ describe('Drive keyboard parity', () => {
     expect(rows.map(el => el.tabIndex)).toEqual([0, -1, -1])
     for (const checkbox of screen.getAllByRole('checkbox', { hidden: true })) {
       expect(checkbox.tabIndex).toBe(-1)
-      expect(checkbox.parentElement?.getAttribute('aria-hidden')).toBe('true')
+      expect(checkbox.parentElement?.getAttribute('aria-hidden')).toBeNull()
     }
     fireEvent.keyDown(row('Plan'), { key: ' ' })
     expect(rows.map(el => el.tabIndex)).toEqual([-1, 0, -1])

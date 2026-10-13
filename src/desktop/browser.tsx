@@ -121,7 +121,7 @@ function useLiveRefresh() {
     const visible = () => {
       if (document.visibilityState !== 'visible' || !missed) return
       missed = false
-      refresh()
+      if (timer === undefined) refresh() // else the pending timer refreshes
     }
     document.addEventListener('visibilitychange', visible)
     return () => {
@@ -462,8 +462,11 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   const [lastFocused, setLastFocused] = useState<string | null>(null)
   const tabStop = (entries.find(e => e.abs === lastFocused) ?? entries.find(e => b.selected.has(e.abs)) ?? entries[0])?.abs
   const total = listing.data?.total ?? entries.length
+  // A Load more read is pending (its count has no data yet). A refresh of the count on screen is not: it keeps
+  // the button enabled, so keyboard focus on it survives a live refresh, and the count isn't announced again.
+  const loadingMore = listing.isFetching && client.getQueryData(listingKey) === undefined
   const announce = active.error ? S.folderFailed : !active.data ? '' : searching ? S.results(entries.length)
-    : count === LIST_LIMIT || entries.length >= total ? S.items(total) : listing.isFetching ? '' : S.showingOf(entries.length, total)
+    : count === LIST_LIMIT || entries.length >= total ? S.items(total) : loadingMore ? '' : S.showingOf(entries.length, total)
 
   const step: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity }
   const navKey = (entry: Entry, event: KeyboardEvent) => {
@@ -525,7 +528,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
           (listing.data?.total ?? 0) > entries.length ? (
             <div style={{ ...muted, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>{S.showingOf(entries.length, listing.data!.total)}</span>
-              <Button disabled={listing.isFetching} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
+              <Button disabled={loadingMore} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
             </div>
           ) : truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.firstOnly(entries.length)}</div>}
       </>

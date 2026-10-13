@@ -184,7 +184,8 @@ function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }: {
       }}
       tabIndex={tabStop ? 0 : -1}
     >
-      <span aria-hidden onClick={event => event.stopPropagation()} onMouseDown={event => event.preventDefault()} style={{ display: 'inline-flex' }}>
+      {/* Out of the tab order, but not aria-hidden: a list item has no aria-selected, so the box tells a screen reader. */}
+      <span onClick={event => event.stopPropagation()} onMouseDown={event => event.preventDefault()} style={{ display: 'inline-flex' }}>
         {!item.is_folder && (
           <Checkbox
             aria-label={item.name}
