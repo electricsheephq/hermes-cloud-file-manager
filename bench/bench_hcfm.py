@@ -51,11 +51,14 @@ def summarize(samples):
             "min_ms": round(s[0] * 1000, 2), "max_ms": round(s[-1] * 1000, 2)}
 
 
-def timed(fn, reps, warmup=1):
+def timed(fn, reps, warmup=1, before=None):
+    """`before` runs ahead of every timed repetition, outside the timing (for example, clearing a cache)."""
     for _ in range(warmup):
         fn()
     samples, last = [], None
     for _ in range(reps):
+        if before:
+            before()
         t = time.perf_counter()
         last = fn()
         samples.append(time.perf_counter() - t)
@@ -183,13 +186,21 @@ def suite_baseline(client, reps, out):
     out["roots (3 folder notes)"] = timed(lambda: get(client, "roots"), max(reps, 20))[0]
 
 
-def suite_list(client, work, reps, out, sizes):
+def suite_list(client, api, work, reps, out, sizes):
+    """A warmed /list is answered from the plugin's 5 s listing cache. "cold" clears that cache before every
+    repetition (outside the timing), so it times the folder scan a first visit pays; the filesystem's own caches
+    stay warm either way. Load-more pages are warm: the desktop asks for them right after the first page."""
+    clear = getattr(getattr(api, "_LIST_CACHE", None), "clear", None)
     for n in sizes:
         build_flat(work, n)
         rel = f"flat_{n}"
+        if clear:
+            stats, body = timed(lambda: get(client, "list", root="r0", path=rel, offset=0, limit=500), reps, warmup=0, before=clear)
+            stats.update(total=body["total"], truncated=body["truncated"], page_kb=round(len(json.dumps(body)) / 1024))
+            out[f"list {n:>6} first page (0,500) cold"] = stats
         stats, body = timed(lambda: get(client, "list", root="r0", path=rel, offset=0, limit=500), reps)
         stats.update(total=body["total"], truncated=body["truncated"], page_kb=round(len(json.dumps(body)) / 1024))
-        out[f"list {n:>6} first page (0,500)"] = stats
+        out[f"list {n:>6} first page (0,500){' warm' if clear else ''}"] = stats
         if n > 2000:
             stats, body = timed(lambda: get(client, "list", root="r0", path=rel, offset=2000, limit=500), reps)
             stats.update(returned=len(body["entries"]))
@@ -549,7 +560,7 @@ def main():
         if name == "baseline":
             suite_baseline(client, args.reps, results)
         elif name == "list":
-            suite_list(client, work, args.reps, results, flat)
+            suite_list(client, api, work, args.reps, results, flat)
         elif name == "search":
             suite_search(client, work, args.reps, results, tree)
         elif name == "searchcap":
