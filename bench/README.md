@@ -27,7 +27,7 @@ python bench/diff_list.py --base . --cand ../other-checkout --work <empty dir>  
 | suite | what it measures |
 |---|---|
 | baseline | `/available` (the transport floor) and `/roots` |
-| list | `/list` on flat folders of 100, 1k, 5k, 20k and 25k entries (5% folders, mixed names). It times the first page `(0,500)`, a Load-more page `(2000,500)` and the largest page `(0,2000)`. |
+| list | `/list` on flat folders of 100, 1k, 5k, 20k and 25k entries (5% folders, mixed names). It times the first page `(0,500)` cold (the plugin's 5 s listing cache cleared before every repetition, so it is the scan a first visit pays) and warm (answered from that cache), then a Load-more page `(2000,500)` and the largest page `(0,2000)`, both warm. |
 | search | `/search` on trees of 10k, 100k and 500k files (leaf folders of 100 files), with four queries: no match, a unique needle, a common word that hits the limit, and the glob `*.md` |
 | searchcap | the shape of the time cap and the visit cap, scaled down (0.25 s and 100k visits), plus µs per visit and an estimate of the time to reach the 1M visit cap |
 | upload | 1 MiB and 100 MiB through `uploads/start`, `uploads/chunk` and `uploads/finish` over real HTTP: MiB/s and the server's peak RSS growth |
