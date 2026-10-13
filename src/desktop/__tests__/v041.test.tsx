@@ -1,6 +1,6 @@
 // v0.4.1: read-only previews of images, PDFs and code/data files through GET /file/preview. Save stays md/txt only.
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useLayoutEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 
 import { createTestContext, host, resetHost, resetQueryCache, setDownloadCapture } from './sdk-mock'
 import { fakeBackend } from './fake-backend'
@@ -291,6 +291,28 @@ describe('the pinned agent and the open file', () => {
     act(() => host.state.profile.set('default'))
     await flush()
     expect(backend.calls.filter(c => c.path === '/file/preview').map(c => c.profile)).toEqual(['default'])
+  })
+
+  it('a switch away and back within one render still reads the file (review)', async () => {
+    const backend = fakeBackend()
+    bindContext(createTestContext({ rest: backend.rest }).ctx as any)
+    // In the viewer's first commit: away in a layout effect (before its load effect), back in a passive one (after).
+    function AwayAndBack() {
+      useLayoutEffect(() => host.state.profile.set('eva'), [])
+      useEffect(() => host.state.profile.set('default'), [])
+      return null
+    }
+    function BouncingHarness() {
+      const [doc, setDoc] = useOpenDoc()
+      harness.setDoc = setDoc
+      return doc ? <><Preview doc={doc} onClose={() => setDoc(null)} setDoc={setDoc} /><AwayAndBack /></> : null
+    }
+    render(<BouncingHarness />)
+    act(() => openDoc(file('data.json'), { id: 'home', label: 'Home', path: '/home/agent' }, { connectionId: 'conn-1', profile: 'default' }, harness.setDoc!))
+    await flush()
+    expect(host.state.profile.get()).toBe('default')
+    expect(backend.calls.filter(c => c.path === '/file/preview').map(c => c.profile)).toEqual(['default'])
+    expect(document.querySelector('pre')?.textContent).toBe('{"a": 1}\n')
   })
 
   it('another file opened in its place revokes the old URL', async () => {

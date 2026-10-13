@@ -75,10 +75,20 @@ export function Preview({ doc, setDoc, onClose }: { doc: Doc; setDoc: SetDoc; on
   const connectionId = useValue(host.state.connectionId)
   const profile = useValue(host.state.profile)
   const here = doc.pin.connectionId === connectionId && doc.pin.profile === profile
-  // ctx.rest targets the selected agent: read only while it is this file's (id 0: not read yet).
+  // ctx.rest targets the selected agent: read only while it is this file's (id 0: not read yet). The agent is read
+  // live, and every change of it tries again, so a switch away and back within one render can't leave it unread.
   useEffect(() => {
-    if (here && doc.id === 0) load(doc, setDoc)
-  }, [here, doc.id])
+    if (doc.id !== 0) return
+    let done = false
+    const attempt = () => {
+      if (done || !isCurrent(doc.pin)) return
+      done = true
+      load(doc, setDoc)
+    }
+    attempt()
+    const stops = [host.state.connectionId.listen(attempt), host.state.profile.listen(attempt)]
+    return () => stops.forEach(stop => stop())
+  }, [doc.id, doc.pin.connectionId, doc.pin.profile, doc.root, doc.path])
 
   // One object URL per loaded file, revoked when the file changes, closes or the page goes.
   const blob = doc.preview?.blob

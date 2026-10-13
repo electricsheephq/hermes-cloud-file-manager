@@ -1808,8 +1808,17 @@ function Preview({ doc, setDoc, onClose }) {
   const profile = useValue3(host4.state.profile);
   const here = doc.pin.connectionId === connectionId && doc.pin.profile === profile;
   useEffect3(() => {
-    if (here && doc.id === 0) load2(doc, setDoc);
-  }, [here, doc.id]);
+    if (doc.id !== 0) return;
+    let done = false;
+    const attempt = () => {
+      if (done || !isCurrent(doc.pin)) return;
+      done = true;
+      load2(doc, setDoc);
+    };
+    attempt();
+    const stops = [host4.state.connectionId.listen(attempt), host4.state.profile.listen(attempt)];
+    return () => stops.forEach((stop) => stop());
+  }, [doc.id, doc.pin.connectionId, doc.pin.profile, doc.root, doc.path]);
   const blob = doc.preview?.blob;
   const [object, setObject] = useState4(null);
   useEffect3(() => {
