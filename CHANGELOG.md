@@ -2,6 +2,22 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.3] - 2026-10-14
+
+Desktop half only; the agent's side is unchanged from 0.4.1.
+
+### Added
+- **Show** on a finished upload opens its folder and puts the focus on the file, using the name it was saved under.
+- **Add to chat** in the toolbar, and while viewing or editing a file: the same `@file:` / `@folder:` references as
+  dragging, inserted into the chat beside Cloud Files, refused when that chat belongs to another agent. It needs a
+  Hermes Desktop with the composer API; without it the button doesn't show.
+- **Retry** on a preview that failed to arrive (a timeout or network error). A refusal, such as a file that is too
+  large, doesn't offer it.
+
+### Changed
+- **Import from Google Drive on the Cloud Files page** puts the files in the folder you were in, not always in
+  `uploads/drive` of the first folder. The **+ → Google Drive** picker still imports into `uploads/drive`.
+
 ## [0.4.2] - 2026-10-13
 
 Desktop half only; the agent's side is unchanged from 0.4.1.

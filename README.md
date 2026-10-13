@@ -8,7 +8,7 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 - **Cloud Files** in the sidebar: browse the agent's folders, search by name, create folders, and upload files
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
-  never overwrite — a name clash keeps both files.
+  never overwrite — a name clash keeps both files. **Show** on a finished upload opens its folder at the file.
 - **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
   The file list also works from the keyboard: arrow keys, Home and End, Page Up and Page Down, Enter to open,
   Space to select, and Alt+Up for the parent folder.
@@ -110,7 +110,8 @@ installing the desktop half is harmless for your other agents.
   becomes the same `@file:` / `@folder:` reference that Hermes's own Files tree makes. Hermes includes the contents
   of a file in the agent's working folder in your message; a file elsewhere is passed by its location, with a note
   that it is outside the working folder. Cloud Files refuses the drag when the chat in focus belongs to a
-  different agent than the files. The **+ → Cloud** picker still inserts locations only, exactly as before.
+  different agent than the files. **Add to chat** in the toolbar (or while viewing a file) does the same without
+  dragging, into the chat beside Cloud Files. The **+ → Cloud** picker still inserts locations only, exactly as before.
 
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
 
@@ -138,7 +139,8 @@ files from that Drive onto the agent's machine:
 
 ![+ → Google Drive imports and inserts](docs/media/screenshot-drive-picker.png)
 
-Imports land in `uploads/drive/` in the first shown folder, one file at a time. Google Docs and Slides arrive as
+On the Cloud Files page, imports land in the folder you were in before switching to Google Drive; from the
+**+ → Google Drive** picker they land in `uploads/drive/` in the first shown folder. One file at a time. Google Docs and Slides arrive as
 PDF, Sheets as CSV and Drawings as PNG; other files arrive as they are. A name clash keeps both files, and
 `max_file_mb` applies.
 
