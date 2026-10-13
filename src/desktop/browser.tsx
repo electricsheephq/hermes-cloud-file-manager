@@ -168,6 +168,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
       }),
     selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]])),
     setShown,
+    picked: () => selectedEntries(shown?.entries ?? [], selected),
     /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
      *  link outside the shown folders), captured with that data. A selection keeps its old flags across a refresh. */
     saveFor: (entry: Entry) => {
@@ -175,6 +176,12 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
       return (now && !now.is_dir && !now.link_outside && shown?.save) || null
     }
   }
+}
+
+/** Shown order first, then selected rows hidden by search; outside links never carry references. */
+export function selectedEntries(entries: readonly Entry[], selected: ReadonlyMap<string, Entry>): Entry[] {
+  const shown = new Set(entries.map(e => e.abs))
+  return [...entries.filter(e => selected.has(e.abs)), ...[...selected.values()].filter(e => !shown.has(e.abs))].filter(e => !e.link_outside)
 }
 
 export type Browser = ReturnType<typeof useBrowser>
@@ -434,11 +441,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
 
   const startDrag = (entry: Entry, event: DragEvent) => {
     if (!dragOut?.(event, [connectionId, profile])) return
-    // Selected rows a search hides still count, as they do for the toolbar: shown order first, then the rest.
-    const shown = new Set(entries.map(e => e.abs))
-    const picked = (b.selected.has(entry.abs)
-      ? [...entries.filter(e => b.selected.has(e.abs)), ...[...b.selected.values()].filter(e => !shown.has(e.abs))]
-      : [entry]).filter(e => !e.link_outside)
+    const picked = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter(e => !e.link_outside)
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('application/x-hermes-paths', JSON.stringify(picked.map(e => ({ isDirectory: e.is_dir, path: e.abs }))))
     // The host's HTML5Backend requires a native type to let dragstart proceed.

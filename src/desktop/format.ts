@@ -36,6 +36,15 @@ export function formatInsertText(profile: string, items: Location[]): string {
   return `\n${S.insertHeader(profile)}\n${items.map(formatLocation).join('\n')}`
 }
 
+/** Composer reference quoting, including punctuation the host strips from unquoted refs. */
+export function formatRef(value: string): string | null {
+  const quotes = [TICK, '"', "'"]
+  if (quotes.every(quote => value.includes(quote))) return null
+  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some(quote => value.includes(quote)) && !/[,.;!?]$/.test(value)) return value
+  const quote = quotes.find(quote => !value.includes(quote))!
+  return `${quote}${value}${quote}`
+}
+
 export function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   const units = ['KB', 'MB', 'GB', 'TB']

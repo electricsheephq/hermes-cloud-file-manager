@@ -32,6 +32,7 @@ export function useValue<T>(store: ReturnType<typeof atom<T>>): T {
 }
 
 export const host = {
+  composer: undefined as undefined | { insertText: (sessionId: null | string, text: string, opts?: { mode?: string }) => Promise<boolean> },
   state: {
     connectionId: atom<null | string>('conn-1'),
     profile: atom<string>('default'),
@@ -44,6 +45,7 @@ export const host = {
 
 /** Put the host atoms back to the default agent (tests that switch agents call this in afterEach). */
 export function resetHost() {
+  host.composer = undefined
   host.state.connectionId.set('conn-1')
   host.state.profile.set('default')
   host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })
