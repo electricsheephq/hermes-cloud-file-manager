@@ -109,7 +109,8 @@ function useLiveRefresh() {
       void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'search'] })
     }
     const dispose = ctx.onEvent('tool.complete', event => {
-      if (event.profile === undefined || ((event.connectionId ?? '').trim() || 'local') !== connectionId ||
+      // Absent or empty connection ids both mean the local agent, on either side.
+      if (event.profile === undefined || ((event.connectionId ?? '').trim() || 'local') !== (connectionId.trim() || 'local') ||
         ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || !toolMayChangeFiles(event.payload)) return
       if (timer !== undefined) return
       timer = window.setTimeout(() => {

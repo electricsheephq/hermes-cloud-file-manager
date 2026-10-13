@@ -94,8 +94,10 @@ describe('Cloud live refresh', () => {
     expect(backend.calls.slice(start)).toHaveLength(0)
   })
 
-  it.each([undefined, '', '  '])('matches a local event connection %j, excluding remote events', async connectionId => {
-    host.state.connectionId.set(null)
+  it.each([
+    [null, undefined], [null, ''], [null, '  '], ['local', undefined], ['local', 'local'], ['', undefined], ['', 'local']
+  ] as const)('host connection %j matches a local event connection %j, excluding remote events', async (hostId, connectionId) => {
+    host.state.connectionId.set(hostId)
     const backend = page()
     await flush()
     const start = backend.calls.length

@@ -866,7 +866,7 @@ function useLiveRefresh() {
       void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "search"] });
     };
     const dispose = ctx.onEvent("tool.complete", (event) => {
-      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== connectionId || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || !toolMayChangeFiles(event.payload)) return;
+      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || !toolMayChangeFiles(event.payload)) return;
       if (timer !== void 0) return;
       timer = window.setTimeout(() => {
         timer = void 0;
