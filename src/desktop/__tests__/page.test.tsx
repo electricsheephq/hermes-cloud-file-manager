@@ -18,7 +18,7 @@ const flush = async (rounds = 10) => {
   for (let i = 0; i < rounds; i++) await act(() => new Promise(resolve => setTimeout(resolve, 0)))
 }
 
-const rows = () => screen.getAllByRole('listitem').map(row => row.getAttribute('data-entry'))
+const rows = () => screen.getAllByRole('option').map(row => row.getAttribute('data-entry'))
 
 beforeEach(() => {
   resetQueryCache()
@@ -51,7 +51,7 @@ describe('Cloud Files page', () => {
   it('opens a folder with Enter', async () => {
     setup()
     await screen.findByText('docs')
-    fireEvent.keyDown(screen.getByText('docs').closest('[role=listitem]')!, { key: 'Enter' })
+    fireEvent.keyDown(screen.getByText('docs').closest('[role=option]')!, { key: 'Enter' })
     await screen.findByText('b.pdf')
   })
 
@@ -224,7 +224,7 @@ describe('Cloud Files page', () => {
     const box = screen.getByLabelText('notes.txt')
     fireEvent.keyDown(box, { key: ' ' }) // bubbles to the row
     fireEvent.click(box) // the checkbox's own activation
-    expect(screen.getByText('notes.txt').closest('[role=listitem]')!.getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('notes.txt').closest('[role=option]')!.getAttribute('aria-selected')).toBe('true')
   })
 
   it('shows the copy-failed notice when the clipboard write rejects (thread 4152214259)', async () => {

@@ -20,6 +20,7 @@ import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAct
 
 import { ApiError, call, type Entry, isNotFoundError, pluginCtx, query, type Root } from './api'
 import { type LineDiff, lineDiff } from './diff'
+import { captureFor, type SaveFile } from './download'
 import { isMarkdown } from './format'
 import { fileCodeText, S } from './strings'
 import { type AgentPin, transportText } from './upload'
@@ -28,6 +29,8 @@ export interface Doc {
   /** Load generation: a late /file answer for an earlier open is dropped. */
   id: number
   pin: AgentPin
+  /** Download, captured with the /file read for `pin`'s agent; null when the host has none. */
+  save?: SaveFile | null
   root: string
   rootLabel: string
   path: string
@@ -160,11 +163,12 @@ function loadText(error: unknown): string {
 /** Fetch `doc`'s file into a fresh generation of it; the answer lands only if that generation is still open. */
 function load(doc: Doc, setDoc: SetDoc) {
   const id = ++generation
-  setDoc({ ...doc, id, status: 'loading', error: undefined, mode: 'view' })
+  setDoc({ ...doc, id, status: 'loading', error: undefined, mode: 'view', save: null })
+  const save = captureFor([doc.pin.connectionId ?? 'local', doc.pin.profile])
   call<FileResponse>(query('/file', { root: doc.root, path: doc.path })).then(
     res => {
       const { text, ...flags } = decodeText(res.text)
-      setDoc(d => (d?.id === id ? { ...d, ...flags, status: 'ready', base: text, draft: text, sha: res.sha256 } : d))
+      setDoc(d => (d?.id === id ? { ...d, ...flags, status: 'ready', base: text, draft: text, sha: res.sha256, save } : d))
     },
     error => setDoc(d => (d?.id === id ? { ...d, status: 'error', error: loadText(error) } : d))
   )
@@ -397,6 +401,11 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
               <Button onClick={() => copy(doc.abs, S.copied(1))} size="sm" variant="ghost">
                 {S.copyPath}
               </Button>
+              {doc.status === 'ready' && doc.save && (
+                <Button onClick={() => void doc.save?.(doc.abs, doc.name)} size="sm" variant="ghost">
+                  {S.download}
+                </Button>
+              )}
               <Button disabled={doc.status !== 'ready' || !here} onClick={() => setDoc(d => (d?.id === doc.id ? { ...d, mode: 'edit' } : d))} size="sm">
                 {S.edit}
               </Button>

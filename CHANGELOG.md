@@ -2,6 +2,36 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.0] - 2026-10-13
+
+Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.
+
+### Added
+- **Download** saves one file from the agent's machine to your computer. Select a file and choose **Download** in
+  the toolbar, or open the file and use **Download** while viewing it.
+  - It uses Hermes Desktop's own download, the same one its file tree uses, so it is exactly as private as your
+    gateway.
+  - It only offers files the list shows.
+  - It appears only in Hermes Desktop builds that provide this download: Hermes v0.21.6 and newer, and evaOS
+    Desktop 2026.10.6 and newer. On older builds the plugin works as before, without it.
+  - Hermes Desktop's own limits apply, for example its file size cap.
+  - Folders, Google Drive files and links to files outside the shown folders can't be downloaded.
+- **Keyboard and screen reader use of the file list.**
+  - The list is a single tab stop.
+  - The arrow keys, Home, End, Page Up and Page Down move through it.
+  - Alt+Up (or Backspace) goes to the parent folder.
+  - Focus returns to the right row after you open a folder, go up a level or close a file.
+  - Screen readers hear the item count, search results, Load more and load errors.
+
+### Changed
+- The **+ → Cloud** and **+ → Google Drive** pickers name the agent whose files they show (#51).
+- If the agent can't be reached while a picker is open, the picker says so and offers **Retry**, instead of
+  showing a blank placeholder until the next check a minute later (#51).
+- The note shown when you switch to an agent without Cloud Files (or Google Drive) now says what happens: the
+  picker picks up again if you switch back, and **Cancel** closes it (#51).
+
+The **+ → Cloud** insert text is unchanged.
+
 ## [0.3.8] - 2026-10-12
 
 Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.

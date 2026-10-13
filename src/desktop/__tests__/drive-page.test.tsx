@@ -18,7 +18,9 @@ function setup(overrides?: Parameters<typeof fakeBackend>[0], drive: boolean | n
 const flush = async (rounds = 10) => {
   for (let i = 0; i < rounds; i++) await act(() => new Promise(resolve => setTimeout(resolve, 0)))
 }
-const option = (name: string) => screen.queryAllByRole('option').find(el => el.textContent === name)
+// The root selector's options (the file list's rows are options too).
+const options = () => screen.queryAllByRole('option').filter(el => el.closest('[data-select]'))
+const option = (name: string) => options().find(el => el.textContent === name)
 const rows = () => screen.getAllByRole('listitem').map(row => row.getAttribute('data-entry'))
 const imports = (calls: ReturnType<typeof fakeBackend>['calls']) => calls.filter(c => c.path === '/drive/import')
 
@@ -50,16 +52,16 @@ describe('Cloud Files page: Google Drive source', () => {
     setup(undefined, false)
     await screen.findByText('notes.txt')
     expect(option('Google Drive')).toBeUndefined()
-    expect(screen.queryAllByRole('option')).toHaveLength(0) // one root and no Drive: no selector at all
+    expect(options()).toHaveLength(0) // one root and no Drive: no selector at all
     act(() => $driveAvailable.set(true))
-    expect(screen.getAllByRole('option').map(el => el.textContent)).toEqual(['Home', 'Google Drive'])
+    expect(options().map(el => el.textContent)).toEqual(['Home', 'Google Drive'])
   })
 
   it('lists the cloud roots first, then Google Drive', async () => {
     const two = { ...ROOTS, roots: [...ROOTS.roots, { id: 'work', label: 'Work', path: '/work' }] }
     setup({ '/roots': () => two })
     await screen.findByText('notes.txt')
-    expect(screen.getAllByRole('option').map(el => el.textContent)).toEqual(['Home', 'Work', 'Google Drive'])
+    expect(options().map(el => el.textContent)).toEqual(['Home', 'Work', 'Google Drive'])
   })
 
   it('lists Drive folders and files with a dash for a null size and a date from ISO', async () => {

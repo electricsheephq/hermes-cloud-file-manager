@@ -64,6 +64,9 @@ let bound: null | PluginContext = null
 export const $available = atom<boolean | null>(null)
 /** Google Drive for the selected agent (probed only while the plugin is available): null until it answers. */
 export const $driveAvailable = atom<boolean | null>(null)
+/** The newest /available (`cloud`) or /drive/available (`drive`) probe for the selected agent failed in transport,
+ *  not with a 404. Only the open picker shows it, with `retry` (one immediate probe); the rest keep the last answer. */
+export const $unreachable = atom<null | { probe: 'cloud' | 'drive'; retry: () => void; retrying?: boolean }>(null)
 
 export function bindContext(ctx: PluginContext) {
   bound = ctx

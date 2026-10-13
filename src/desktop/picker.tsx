@@ -23,7 +23,7 @@ import { formatInsertText, hasLineBreak } from './format'
 import { currentPin } from './page'
 import { S } from './strings'
 import type { AgentPin } from './upload'
-import { $available, $driveAvailable, pluginCtx, rest, type RootsResponse } from './api'
+import { $available, $driveAvailable, $unreachable, pluginCtx, rest, type RootsResponse } from './api'
 
 export const $pickerOpen = atom(false)
 /** `insertText` of the composer whose "+" menu opened the picker. */
@@ -181,6 +181,9 @@ function PickerDialog() {
   const driveAvailable = useValue($driveAvailable)
   const unavailable = available === false || (source === 'drive' && driveAvailable === false)
   const pending = available === null || (source === 'drive' && driveAvailable !== true && driveAvailable !== false)
+  // The newest probe for this agent failed in transport: say so with Retry instead of waiting for the next one.
+  const unreachable = useValue($unreachable)
+  const failed = pending && unreachable && (source === 'drive' || unreachable.probe === 'cloud') ? unreachable : null
   const notice = finished ? S.importedTo(finished.pin.profile)
     : !pending && unavailable && pickerPinnedElsewhere()
       ? (source === 'drive' ? S.drivePinnedElsewhere : S.pickerPinnedElsewhere)(profile, pickerPinProfile()!)
@@ -191,18 +194,26 @@ function PickerDialog() {
       <DialogContent style={{ maxWidth: 720, width: '92vw' }}>
         <DialogHeader>
           <DialogTitle>{source === 'drive' ? S.drivePickerTitle : S.pickerTitle}</DialogTitle>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--ui-text-tertiary)' }}>{(source === 'drive' ? S.drivePickerShowing : S.pickerShowing)(profile)}</p>
         </DialogHeader>
         {notice ? (
           <>
             <p style={{ fontSize: 13, color: 'var(--ui-text-secondary)', lineHeight: 1.5 }}>{notice}</p>
             {finished && job && <ImportFailures failures={job.failures} />}
           </>
+        ) : failed ? (
+          <div style={{ display: 'grid', gap: 8, justifyItems: 'center', padding: 32 }}>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--ui-text-secondary)' }}>{S.unreachable(profile, failed.probe === 'drive')}</p>
+            <Button loading={failed.retrying} onClick={failed.retry} size="sm" variant="secondary">
+              {S.retry}
+            </Button>
+          </div>
         ) : pending || unavailable ? (
           <div aria-busy="true" style={{ height: 360 }} />
         ) : (
           <PickerBody key={`${connectionId ?? 'local'}::${profile}`} profile={profile} source={source} />
         )}
-        {notice && (
+        {(notice || failed) && (
           <DialogFooter>
             <Button onClick={closePicker} variant="text">
               {S.cancel}

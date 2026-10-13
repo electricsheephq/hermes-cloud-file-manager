@@ -9,6 +9,9 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
   never overwrite — a name clash keeps both files.
+- **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
+  The file list also works from the keyboard: arrow keys, Home and End, Page Up and Page Down, Enter to open,
+  Space to select, and Alt+Up for the parent folder.
 - **Open and edit** Markdown and text files: view first, edit on purpose, review the changes, then save.
   Nothing is saved until you choose Save.
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
@@ -174,12 +177,18 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
 - Only Save in the editor overwrites, only the file you opened, and only if it has not changed since you opened
   it. See [SECURITY.md](SECURITY.md) for the accepted race with writers outside this process.
 - Everyone who can use the agent can see its files — the same access the agent itself has.
+- **Download** goes through Hermes Desktop's own authenticated download, the same one its file tree uses. The
+  plugin only offers it for files the list shows: files inside the shown folders, never from the agent's Hermes
+  home except a working folder inside it, as above. Hermes's own checks still apply: for example, it refuses
+  credential files.
 
 Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Limits in this version
 
 - No rename, move or delete (coming later; use the agent or a shell for now).
+- Download saves one file at a time. Folders and Google Drive files can't be downloaded. It needs a Hermes Desktop
+  with this download (Hermes v0.21.6 or newer, evaOS Desktop 2026.10.6 or newer); older builds simply don't show it.
 - Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
   changed since you opened it.
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.

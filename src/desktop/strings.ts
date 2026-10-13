@@ -2,6 +2,7 @@
 
 /** "<profile>'s machine", or "the agent's machine" when the profile is empty or literally "default". */
 export const machineOf = (profile: string) => (profile && profile !== 'default' ? `${profile}'s machine` : "the agent's machine")
+const agentName = (profile: string) => (profile && profile !== 'default' ? profile : 'the agent')
 
 const mb = (bytes: number) => `${Math.max(1, Math.round(bytes / (1024 * 1024)))} MB`
 
@@ -26,10 +27,17 @@ export const S = {
   uploadFiles: 'Upload files',
   uploadFolder: 'Upload folder',
   copyPath: 'Copy path',
+  download: 'Download',
   maxPerFile: (bytes: number) => `Up to ${mb(bytes)} per file`,
   emptyFolder: 'This folder is empty — drop files here or use Upload',
   emptyFolderPick: 'This folder is empty',
   noResults: 'No matching files',
+  // The file list, for screen readers
+  filesIn: (folder: string) => `Files in ${folder}`,
+  searchResults: 'Search results',
+  items: (n: number) => (n === 1 ? '1 item' : `${n.toLocaleString()} items`),
+  results: (n: number) => (n === 1 ? '1 result' : `${n.toLocaleString()} results`),
+  folderFailed: "Couldn't load this folder",
   truncated: (n: number) => n === 1 ? 'Showing the first item' : `Showing the first ${n} items`,
   showingOf: (n: number, total: number) => `Showing ${n.toLocaleString()} of ${total.toLocaleString()} items`,
   loadMore: 'Load more',
@@ -74,12 +82,16 @@ export const S = {
   // Same profile name means only the connection changed, so the names wouldn't tell the agents apart.
   pickerPinnedElsewhere: (current: string, pinned: string) =>
     current === pinned
-      ? "Cloud Files isn't set up on the agent you switched to. Switch back to the agent you opened this on to keep picking files there."
-      : `Cloud Files isn't set up on ${current}. Switch back to ${pinned} to keep picking files there.`,
+      ? "Cloud Files isn't set up on the agent you switched to. This picker picks up again if you switch back to the agent you opened it on; Cancel closes it."
+      : `Cloud Files isn't set up on ${current}. This picker picks up again if you switch back to ${pinned}; Cancel closes it.`,
   drivePinnedElsewhere: (current: string, pinned: string) =>
     current === pinned
-      ? "Google Drive isn't available on the agent you switched to. Switch back to the agent you opened this on to keep importing; an import already started there continues when you switch back."
-      : `Google Drive isn't available on ${current}. Switch back to ${pinned} to keep importing; an import already started there continues when you switch back.`,
+      ? "Google Drive isn't available on the agent you switched to. This picker picks up again if you switch back to the agent you opened it on, and an import already started there continues; Cancel closes it."
+      : `Google Drive isn't available on ${current}. This picker picks up again if you switch back to ${pinned}, and an import already started there continues; Cancel closes it.`,
+  pickerShowing: (profile: string) => `Files on ${machineOf(profile)}`,
+  drivePickerShowing: (profile: string) => `Google Drive for ${agentName(profile)}`,
+  unreachable: (profile: string, drive: boolean) =>
+    `Couldn't reach ${profile && profile !== 'default' ? `${profile}'s` : "the agent's"} ${drive ? 'Google Drive' : 'Cloud Files'}.`,
   selected: (n: number) => `${n} selected`,
   insert: 'Insert locations',
   lineBreakSkipped: (n: number) => n === 1 ? 'A selected name has a line break, so it won’t be inserted.' : `${n} selected names have a line break, so they won’t be inserted.`,

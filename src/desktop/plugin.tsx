@@ -9,7 +9,7 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
-import { $available, $driveAvailable, bindContext, isNotFoundError } from './api'
+import { $available, $driveAvailable, $unreachable, bindContext, isNotFoundError } from './api'
 import { $driveJob } from './drive'
 import { $batch, CloudFilesPage } from './page'
 import { $pickerOpen, $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost, pickerPinnedElsewhere } from './picker'
@@ -79,22 +79,46 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   // Only the newest probe may change the row: when the agent changes mid-flight, a late answer about the
   // previous agent must not show or hide the row for the current one.
   let generation = 0
-  const probe = () => {
+  const probe = (byRetry = false): Promise<void> => {
     const mine = ++generation
+    // Any other probe (the 60 s re-check) supersedes a Retry, so Retry is no longer busy; the error stays until it settles.
+    const stored = $unreachable.get()
+    if (stored?.retrying && !byRetry) $unreachable.set({ ...stored, retrying: false })
+    // Answered (`ok`) or failed in transport, for the newest probe only: the open picker's error state follows it.
+    // A new probe does not clear a stored error: it is this agent's (an agent change clears it), and clearing it at
+    // probe start would bring back the endless busy placeholder (#51) whenever that probe hangs.
+    const settle = (which: 'cloud' | 'drive', ok: boolean) => {
+      if (mine !== generation || disposed) return
+      if (!ok) {
+        // Retry keeps the error on screen (Retry shows busy) until the new probe settles: clearing it first would
+        // bring back the endless placeholder whenever that probe hangs (#51).
+        const retry = () => {
+          const now = $unreachable.get()
+          if (now) $unreachable.set({ ...now, retrying: true })
+          void probe(true)
+        }
+        $unreachable.set({ probe: which, retry })
+      }
+      else if ($unreachable.get()?.probe === which) $unreachable.set(null)
+    }
     return ctx.rest('/available').then(
       () => {
         if (mine !== generation || disposed) return
+        settle('cloud', true)
         set(true)
         return ctx.rest<{ available?: boolean }>('/drive/available').then(
           res => {
+            settle('drive', true)
             if (mine === generation) setDrive(res?.available === true)
           },
           error => {
+            settle('drive', isNotFoundError(error))
             if (mine === generation && isNotFoundError(error)) setDrive(false)
           }
         )
       },
       error => {
+        settle('cloud', isNotFoundError(error))
         if (mine === generation && isNotFoundError(error)) set(false)
       }
     )
@@ -109,6 +133,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   const onAgentChange = () => {
     if (!disposed) {
       set(null)
+      $unreachable.set(null)
       if ($driveAvailable.get() !== null) $driveAvailable.set(null)
       driveRemover?.()
       driveRemover = null
@@ -127,6 +152,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   ctx.onDispose(() => {
     disposed = true
     unsubscribers.forEach(stop => stop())
+    $unreachable.set(null)
     closePicker()
     $batch.get()?.cancel()
     $batch.set(null)
