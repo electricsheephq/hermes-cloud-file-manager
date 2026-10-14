@@ -5,7 +5,7 @@ Thanks for helping improve Cloud File Manager, a plugin for [Hermes Agent](https
 ## Reporting a bug
 
 - Use the [bug report form](https://github.com/electricsheephq/hermes-cloud-file-manager/issues/new?template=bug_report.yml). Include the plugin version and source from `hermes plugins list --json`, and `hermes --version`.
-- From the next release, your Hermes agent can draft the report for you: ask it to "report a problem with Cloud File Manager". It shows you the draft and files nothing without your yes.
+- Your Hermes agent can draft the report for you: ask it to "report a problem with Cloud File Manager". It shows you the draft and files nothing without your yes.
 - Search [existing issues](https://github.com/electricsheephq/hermes-cloud-file-manager/issues?q=is%3Aissue) first, and add to a matching one instead of opening a new one.
 - Security problems: report them privately. See [SECURITY.md](SECURITY.md).
 - Problems in Hermes itself belong in [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/issues).
