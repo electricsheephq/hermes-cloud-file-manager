@@ -60,6 +60,13 @@ export const fakeSha = (text: string) => {
   return `sha-${(h >>> 0).toString(16)}-${text.length}`
 }
 
+// Read-only previews for GET /file/preview, by rel path: the gateway's answer (text, or a base64 image or pdf).
+export const PREVIEWS: Record<string, Record<string, unknown>> = {
+  'data.json': { ok: true, kind: 'text', text: '{"a": 1}\n', truncated: false, size: 9, mtime: 1767225600 },
+  'pic.png': { ok: true, kind: 'image', mime: 'image/png', data: btoa('\x89PNG fake'), size: 9, mtime: 1767225600 },
+  'doc.pdf': { ok: true, kind: 'pdf', mime: 'application/pdf', data: btoa('%PDF-1.4 fake'), size: 13, mtime: 1767225600 }
+}
+
 export interface Recorded {
   path: string
   params: Record<string, string>
@@ -101,6 +108,7 @@ export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {},
       if (text === undefined) return { ok: false, code: 'not_editable', message: 'not editable' }
       return { ok: true, text, sha256: fakeSha(text), size: text.length, mtime: 1767225600 }
     }
+    if (path === '/file/preview') return PREVIEWS[params.path] ?? { ok: false, code: 'not_previewable', message: 'not previewable' }
     if (path === '/file/save') {
       const current = files.get(opts.body.path)
       if (current === undefined) return { ok: false, code: 'gone' }

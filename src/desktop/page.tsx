@@ -22,7 +22,8 @@ import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots
 import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
-import { baseName, humanSize, isEditable, joinPath, parentPath } from './format'
+import { baseName, humanSize, isOpenable, joinPath, parentPath } from './format'
+import { Preview } from './preview'
 import { codeText, S } from './strings'
 import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
 import { collectDropEntries, filesFromInput, walkEntries } from './walk'
@@ -293,7 +294,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
                 <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
                 <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
                 {only && save && <ToolButton icon="cloud-download" label={S.download} onClick={() => void save(only.abs, only.name)} />}
-                {only && isEditable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
+                {only && isOpenable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
               </>
             )}
             <input hidden multiple onChange={event => fromInput(event.currentTarget)} ref={filesInput} type="file" />
@@ -307,7 +308,13 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
             />
           </div>
           {!doc && <div style={{ ...muted, fontSize: 11, padding: '4px 20px', textAlign: 'right' }}>{S.maxPerFile(roots.max_file_bytes)}</div>}
-          {doc ? <Editor doc={doc} leave={guard.leave} onClose={closeDoc} setDoc={setDoc} /> : <EntryList b={b} onOpenFile={openFile} />}
+          {doc?.preview ? (
+            <Preview doc={doc} onClose={closeDoc} setDoc={setDoc} />
+          ) : doc ? (
+            <Editor doc={doc} leave={guard.leave} onClose={closeDoc} setDoc={setDoc} />
+          ) : (
+            <EntryList b={b} onOpenFile={openFile} />
+          )}
         </>
       )}
       <ImportStatus onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} onShow={showImports} />

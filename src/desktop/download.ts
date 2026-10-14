@@ -1,6 +1,7 @@
-// Download through the host's own authenticated save bridge. `captureGatewayFileDownload` is missing from older
-// SDKs (0.21.5), and a named import of a missing export stops the whole plugin loading, so this is the only place
-// that touches it, through a namespace import: there a missing member is just undefined and Download stays hidden.
+// Download through the host's own authenticated save bridge. `captureGatewayFileDownload` is in every SDK since
+// 0.21.5, but a named import of a missing export would stop the whole plugin loading on a build without it, so this
+// is the only place that touches it, through a namespace import: there a missing member is just undefined and
+// Download stays hidden.
 import * as sdk from '@hermes/plugin-sdk'
 import { host } from '@hermes/plugin-sdk'
 

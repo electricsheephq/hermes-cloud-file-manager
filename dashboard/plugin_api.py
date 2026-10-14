@@ -35,7 +35,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field, StrictInt
 
 PLUGIN_NAME = "hermes-cloud-file-manager"
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 router = APIRouter()
 
@@ -43,6 +43,18 @@ CHUNK_BYTES = 4 * 1024 * 1024
 MAX_CHUNK_BYTES = 8 * 1024 * 1024
 EDIT_MAX_BYTES = 1024 * 1024
 EDIT_EXTS = {".md", ".markdown", ".txt"}
+PREVIEW_MAX_BYTES = 10 * 1024 * 1024
+TEXT_PREVIEW_MAX_BYTES = 1024 * 1024
+PREVIEW_IMAGE_MIME = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif",
+    "webp": "image/webp", "bmp": "image/bmp", "ico": "image/x-icon", "svg": "image/svg+xml",
+}
+PREVIEW_PDF_EXTS = {"pdf"}
+PREVIEW_TEXT_EXTS = set(
+    "json jsonl ndjson yaml yml toml ini cfg conf properties csv tsv log xml html htm css scss less "
+    "js mjs cjs ts tsx jsx py rb go rs java kt swift c h cc cpp hpp cs php sh bash zsh fish ps1 sql r "
+    "lua pl dart scala vue svelte graphql proto tf diff patch rst tex adoc srt vtt".split()
+)
 SCAN_LIMIT = 20000
 LIST_CACHE_SECONDS = 5
 _LIST_CACHE: dict = {}
@@ -458,7 +470,7 @@ def _edit_size(size):
         raise GuardError("too_large", "The file exceeds the editor size limit.", max_bytes=EDIT_MAX_BYTES)
 
 
-def _edit_stat(target, *, expected=None):
+def _edit_stat(target, *, expected=None, size_check=_edit_size):
     info = os.lstat(target)
     if expected is not None and (stat.S_ISLNK(info.st_mode)
             or (info.st_dev, info.st_ino) != (expected.st_dev, expected.st_ino)):
@@ -471,12 +483,13 @@ def _edit_stat(target, *, expected=None):
         raise GuardError("hard_link", "Editing a hard-linked file is not allowed.")
     if os.path.ismount(target):  # a file mounted in from elsewhere (for example a Docker bind mount)
         raise GuardError("mount_point", "Editing a mounted file is not allowed.")
-    _edit_size(info.st_size)
+    if size_check is not None:
+        size_check(info.st_size)
     return info
 
 
-def _edit_read(target):
-    before = _edit_stat(target)
+def _edit_read(target, *, size_check=_edit_size, read_limit=None):
+    before = _edit_stat(target, size_check=size_check)
     fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
                  | getattr(os, "O_BINARY", 0))
     try:
@@ -484,7 +497,7 @@ def _edit_read(target):
         if ((info.st_dev, info.st_ino) != (before.st_dev, before.st_ino)
                 or not stat.S_ISREG(info.st_mode)):
             raise GuardError("changed", "The file changed while opening.")
-        chunks, remaining = [], EDIT_MAX_BYTES + 1
+        chunks, remaining = [], EDIT_MAX_BYTES + 1 if read_limit is None else read_limit
         while remaining:
             chunk = os.read(fd, min(remaining, 65536))
             if not chunk:
@@ -496,7 +509,8 @@ def _edit_read(target):
         # A writer that changed the file in place during the read would leave a torn text.
         if (after.st_size, after.st_mtime_ns) != (info.st_size, info.st_mtime_ns):
             raise GuardError("changed", "The file changed while it was being read.")
-        _edit_size(len(raw))
+        if size_check is not None:
+            size_check(len(raw))
         return raw, info
     finally:
         os.close(fd)
@@ -518,6 +532,44 @@ def read_file(root: str, path: str):
         raise GuardError("not_text", "The file is not valid UTF-8 text.")
     return {"ok": True, "text": text, "sha256": hashlib.sha256(raw).hexdigest(),
             "size": info.st_size, "mtime": info.st_mtime}
+
+
+def _preview_size(size):
+    if size > PREVIEW_MAX_BYTES:
+        raise GuardError("too_large", "The file exceeds the preview size limit.",
+                         max_bytes=PREVIEW_MAX_BYTES, size=size)
+
+
+@router.get("/file/preview")
+@_protocol
+def preview_file(root: str, path: str):
+    selected, _ = _request_root(root)
+    target = _resolve(selected, path, for_write=False)
+    ext = target.suffix.lower().lstrip(".")
+    if ext in PREVIEW_TEXT_EXTS:
+        kind, mime = "text", None
+    elif ext in PREVIEW_IMAGE_MIME:
+        kind, mime = "image", PREVIEW_IMAGE_MIME[ext]
+    elif ext in PREVIEW_PDF_EXTS:
+        kind, mime = "pdf", "application/pdf"
+    else:
+        raise GuardError("not_previewable", "This file type cannot be previewed.")
+    try:
+        raw, info = _edit_read(
+            target, size_check=None if kind == "text" else _preview_size,
+            read_limit=(TEXT_PREVIEW_MAX_BYTES if kind == "text" else PREVIEW_MAX_BYTES) + 1,
+        )
+    except FileNotFoundError:
+        raise GuardError("not_found", "The file no longer exists.")
+    result = {"ok": True, "kind": kind, "size": info.st_size, "mtime": info.st_mtime}
+    if kind == "text":
+        if b"\0" in raw[:8192]:
+            raise GuardError("not_text", "The file is not text.")
+        result.update(text=raw[:TEXT_PREVIEW_MAX_BYTES].decode("utf-8", errors="replace"),
+                      truncated=info.st_size > TEXT_PREVIEW_MAX_BYTES)
+    else:
+        result.update(mime=mime, data=base64.b64encode(raw).decode("ascii"))
+    return result
 
 
 @router.post("/file/save")

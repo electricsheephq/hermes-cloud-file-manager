@@ -3,7 +3,7 @@
 // src/desktop/plugin.tsx
 import {
   COMPOSER_AREAS,
-  host as host6,
+  host as host7,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA
 } from "@hermes/plugin-sdk";
@@ -144,7 +144,16 @@ var S = {
   textCopied: "Your text is on the clipboard",
   discardReload: "Discard mine and reload",
   goneTitle: (name, profile) => `${name} was moved or deleted on ${machineOf(profile)}.`,
-  otherAgent: (profile) => `This file is on ${profile}. Switch back to edit or save.`
+  otherAgent: (profile) => `This file is on ${profile}. Switch back to edit or save.`,
+  // Read-only viewer (images, PDFs, code and data files)
+  otherAgentPreview: (profile) => `This file is on ${profile}. Switch back to view it.`,
+  previewNeedsUpdate: (profile) => `Previews need Cloud Files 0.4.1 or newer on ${agentName(profile)}.`,
+  previewTooLarge: (size) => `${size ?? "This file"} is too large to preview here. Download it instead.`,
+  previewNotText: "This file isn't text, so it can't be previewed.",
+  previewTruncated: (size) => `Showing the first 1 MB of ${size}. Download it to see the rest.`,
+  tableCut: (rows, columns) => `Showing the first ${[rows && `${rows.toLocaleString()} rows`, columns && `${columns} columns`].filter(Boolean).join(" and ")}.`,
+  showAsText: "Show as text",
+  showAsTable: "Show as table"
 };
 var CODE_TEXT = {
   exists_file: "A file with that name already exists",
@@ -177,6 +186,7 @@ var CODE_TEXT = {
 };
 var FILE_CODE_TEXT = {
   not_editable: "Only .md, .markdown and .txt files can be opened here.",
+  not_previewable: "This kind of file can\u2019t be previewed here.",
   is_link: "This file is a link, so it can\u2019t be opened here.",
   not_a_file: "This isn\u2019t a regular file.",
   hard_link: "This file has other hard links, so it can\u2019t be opened here.",
@@ -300,8 +310,60 @@ function extension(name) {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
-var isEditable = (entry) => !entry.is_dir && !entry.link_outside && EDITABLE.has(extension(entry.name));
 var isMarkdown = (name) => extension(name) !== "txt";
+var PREVIEW_EXTS = {
+  image: { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon", svg: "image/svg+xml" },
+  pdf: ["pdf"],
+  text: "json jsonl ndjson yaml yml toml ini cfg conf properties csv tsv log xml html htm css scss less js mjs cjs ts tsx jsx py rb go rs java kt swift c h cc cpp hpp cs php sh bash zsh fish ps1 sql r lua pl dart scala vue svelte graphql proto tf diff patch rst tex adoc srt vtt".split(" ")
+};
+function previewKind(name) {
+  const ext = extension(name);
+  if (!ext) return null;
+  if (Object.hasOwn(PREVIEW_EXTS.image, ext)) return "image";
+  if (PREVIEW_EXTS.pdf.includes(ext)) return "pdf";
+  return PREVIEW_EXTS.text.includes(ext) ? "text" : null;
+}
+var isOpenable = (entry) => !entry.is_dir && !entry.link_outside && (EDITABLE.has(extension(entry.name)) || previewKind(entry.name) !== null);
+function parseDelimited(text, sep, maxRows) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  let open = false;
+  const end = () => {
+    row.push(field);
+    field = "";
+  };
+  for (let i = text.startsWith("\uFEFF") ? 1 : 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch !== '"') field += ch;
+      else if (text[i + 1] === '"') field += text[++i];
+      else quoted = false;
+    } else if (ch === '"' && field === "") {
+      quoted = true;
+    } else if (ch === sep) {
+      end();
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      end();
+      if (rows.length === maxRows) return { rows, more: true };
+      rows.push(row);
+      row = [];
+      open = false;
+      continue;
+    } else {
+      field += ch;
+    }
+    open = true;
+  }
+  if (open) {
+    end();
+    if (rows.length === maxRows) return { rows, more: true };
+    rows.push(row);
+  }
+  return { rows, more: false };
+}
 var MEDIA = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "svg", "tif", "tiff", "mp4", "mov", "m4v", "webm", "mkv", "avi"]);
 function entryIcon(entry) {
   if (entry.link_outside) return "link";
@@ -678,21 +740,21 @@ var $driveJob = atom2(null);
 // src/desktop/page.tsx
 import {
   atom as atom5,
-  Button as Button4,
-  Codicon as Codicon4,
+  Button as Button5,
+  Codicon as Codicon5,
   Dialog as Dialog2,
   DialogContent as DialogContent2,
   DialogFooter as DialogFooter2,
   DialogHeader as DialogHeader2,
   DialogTitle as DialogTitle2,
   EmptyState as EmptyState3,
-  host as host4,
+  host as host5,
   Input,
-  Skeleton as Skeleton4,
+  Skeleton as Skeleton5,
   useQueryClient as useQueryClient2,
-  useValue as useValue3
+  useValue as useValue4
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect3, useId, useRef as useRef4, useState as useState4, useSyncExternalStore as useSyncExternalStore2 } from "react";
+import { useEffect as useEffect4, useId, useRef as useRef4, useState as useState5, useSyncExternalStore as useSyncExternalStore2 } from "react";
 
 // src/desktop/browser.tsx
 import {
@@ -1024,7 +1086,7 @@ function EntryList({ b, height, onOpenFile }) {
     row?.scrollIntoView?.({ block: "nearest" });
   };
   const open = (entry) => {
-    if (onOpenFile && isEditable(entry)) return onOpenFile(entry);
+    if (onOpenFile && isOpenable(entry)) return onOpenFile(entry);
     if (!entry.is_dir || entry.link_outside) return;
     b.navigate(entry.rel);
   };
@@ -1454,12 +1516,13 @@ function useOpenDoc() {
   return [doc, setDoc];
 }
 var generation = 0;
+var nextId = () => ++generation;
 function loadText(error) {
   if (error instanceof ApiError) return fileCodeText(error.code, error.body?.message, error.body?.max_bytes);
   return isNotFoundError(error) ? S.needsUpdateBody : transportText(error);
 }
 function load(doc, setDoc) {
-  const id = ++generation;
+  const id = nextId();
   setDoc({ ...doc, id, status: "loading", error: void 0, mode: "view", save: null });
   const save = captureFor([doc.pin.connectionId ?? "local", doc.pin.profile]);
   call(query("/file", { root: doc.root, path: doc.path })).then(
@@ -1472,7 +1535,10 @@ function load(doc, setDoc) {
 }
 function openDoc(entry, root, pin, setDoc) {
   const base = { bom: false, crlf: false, mixed: false, base: "", draft: "", sha: "" };
-  load({ ...base, id: 0, pin, root: root.id, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: "loading", mode: "view" }, setDoc);
+  const doc = { ...base, id: 0, pin, root: root.id, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: "loading", mode: "view" };
+  const kind = previewKind(entry.name);
+  if (kind) setDoc({ ...doc, preview: { kind } });
+  else load(doc, setDoc);
 }
 function useLeaveGuard(doc) {
   const [pending, setPending] = useState3(null);
@@ -1698,6 +1764,122 @@ function DiffView({ diff, style }) {
   ) });
 }
 
+// src/desktop/preview.tsx
+import { Button as Button4, Codicon as Codicon4, host as host4, Skeleton as Skeleton4, useValue as useValue3 } from "@hermes/plugin-sdk";
+import { useEffect as useEffect3, useMemo as useMemo3, useState as useState4 } from "react";
+import { jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
+var MAX_ROWS = 1e3;
+var MAX_COLUMNS = 50;
+var BIG_TIMEOUT_MS = 6e4;
+var mono2 = "var(--font-mono, ui-monospace, monospace)";
+var muted4 = { color: "var(--ui-text-tertiary)" };
+var cell = { padding: "2px 8px", border: "1px solid var(--ui-stroke-tertiary)", textAlign: "left", verticalAlign: "top", whiteSpace: "pre-wrap" };
+function previewText(error, profile) {
+  if (error instanceof ApiError) {
+    if (error.code === "too_large") return S.previewTooLarge(typeof error.body?.size === "number" ? humanSize(error.body.size) : void 0);
+    if (error.code === "not_text") return S.previewNotText;
+    return fileCodeText(error.code, error.body?.message, error.body?.max_bytes);
+  }
+  return isNotFoundError(error) ? S.previewNeedsUpdate(profile) : transportText(error);
+}
+function toBlob(data, mime) {
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+function load2(doc, setDoc) {
+  if (!isCurrent(doc.pin)) return;
+  const id = nextId();
+  setDoc({ ...doc, id, status: "loading", error: void 0, save: null });
+  const save = captureFor([doc.pin.connectionId ?? "local", doc.pin.profile]);
+  const big = doc.preview?.kind !== "text";
+  call(query("/file/preview", { root: doc.root, path: doc.path }), big ? { timeoutMs: BIG_TIMEOUT_MS } : void 0).then(
+    (res) => {
+      const preview = res.kind === "text" ? { kind: res.kind, text: res.text ?? "", truncated: Boolean(res.truncated), size: res.size } : { kind: res.kind, blob: toBlob(res.data ?? "", res.mime ?? ""), size: res.size };
+      setDoc((d) => d?.id === id ? { ...d, status: "ready", save, preview } : d);
+    },
+    (error) => setDoc((d) => d?.id === id ? { ...d, status: "error", error: previewText(error, doc.pin.profile), save } : d)
+  );
+}
+var extension2 = (name) => name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+function Preview({ doc, setDoc, onClose }) {
+  const connectionId = useValue3(host4.state.connectionId);
+  const profile = useValue3(host4.state.profile);
+  const here = doc.pin.connectionId === connectionId && doc.pin.profile === profile;
+  useEffect3(() => {
+    if (doc.id !== 0) return;
+    let done = false;
+    const attempt = () => {
+      if (done || !isCurrent(doc.pin)) return;
+      done = true;
+      load2(doc, setDoc);
+    };
+    attempt();
+    const stops = [host4.state.connectionId.listen(attempt), host4.state.profile.listen(attempt)];
+    return () => stops.forEach((stop) => stop());
+  }, [doc.id, doc.pin.connectionId, doc.pin.profile, doc.root, doc.path]);
+  const blob = doc.preview?.blob;
+  const [object, setObject] = useState4(null);
+  useEffect3(() => {
+    if (!blob) return;
+    const url2 = URL.createObjectURL(blob);
+    setObject({ blob, url: url2 });
+    return () => URL.revokeObjectURL(url2);
+  }, [blob]);
+  const url = blob && object?.blob === blob ? object.url : null;
+  const ext = extension2(doc.name);
+  const separator = ext === "csv" ? "," : ext === "tsv" ? "	" : null;
+  const [textOf, setTextOf] = useState4(-1);
+  const text = doc.preview?.text;
+  const table = useMemo3(() => separator && text !== void 0 ? parseDelimited(text, separator, MAX_ROWS + 1) : null, [separator, text]);
+  const asTable = Boolean(table?.rows.length) && textOf !== doc.id;
+  let body;
+  if (doc.status === "loading") {
+    body = doc.id === 0 && !here ? null : /* @__PURE__ */ jsx4("div", { "aria-busy": "true", "aria-label": S.loadingFile, style: { display: "grid", gap: 6, padding: "12px 20px" }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx4(Skeleton4, { style: { height: 16 } }, i)) });
+  } else if (doc.status === "error") {
+    body = /* @__PURE__ */ jsx4("p", { style: { ...muted4, fontSize: 13, padding: "12px 20px" }, children: doc.error });
+  } else if (doc.preview?.kind === "image") {
+    body = /* @__PURE__ */ jsx4("div", { style: { flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 20px 20px" }, children: url && /* @__PURE__ */ jsx4("img", { alt: doc.name, src: url, style: { maxWidth: "100%", maxHeight: "100%", objectFit: "contain" } }) });
+  } else if (doc.preview?.kind === "pdf") {
+    body = /* @__PURE__ */ jsx4("div", { style: { flex: 1, minHeight: 0, display: "flex", padding: "0 20px 20px" }, children: url && /* @__PURE__ */ jsx4("iframe", { src: url, style: { flex: 1, border: 0 }, title: doc.name }) });
+  } else {
+    const rows = table?.rows ?? [];
+    const width = Math.max(0, ...rows.map((row) => row.length));
+    const rowsCut = Boolean(table?.more);
+    const [head, ...rest2] = rows;
+    const columns = (row) => row.slice(0, MAX_COLUMNS);
+    body = /* @__PURE__ */ jsxs4("div", { style: { flex: 1, minHeight: 0, overflow: "auto", padding: "8px 20px 20px", fontSize: 12 }, children: [
+      doc.preview?.truncated && /* @__PURE__ */ jsx4("div", { style: { ...muted4, marginBottom: 6 }, children: S.previewTruncated(humanSize(doc.preview.size ?? 0)) }),
+      asTable && (rowsCut || width > MAX_COLUMNS) && /* @__PURE__ */ jsx4("div", { style: { ...muted4, marginBottom: 6 }, children: S.tableCut(rowsCut ? MAX_ROWS : null, width > MAX_COLUMNS ? MAX_COLUMNS : null) }),
+      asTable ? /* @__PURE__ */ jsxs4("table", { style: { borderCollapse: "collapse", fontFamily: mono2, fontSize: 12 }, children: [
+        /* @__PURE__ */ jsx4("thead", { children: /* @__PURE__ */ jsx4("tr", { children: columns(head).map((value, i) => /* @__PURE__ */ jsx4("th", { style: { ...cell, fontWeight: 600 }, children: value }, i)) }) }),
+        /* @__PURE__ */ jsx4("tbody", { children: rest2.map((row, r) => /* @__PURE__ */ jsx4("tr", { children: columns(row).map((value, i) => /* @__PURE__ */ jsx4("td", { style: cell, children: value }, i)) }, r)) })
+      ] }) : /* @__PURE__ */ jsx4("pre", { style: { margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: mono2 }, children: text })
+    ] });
+  }
+  return /* @__PURE__ */ jsxs4("div", { style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
+    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", fontSize: 12 }, children: [
+      /* @__PURE__ */ jsxs4(Button4, { onClick: onClose, size: "sm", variant: "ghost", children: [
+        /* @__PURE__ */ jsx4(Codicon4, { name: "arrow-left", size: "0.875rem" }),
+        S.close
+      ] }),
+      /* @__PURE__ */ jsxs4("span", { style: { display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }, children: [
+        /* @__PURE__ */ jsx4("span", { style: { fontWeight: 600 }, children: doc.name }),
+        /* @__PURE__ */ jsx4("span", { style: muted4, children: doc.pin.profile }),
+        /* @__PURE__ */ jsx4("span", { style: { ...muted4, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: doc.abs })
+      ] }),
+      /* @__PURE__ */ jsxs4("span", { style: { marginLeft: "auto", display: "inline-flex", gap: 6 }, children: [
+        doc.status === "ready" && table?.rows.length ? /* @__PURE__ */ jsx4(Button4, { onClick: () => setTextOf(asTable ? doc.id : -1), size: "sm", variant: "ghost", children: asTable ? S.showAsText : S.showAsTable }) : null,
+        /* @__PURE__ */ jsx4(Button4, { onClick: () => copy(doc.abs, S.copied(1)), size: "sm", variant: "ghost", children: S.copyPath }),
+        doc.status !== "loading" && doc.save && /* @__PURE__ */ jsx4(Button4, { onClick: () => void doc.save?.(doc.abs, doc.name), size: "sm", variant: "ghost", children: S.download })
+      ] })
+    ] }),
+    !here && /* @__PURE__ */ jsx4("div", { role: "status", style: { margin: "0 20px 8px", padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "color-mix(in srgb, var(--ui-yellow, #d4a72c) 14%, transparent)", color: "var(--ui-text-primary, currentColor)" }, children: S.otherAgentPreview(doc.pin.profile) }),
+    body
+  ] });
+}
+
 // src/desktop/walk.ts
 function collectDropEntries(transfer) {
   const entries = [];
@@ -1740,58 +1922,58 @@ function filesFromInput(list) {
 }
 
 // src/desktop/page.tsx
-import { Fragment as Fragment3, jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
-var muted4 = { color: "var(--ui-text-tertiary)" };
+import { Fragment as Fragment3, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
+var muted5 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
 var $batch = atom5(null);
-var currentPin = () => ({ connectionId: host4.state.connectionId.get(), profile: host4.state.profile.get() });
+var currentPin = () => ({ connectionId: host5.state.connectionId.get(), profile: host5.state.profile.get() });
 function enqueueUpload(input, dest, limits, pin = currentPin()) {
   if (!input.files.length && !input.dirs?.length) return;
   let batch = $batch.get();
   const snap = batch?.getSnapshot();
   const sameAgent = snap?.profile === pin.profile && snap?.connectionId === pin.connectionId;
   if (snap?.running && !snap.canceled && !sameAgent) {
-    host4.notify({ kind: "warning", message: S.busyElsewhere });
+    host5.notify({ kind: "warning", message: S.busyElsewhere });
     return;
   }
   if (!batch || !snap || snap.canceled || !sameAgent) {
-    batch = new UploadBatch(limits, { rest, state: host4.state }, pin);
+    batch = new UploadBatch(limits, { rest, state: host5.state }, pin);
     $batch.set(batch);
   }
   batch.add(input, dest, limits);
   void batch.start();
 }
 function CloudFilesPage() {
-  const available = useValue3($available);
-  const profile = useValue3(host4.state.profile);
-  const connectionId = useValue3(host4.state.connectionId);
+  const available = useValue4($available);
+  const profile = useValue4(host5.state.profile);
+  const connectionId = useValue4(host5.state.connectionId);
   const [doc, setDoc] = useOpenDoc();
   if (available === null) {
-    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx4(Skeleton4, { style: { height: 18 } }, i)) }) });
+    return /* @__PURE__ */ jsx5(Frame, { profile, children: /* @__PURE__ */ jsx5("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx5(Skeleton5, { style: { height: 18 } }, i)) }) });
   }
   if (available === false) {
-    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4("p", { style: { ...muted4, fontSize: 13, padding: pad, maxWidth: 560, lineHeight: 1.5 }, children: S.notSetUp(profile) }) });
+    return /* @__PURE__ */ jsx5(Frame, { profile, children: /* @__PURE__ */ jsx5("p", { style: { ...muted5, fontSize: 13, padding: pad, maxWidth: 560, lineHeight: 1.5 }, children: S.notSetUp(profile) }) });
   }
-  return /* @__PURE__ */ jsx4(PageBody, { doc, profile, setDoc }, `${connectionId ?? "local"}::${profile}`);
+  return /* @__PURE__ */ jsx5(PageBody, { doc, profile, setDoc }, `${connectionId ?? "local"}::${profile}`);
 }
 function PageBody({ profile, ...open }) {
   const roots = useRoots();
   if (roots.error) {
-    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4(LoadError, { error: roots.error, onRetry: () => void roots.refetch() }) });
+    return /* @__PURE__ */ jsx5(Frame, { profile, children: /* @__PURE__ */ jsx5(LoadError, { error: roots.error, onRetry: () => void roots.refetch() }) });
   }
   if (!roots.data) {
-    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx4(Skeleton4, { style: { height: 18 } }, i)) }) });
+    return /* @__PURE__ */ jsx5(Frame, { profile, children: /* @__PURE__ */ jsx5("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx5(Skeleton5, { style: { height: 18 } }, i)) }) });
   }
   if (roots.data.code === "no_roots") {
-    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4(NoRoots, { reason: roots.data.reason }) });
+    return /* @__PURE__ */ jsx5(Frame, { profile, children: /* @__PURE__ */ jsx5(NoRoots, { reason: roots.data.reason }) });
   }
   if (roots.data.supported === false || roots.data.code === "unsupported_backend" || !roots.data.roots?.length) {
-    return /* @__PURE__ */ jsx4(Frame, { profile, children: /* @__PURE__ */ jsx4(EmptyState3, { description: roots.data.reason ?? codeText(roots.data.code, roots.data.message), title: S.unsupportedTitle }) });
+    return /* @__PURE__ */ jsx5(Frame, { profile, children: /* @__PURE__ */ jsx5(EmptyState3, { description: roots.data.reason ?? codeText(roots.data.code, roots.data.message), title: S.unsupportedTitle }) });
   }
-  return /* @__PURE__ */ jsx4(Files, { profile, roots: roots.data, ...open });
+  return /* @__PURE__ */ jsx5(Files, { profile, roots: roots.data, ...open });
 }
 function Frame({ children, profile, controls, onDropInput, dropLabel }) {
-  const [over, setOver] = useState4(false);
+  const [over, setOver] = useState5(false);
   const depth = useRef4(0);
   const dragOver = (event) => {
     event.preventDefault();
@@ -1805,7 +1987,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
     const { entries, files } = collectDropEntries(event.dataTransfer);
     onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)), currentPin());
   };
-  return /* @__PURE__ */ jsxs4(
+  return /* @__PURE__ */ jsxs5(
     "section",
     {
       onDragEnter: (event) => {
@@ -1821,13 +2003,13 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
       onDrop: drop,
       style: { position: "relative", display: "flex", flexDirection: "column", height: "100%", minHeight: 0, color: "var(--ui-text-primary)" },
       children: [
-        /* @__PURE__ */ jsxs4("header", { style: { display: "flex", alignItems: "center", gap: 10, padding: "18px 20px 10px" }, children: [
-          /* @__PURE__ */ jsx4("h1", { style: { margin: 0, fontSize: 15, fontWeight: 600 }, children: S.title }),
-          /* @__PURE__ */ jsx4("span", { style: { ...muted4, fontSize: 12 }, children: profile }),
-          /* @__PURE__ */ jsx4("span", { style: { marginLeft: "auto" }, children: controls })
+        /* @__PURE__ */ jsxs5("header", { style: { display: "flex", alignItems: "center", gap: 10, padding: "18px 20px 10px" }, children: [
+          /* @__PURE__ */ jsx5("h1", { style: { margin: 0, fontSize: 15, fontWeight: 600 }, children: S.title }),
+          /* @__PURE__ */ jsx5("span", { style: { ...muted5, fontSize: 12 }, children: profile }),
+          /* @__PURE__ */ jsx5("span", { style: { marginLeft: "auto" }, children: controls })
         ] }),
         children,
-        over && /* @__PURE__ */ jsx4(
+        over && /* @__PURE__ */ jsx5(
           "div",
           {
             style: {
@@ -1854,17 +2036,17 @@ function Files({ profile, roots, doc, setDoc }) {
   const b = useBrowser(roots, "page");
   const guard = useLeaveGuard(doc);
   const queryClient = useQueryClient2();
-  const [newFolder, setNewFolder] = useState4(false);
+  const [newFolder, setNewFolder] = useState5(false);
   const filesInput = useRef4(null);
   const folderInput = useRef4(null);
   const rootId = b.root?.id ?? "";
   const limits = { max_file_bytes: roots.max_file_bytes, chunk_bytes: roots.chunk_bytes };
   const here = baseName(b.path) || b.root?.label || "";
   const dest = { root: rootId, folder: b.path };
-  const driveOn = useValue3($driveAvailable) === true;
-  const [source, setSource] = useState4("cloud");
+  const driveOn = useValue4($driveAvailable) === true;
+  const [source, setSource] = useState5("cloud");
   const inDrive = driveOn && source === "drive";
-  useEffect3(() => {
+  useEffect4(() => {
     if (!driveOn) setSource("cloud");
   }, [driveOn]);
   const only = b.selected.size === 1 ? [...b.selected.values()][0] : void 0;
@@ -1902,36 +2084,36 @@ function Files({ profile, roots, doc, setDoc }) {
   };
   const copyPaths = () => {
     const text = [...b.selected.keys()].join("\n");
-    void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host4.notify(ok ? { kind: "success", message: S.copied(b.selected.size) } : { kind: "error", message: S.copyFailed }));
+    void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host5.notify(ok ? { kind: "success", message: S.copied(b.selected.size) } : { kind: "error", message: S.copyFailed }));
   };
-  return /* @__PURE__ */ jsxs4(
+  return /* @__PURE__ */ jsxs5(
     Frame,
     {
-      controls: /* @__PURE__ */ jsx4(RootSelect, { b: rootSelect, drive: driveOn ? { active: inDrive, choose: chooseSource } : void 0 }),
+      controls: /* @__PURE__ */ jsx5(RootSelect, { b: rootSelect, drive: driveOn ? { active: inDrive, choose: chooseSource } : void 0 }),
       dropLabel: S.dropTo(here),
       onDropInput: (
         // No uploads while a file is open: the folder tools are hidden, and the shown folder is the file's.
         inDrive || doc ? void 0 : (pending, pin) => void pending.then(
           (input) => enqueueUpload(input, dest, limits, pin),
-          (error) => host4.notify({ kind: "error", message: errorText(error) })
+          (error) => host5.notify({ kind: "error", message: errorText(error) })
         )
       ),
       profile,
       children: [
-        inDrive ? /* @__PURE__ */ jsx4(DrivePane, { roots }) : /* @__PURE__ */ jsxs4(Fragment3, { children: [
-          /* @__PURE__ */ jsxs4("div", { style: toolbar, children: [
-            doc ? /* @__PURE__ */ jsx4(Breadcrumbs, { b, folder: parentPath(doc.path), leaf: doc.name, onNavigate: crumbTo, rootLabel: doc.rootLabel }) : /* @__PURE__ */ jsxs4(Fragment3, { children: [
-              /* @__PURE__ */ jsx4(Breadcrumbs, { b }),
-              /* @__PURE__ */ jsx4(BrowserSearch, { b }),
-              /* @__PURE__ */ jsx4(ToolButton, { icon: "new-folder", label: S.newFolder, onClick: () => setNewFolder(true) }),
-              /* @__PURE__ */ jsx4(ToolButton, { icon: "cloud-upload", label: S.uploadFiles, onClick: () => filesInput.current?.click() }),
-              /* @__PURE__ */ jsx4(ToolButton, { icon: "file-directory-create", label: S.uploadFolder, onClick: () => folderInput.current?.click() }),
-              /* @__PURE__ */ jsx4(ToolButton, { disabled: !b.selected.size, icon: "copy", label: S.copyPath, onClick: copyPaths }),
-              only && save && /* @__PURE__ */ jsx4(ToolButton, { icon: "cloud-download", label: S.download, onClick: () => void save(only.abs, only.name) }),
-              only && isEditable(only) && /* @__PURE__ */ jsx4(ToolButton, { icon: "go-to-file", label: S.open, onClick: () => openFile(only) })
+        inDrive ? /* @__PURE__ */ jsx5(DrivePane, { roots }) : /* @__PURE__ */ jsxs5(Fragment3, { children: [
+          /* @__PURE__ */ jsxs5("div", { style: toolbar, children: [
+            doc ? /* @__PURE__ */ jsx5(Breadcrumbs, { b, folder: parentPath(doc.path), leaf: doc.name, onNavigate: crumbTo, rootLabel: doc.rootLabel }) : /* @__PURE__ */ jsxs5(Fragment3, { children: [
+              /* @__PURE__ */ jsx5(Breadcrumbs, { b }),
+              /* @__PURE__ */ jsx5(BrowserSearch, { b }),
+              /* @__PURE__ */ jsx5(ToolButton, { icon: "new-folder", label: S.newFolder, onClick: () => setNewFolder(true) }),
+              /* @__PURE__ */ jsx5(ToolButton, { icon: "cloud-upload", label: S.uploadFiles, onClick: () => filesInput.current?.click() }),
+              /* @__PURE__ */ jsx5(ToolButton, { icon: "file-directory-create", label: S.uploadFolder, onClick: () => folderInput.current?.click() }),
+              /* @__PURE__ */ jsx5(ToolButton, { disabled: !b.selected.size, icon: "copy", label: S.copyPath, onClick: copyPaths }),
+              only && save && /* @__PURE__ */ jsx5(ToolButton, { icon: "cloud-download", label: S.download, onClick: () => void save(only.abs, only.name) }),
+              only && isOpenable(only) && /* @__PURE__ */ jsx5(ToolButton, { icon: "go-to-file", label: S.open, onClick: () => openFile(only) })
             ] }),
-            /* @__PURE__ */ jsx4("input", { hidden: true, multiple: true, onChange: (event) => fromInput(event.currentTarget), ref: filesInput, type: "file" }),
-            /* @__PURE__ */ jsx4(
+            /* @__PURE__ */ jsx5("input", { hidden: true, multiple: true, onChange: (event) => fromInput(event.currentTarget), ref: filesInput, type: "file" }),
+            /* @__PURE__ */ jsx5(
               "input",
               {
                 hidden: true,
@@ -1943,13 +2125,13 @@ function Files({ profile, roots, doc, setDoc }) {
               }
             )
           ] }),
-          !doc && /* @__PURE__ */ jsx4("div", { style: { ...muted4, fontSize: 11, padding: "4px 20px", textAlign: "right" }, children: S.maxPerFile(roots.max_file_bytes) }),
-          doc ? /* @__PURE__ */ jsx4(Editor, { doc, leave: guard.leave, onClose: closeDoc, setDoc }) : /* @__PURE__ */ jsx4(EntryList, { b, onOpenFile: openFile })
+          !doc && /* @__PURE__ */ jsx5("div", { style: { ...muted5, fontSize: 11, padding: "4px 20px", textAlign: "right" }, children: S.maxPerFile(roots.max_file_bytes) }),
+          doc?.preview ? /* @__PURE__ */ jsx5(Preview, { doc, onClose: closeDoc, setDoc }) : doc ? /* @__PURE__ */ jsx5(Editor, { doc, leave: guard.leave, onClose: closeDoc, setDoc }) : /* @__PURE__ */ jsx5(EntryList, { b, onOpenFile: openFile })
         ] }),
-        /* @__PURE__ */ jsx4(ImportStatus, { onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }), onShow: showImports }),
+        /* @__PURE__ */ jsx5(ImportStatus, { onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }), onShow: showImports }),
         guard.dialog,
-        /* @__PURE__ */ jsx4(UploadDrawer, { onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }) }),
-        /* @__PURE__ */ jsx4(
+        /* @__PURE__ */ jsx5(UploadDrawer, { onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }) }),
+        /* @__PURE__ */ jsx5(
           NewFolderDialog,
           {
             b,
@@ -1965,19 +2147,19 @@ function Files({ profile, roots, doc, setDoc }) {
 var toolbar = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: "0 20px 8px", borderBottom: "1px solid var(--ui-stroke-tertiary)" };
 function DrivePane({ roots }) {
   const d = useDriveBrowser();
-  const job = useImport(useValue3($driveJob));
+  const job = useImport(useValue4($driveJob));
   const start = () => {
-    const next = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host4.state });
+    const next = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host5.state });
     $driveJob.set(next);
     d.clear();
     void next.start();
   };
-  return /* @__PURE__ */ jsxs4(Fragment3, { children: [
-    /* @__PURE__ */ jsxs4("div", { style: toolbar, children: [
-      /* @__PURE__ */ jsx4(DriveCrumbs, { d }),
-      /* @__PURE__ */ jsx4(BrowserSearch, { b: d, label: S.searchDrive }),
-      /* @__PURE__ */ jsx4("span", { style: { ...muted4, fontSize: 11 }, children: S.importHint(roots.roots[0].label) }),
-      /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsxs5(Fragment3, { children: [
+    /* @__PURE__ */ jsxs5("div", { style: toolbar, children: [
+      /* @__PURE__ */ jsx5(DriveCrumbs, { d }),
+      /* @__PURE__ */ jsx5(BrowserSearch, { b: d, label: S.searchDrive }),
+      /* @__PURE__ */ jsx5("span", { style: { ...muted5, fontSize: 11 }, children: S.importHint(roots.roots[0].label) }),
+      /* @__PURE__ */ jsx5(
         ToolButton,
         {
           disabled: !d.selected.size || Boolean(job?.running),
@@ -1987,43 +2169,43 @@ function DrivePane({ roots }) {
         }
       )
     ] }),
-    /* @__PURE__ */ jsx4(DriveList, { d })
+    /* @__PURE__ */ jsx5(DriveList, { d })
   ] });
 }
 function ImportStatus({ onShow, onSettled }) {
-  const job = useValue3($driveJob);
+  const job = useValue4($driveJob);
   const snap = useImport(job);
-  const profile = useValue3(host4.state.profile);
-  const connectionId = useValue3(host4.state.connectionId);
+  const profile = useValue4(host5.state.profile);
+  const connectionId = useValue4(host5.state.connectionId);
   const wasRunning = useRef4(false);
-  useEffect3(() => {
+  useEffect4(() => {
     if (wasRunning.current && !snap?.running) onSettled();
     wasRunning.current = Boolean(snap?.running);
   }, [snap?.running, onSettled]);
   if (!snap) return null;
   const here = snap.pin.profile === profile && snap.pin.connectionId === connectionId;
   if (!here && !snap.running) return null;
-  return /* @__PURE__ */ jsxs4("div", { "aria-label": S.importToCloud, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
-      /* @__PURE__ */ jsx4("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: importStatus(snap) }),
-      !snap.running && snap.imported.length > 0 && /* @__PURE__ */ jsx4(Button4, { onClick: onShow, size: "sm", variant: "text", children: S.show }),
-      snap.running ? /* @__PURE__ */ jsx4(Button4, { disabled: snap.canceled, onClick: () => job?.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx4(Button4, { onClick: () => $driveJob.set(null), size: "sm", variant: "text", children: S.clear })
+  return /* @__PURE__ */ jsxs5("div", { "aria-label": S.importToCloud, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
+      /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: importStatus(snap) }),
+      !snap.running && snap.imported.length > 0 && /* @__PURE__ */ jsx5(Button5, { onClick: onShow, size: "sm", variant: "text", children: S.show }),
+      snap.running ? /* @__PURE__ */ jsx5(Button5, { disabled: snap.canceled, onClick: () => job?.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx5(Button5, { onClick: () => $driveJob.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
-    /* @__PURE__ */ jsx4(ImportFailures, { failures: snap.failures })
+    /* @__PURE__ */ jsx5(ImportFailures, { failures: snap.failures })
   ] });
 }
 function ToolButton({ icon, label, onClick, disabled }) {
-  return /* @__PURE__ */ jsxs4(Button4, { disabled, onClick, size: "sm", variant: "ghost", children: [
-    /* @__PURE__ */ jsx4(Codicon4, { name: icon, size: "0.875rem" }),
+  return /* @__PURE__ */ jsxs5(Button5, { disabled, onClick, size: "sm", variant: "ghost", children: [
+    /* @__PURE__ */ jsx5(Codicon5, { name: icon, size: "0.875rem" }),
     label
   ] });
 }
 function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
-  const [name, setName] = useState4("");
-  const [error, setError] = useState4("");
-  const [busy, setBusy] = useState4(false);
+  const [name, setName] = useState5("");
+  const [error, setError] = useState5("");
+  const [busy, setBusy] = useState5(false);
   const errorId = useId();
-  useEffect3(() => {
+  useEffect4(() => {
     if (open) {
       setName("");
       setError("");
@@ -2039,16 +2221,16 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
       await call("/mkdir", { method: "POST", body: { root: b.root?.id, path: joinPath(b.path, trimmed) } });
       onOpenChange(false);
       onCreated();
-      host4.notify({ kind: "success", message: S.folderCreated(trimmed) });
+      host5.notify({ kind: "success", message: S.folderCreated(trimmed) });
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : errorText(failure));
     } finally {
       setBusy(false);
     }
   };
-  return /* @__PURE__ */ jsx4(Dialog2, { onOpenChange, open, children: /* @__PURE__ */ jsx4(DialogContent2, { style: { maxWidth: 380 }, children: /* @__PURE__ */ jsxs4("form", { onSubmit: submit, style: { display: "grid", gap: 12 }, children: [
-    /* @__PURE__ */ jsx4(DialogHeader2, { children: /* @__PURE__ */ jsx4(DialogTitle2, { children: S.newFolder }) }),
-    /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsx5(Dialog2, { onOpenChange, open, children: /* @__PURE__ */ jsx5(DialogContent2, { style: { maxWidth: 380 }, children: /* @__PURE__ */ jsxs5("form", { onSubmit: submit, style: { display: "grid", gap: 12 }, children: [
+    /* @__PURE__ */ jsx5(DialogHeader2, { children: /* @__PURE__ */ jsx5(DialogTitle2, { children: S.newFolder }) }),
+    /* @__PURE__ */ jsx5(
       Input,
       {
         "aria-describedby": error ? errorId : void 0,
@@ -2060,10 +2242,10 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
         value: name
       }
     ),
-    error && /* @__PURE__ */ jsx4("div", { id: errorId, role: "alert", style: { color: "var(--ui-red)", fontSize: 12 }, children: error }),
-    /* @__PURE__ */ jsxs4(DialogFooter2, { children: [
-      /* @__PURE__ */ jsx4(Button4, { onClick: () => onOpenChange(false), type: "button", variant: "text", children: S.cancel }),
-      /* @__PURE__ */ jsx4(Button4, { loading: busy, type: "submit", children: S.create })
+    error && /* @__PURE__ */ jsx5("div", { id: errorId, role: "alert", style: { color: "var(--ui-red)", fontSize: 12 }, children: error }),
+    /* @__PURE__ */ jsxs5(DialogFooter2, { children: [
+      /* @__PURE__ */ jsx5(Button5, { onClick: () => onOpenChange(false), type: "button", variant: "text", children: S.cancel }),
+      /* @__PURE__ */ jsx5(Button5, { loading: busy, type: "submit", children: S.create })
     ] })
   ] }) }) });
 }
@@ -2074,7 +2256,7 @@ function useBatch(batch) {
 }
 function Bar({ value, label, style }) {
   const pct = Math.round(Math.min(100, Math.max(0, value * 100)));
-  return /* @__PURE__ */ jsx4(
+  return /* @__PURE__ */ jsx5(
     "div",
     {
       "aria-label": label,
@@ -2083,30 +2265,30 @@ function Bar({ value, label, style }) {
       "aria-valuenow": pct,
       role: "progressbar",
       style: { height: 2, borderRadius: 2, background: "var(--ui-stroke-tertiary)", overflow: "hidden", ...style },
-      children: /* @__PURE__ */ jsx4("div", { style: { height: "100%", width: `${pct}%`, background: "var(--ui-accent)", transition: "width 150ms" } })
+      children: /* @__PURE__ */ jsx5("div", { style: { height: "100%", width: `${pct}%`, background: "var(--ui-accent)", transition: "width 150ms" } })
     }
   );
 }
 function UploadDrawer({ onSettled }) {
-  const batch = useValue3($batch);
+  const batch = useValue4($batch);
   const snap = useBatch(batch);
-  const [collapsed, setCollapsed] = useState4(false);
+  const [collapsed, setCollapsed] = useState5(false);
   const wasRunning = useRef4(false);
-  useEffect3(() => {
+  useEffect4(() => {
     if (wasRunning.current && !snap.running) onSettled();
     wasRunning.current = snap.running;
   }, [snap.running, onSettled]);
   if (!batch || !snap.items.length) return null;
   const sum = summarize(snap);
   const headline = snap.canceled ? S.canceled : snap.paused ? S.paused(snap.profile) : snap.running ? S.uploading(Math.min(sum.total, sum.settled + 1), sum.total, humanSize(sum.sent), humanSize(sum.size)) : S.uploaded(sum.done, sum.total, sum.failed);
-  return /* @__PURE__ */ jsxs4("div", { "aria-label": S.uploads, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
-      /* @__PURE__ */ jsx4(Button4, { "aria-label": collapsed ? S.expand : S.collapse, onClick: () => setCollapsed(!collapsed), size: "icon-xs", variant: "ghost", children: /* @__PURE__ */ jsx4(Codicon4, { name: collapsed ? "chevron-up" : "chevron-down", size: "0.875rem" }) }),
-      /* @__PURE__ */ jsx4("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: headline }),
-      snap.running ? /* @__PURE__ */ jsx4(Button4, { onClick: () => batch.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx4(Button4, { onClick: () => $batch.set(null), size: "sm", variant: "text", children: S.clear })
+  return /* @__PURE__ */ jsxs5("div", { "aria-label": S.uploads, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
+      /* @__PURE__ */ jsx5(Button5, { "aria-label": collapsed ? S.expand : S.collapse, onClick: () => setCollapsed(!collapsed), size: "icon-xs", variant: "ghost", children: /* @__PURE__ */ jsx5(Codicon5, { name: collapsed ? "chevron-up" : "chevron-down", size: "0.875rem" }) }),
+      /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: headline }),
+      snap.running ? /* @__PURE__ */ jsx5(Button5, { onClick: () => batch.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx5(Button5, { onClick: () => $batch.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
-    snap.running && /* @__PURE__ */ jsx4(Bar, { label: S.uploadProgress, value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
-    !collapsed && /* @__PURE__ */ jsx4("div", { style: { maxHeight: 180, overflowY: "auto", display: "grid", gap: 4 }, children: snap.items.map((item) => /* @__PURE__ */ jsx4(UploadRow, { item, onRetry: () => batch.retry(item.id) }, item.id)) })
+    snap.running && /* @__PURE__ */ jsx5(Bar, { label: S.uploadProgress, value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
+    !collapsed && /* @__PURE__ */ jsx5("div", { style: { maxHeight: 180, overflowY: "auto", display: "grid", gap: 4 }, children: snap.items.map((item) => /* @__PURE__ */ jsx5(UploadRow, { item, onRetry: () => batch.retry(item.id) }, item.id)) })
   ] });
 }
 function statusText(item) {
@@ -2117,31 +2299,31 @@ function statusText(item) {
   return item.savedAs ? S.savedAs(item.savedAs) : S.done;
 }
 function UploadRow({ item, onRetry }) {
-  return /* @__PURE__ */ jsxs4("div", { "data-upload": item.path, style: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "2px 8px", alignItems: "center", fontSize: 11 }, children: [
-    /* @__PURE__ */ jsx4("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: item.path }),
-    /* @__PURE__ */ jsxs4("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, color: item.status === "failed" ? "var(--ui-red)" : "var(--ui-text-tertiary)" }, children: [
+  return /* @__PURE__ */ jsxs5("div", { "data-upload": item.path, style: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "2px 8px", alignItems: "center", fontSize: 11 }, children: [
+    /* @__PURE__ */ jsx5("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: item.path }),
+    /* @__PURE__ */ jsxs5("span", { style: { display: "inline-flex", alignItems: "center", gap: 6, color: item.status === "failed" ? "var(--ui-red)" : "var(--ui-text-tertiary)" }, children: [
       statusText(item),
-      item.status === "failed" && item.retryable !== false && /* @__PURE__ */ jsx4(Button4, { onClick: onRetry, size: "micro", variant: "textStrong", children: S.retry })
+      item.status === "failed" && item.retryable !== false && /* @__PURE__ */ jsx5(Button5, { onClick: onRetry, size: "micro", variant: "textStrong", children: S.retry })
     ] }),
-    item.status === "uploading" && /* @__PURE__ */ jsx4(Bar, { label: S.uploadProgressOf(item.path), style: { gridColumn: "1 / -1", marginTop: 3 }, value: item.size ? item.sent / item.size : 0 })
+    item.status === "uploading" && /* @__PURE__ */ jsx5(Bar, { label: S.uploadProgressOf(item.path), style: { gridColumn: "1 / -1", marginTop: 3 }, value: item.size ? item.sent / item.size : 0 })
   ] });
 }
 
 // src/desktop/picker.tsx
 import {
   atom as atom6,
-  Button as Button5,
+  Button as Button6,
   Dialog as Dialog3,
   DialogContent as DialogContent3,
   DialogFooter as DialogFooter3,
   DialogHeader as DialogHeader3,
   DialogTitle as DialogTitle3,
   EmptyState as EmptyState4,
-  host as host5,
-  useValue as useValue4
+  host as host6,
+  useValue as useValue5
 } from "@hermes/plugin-sdk";
-import { useEffect as useEffect4, useRef as useRef5 } from "react";
-import { Fragment as Fragment4, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
+import { useEffect as useEffect5, useRef as useRef5 } from "react";
+import { Fragment as Fragment4, jsx as jsx6, jsxs as jsxs6 } from "react/jsx-runtime";
 var $pickerOpen = atom6(false);
 var $insertText = atom6(null);
 var $hostClaim = atom6(null);
@@ -2150,22 +2332,22 @@ var $pickerJob = atom6(null);
 var NO_OWNER = atom6(null);
 var $finished = atom6(null);
 var NO_SESSION = atom6(null);
-var focusedOwner = () => (host5.state.focusedSessionOwner ?? NO_OWNER).get();
-var pinReady = (pin) => host5.state.profile.get() === pin.profile && host5.state.connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
+var focusedOwner = () => (host6.state.focusedSessionOwner ?? NO_OWNER).get();
+var pinReady = (pin) => host6.state.profile.get() === pin.profile && host6.state.connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
 var $touched = atom6(false);
 var openPin = null;
 var stopWatching = () => void 0;
 function pickerPinnedElsewhere() {
-  return $pickerOpen.get() && openPin !== null && (openPin.profile !== host5.state.profile.get() || openPin.connectionId !== host5.state.connectionId.get());
+  return $pickerOpen.get() && openPin !== null && (openPin.profile !== host6.state.profile.get() || openPin.connectionId !== host6.state.connectionId.get());
 }
 var pickerPinProfile = () => openPin?.profile;
 function watchOpen() {
   unwatch();
-  const { connectionId, profile } = host5.state;
+  const { connectionId, profile } = host6.state;
   openPin = { connectionId: connectionId.get(), profile: profile.get() };
   $touched.set(false);
   const touch = () => $touched.set(true);
-  const atoms = [profile, connectionId, host5.state.focusedSessionOwner ?? NO_OWNER, host5.state.activeSessionId ?? NO_SESSION];
+  const atoms = [profile, connectionId, host6.state.focusedSessionOwner ?? NO_OWNER, host6.state.activeSessionId ?? NO_SESSION];
   const stops = atoms.map((store) => store.listen(touch));
   stopWatching = () => stops.forEach((stop) => stop());
 }
@@ -2176,11 +2358,11 @@ function unwatch() {
 }
 var canInsert = (pin) => Boolean(pin) && !$touched.get() && pinReady(pin);
 function copyLocations(text) {
-  void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host5.notify(ok ? { kind: "success", message: S.locationsCopied } : { kind: "error", message: S.copyFailed }));
+  void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host6.notify(ok ? { kind: "success", message: S.locationsCopied } : { kind: "error", message: S.copyFailed }));
 }
 var ownerHold = (pin) => ({
   held: () => ownerMismatch(focusedOwner(), pin.connectionId, pin.profile),
-  subscribe: (wake) => (host5.state.focusedSessionOwner ?? NO_OWNER).subscribe(wake)
+  subscribe: (wake) => (host6.state.focusedSessionOwner ?? NO_OWNER).subscribe(wake)
 });
 function openPicker(insertText, source) {
   stopImport();
@@ -2210,9 +2392,9 @@ function ownerMismatch(owner, connectionId, profile) {
 }
 function PickerHost() {
   const me = useRef5({}).current;
-  const claim = useValue4($hostClaim);
-  const open = useValue4($pickerOpen);
-  useEffect4(() => {
+  const claim = useValue5($hostClaim);
+  const open = useValue5($pickerOpen);
+  useEffect5(() => {
     const tryClaim = () => {
       if ($hostClaim.get() === null) $hostClaim.set(me);
     };
@@ -2225,7 +2407,7 @@ function PickerHost() {
     };
   }, [me]);
   if (claim !== me || !open) return null;
-  return /* @__PURE__ */ jsx5(PickerDialog, {});
+  return /* @__PURE__ */ jsx6(PickerDialog, {});
 }
 function stopImport() {
   $pickerJob.get()?.cancel();
@@ -2240,52 +2422,52 @@ function closePicker() {
   $insertText.set(null);
 }
 function PickerDialog() {
-  const profile = useValue4(host5.state.profile);
-  const connectionId = useValue4(host5.state.connectionId);
-  const owner = useValue4(host5.state.focusedSessionOwner ?? NO_OWNER);
+  const profile = useValue5(host6.state.profile);
+  const connectionId = useValue5(host6.state.connectionId);
+  const owner = useValue5(host6.state.focusedSessionOwner ?? NO_OWNER);
   const mismatch = ownerMismatch(owner, connectionId, profile);
-  const source = useValue4($pickerSource);
-  const finished = useValue4($finished);
-  const job = useImport(useValue4($pickerJob));
-  const available = useValue4($available);
-  const driveAvailable = useValue4($driveAvailable);
+  const source = useValue5($pickerSource);
+  const finished = useValue5($finished);
+  const job = useImport(useValue5($pickerJob));
+  const available = useValue5($available);
+  const driveAvailable = useValue5($driveAvailable);
   const unavailable = available === false || source === "drive" && driveAvailable === false;
   const pending = available === null || source === "drive" && driveAvailable !== true && driveAvailable !== false;
-  const unreachable = useValue4($unreachable);
+  const unreachable = useValue5($unreachable);
   const failed = pending && unreachable && (source === "drive" || unreachable.probe === "cloud") ? unreachable : null;
   const notice = finished ? S.importedTo(finished.pin.profile) : !pending && unavailable && pickerPinnedElsewhere() ? (source === "drive" ? S.drivePinnedElsewhere : S.pickerPinnedElsewhere)(profile, pickerPinProfile()) : mismatch && !pending ? S.ownerMismatch(owner.profile, profile) : null;
-  return /* @__PURE__ */ jsx5(Dialog3, { onOpenChange: (next) => !next && closePicker(), open: true, children: /* @__PURE__ */ jsxs5(DialogContent3, { style: { maxWidth: 720, width: "92vw" }, children: [
-    /* @__PURE__ */ jsxs5(DialogHeader3, { children: [
-      /* @__PURE__ */ jsx5(DialogTitle3, { children: source === "drive" ? S.drivePickerTitle : S.pickerTitle }),
-      /* @__PURE__ */ jsx5("p", { style: { margin: 0, fontSize: 12, color: "var(--ui-text-tertiary)" }, children: (source === "drive" ? S.drivePickerShowing : S.pickerShowing)(profile) })
+  return /* @__PURE__ */ jsx6(Dialog3, { onOpenChange: (next) => !next && closePicker(), open: true, children: /* @__PURE__ */ jsxs6(DialogContent3, { style: { maxWidth: 720, width: "92vw" }, children: [
+    /* @__PURE__ */ jsxs6(DialogHeader3, { children: [
+      /* @__PURE__ */ jsx6(DialogTitle3, { children: source === "drive" ? S.drivePickerTitle : S.pickerTitle }),
+      /* @__PURE__ */ jsx6("p", { style: { margin: 0, fontSize: 12, color: "var(--ui-text-tertiary)" }, children: (source === "drive" ? S.drivePickerShowing : S.pickerShowing)(profile) })
     ] }),
-    notice ? /* @__PURE__ */ jsxs5(Fragment4, { children: [
-      /* @__PURE__ */ jsx5("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: notice }),
-      finished && job && /* @__PURE__ */ jsx5(ImportFailures, { failures: job.failures })
-    ] }) : failed ? /* @__PURE__ */ jsxs5("div", { style: { display: "grid", gap: 8, justifyItems: "center", padding: 32 }, children: [
-      /* @__PURE__ */ jsx5("p", { style: { margin: 0, fontSize: 13, color: "var(--ui-text-secondary)" }, children: S.unreachable(profile, failed.probe === "drive") }),
-      /* @__PURE__ */ jsx5(Button5, { loading: failed.retrying, onClick: failed.retry, size: "sm", variant: "secondary", children: S.retry })
-    ] }) : pending || unavailable ? /* @__PURE__ */ jsx5("div", { "aria-busy": "true", style: { height: 360 } }) : /* @__PURE__ */ jsx5(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
-    (notice || failed) && /* @__PURE__ */ jsxs5(DialogFooter3, { children: [
-      /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
-      finished && /* @__PURE__ */ jsx5(Button5, { onClick: () => copyLocations(finished.text), children: S.copyLocations })
+    notice ? /* @__PURE__ */ jsxs6(Fragment4, { children: [
+      /* @__PURE__ */ jsx6("p", { style: { fontSize: 13, color: "var(--ui-text-secondary)", lineHeight: 1.5 }, children: notice }),
+      finished && job && /* @__PURE__ */ jsx6(ImportFailures, { failures: job.failures })
+    ] }) : failed ? /* @__PURE__ */ jsxs6("div", { style: { display: "grid", gap: 8, justifyItems: "center", padding: 32 }, children: [
+      /* @__PURE__ */ jsx6("p", { style: { margin: 0, fontSize: 13, color: "var(--ui-text-secondary)" }, children: S.unreachable(profile, failed.probe === "drive") }),
+      /* @__PURE__ */ jsx6(Button6, { loading: failed.retrying, onClick: failed.retry, size: "sm", variant: "secondary", children: S.retry })
+    ] }) : pending || unavailable ? /* @__PURE__ */ jsx6("div", { "aria-busy": "true", style: { height: 360 } }) : /* @__PURE__ */ jsx6(PickerBody, { profile, source }, `${connectionId ?? "local"}::${profile}`),
+    (notice || failed) && /* @__PURE__ */ jsxs6(DialogFooter3, { children: [
+      /* @__PURE__ */ jsx6(Button6, { onClick: closePicker, variant: "text", children: S.cancel }),
+      finished && /* @__PURE__ */ jsx6(Button6, { onClick: () => copyLocations(finished.text), children: S.copyLocations })
     ] })
   ] }) });
 }
 function PickerBody({ profile, source }) {
   const roots = useRoots();
-  if (roots.error) return /* @__PURE__ */ jsx5(LoadError, { error: roots.error, onRetry: () => void roots.refetch() });
-  if (roots.data?.code === "no_roots") return /* @__PURE__ */ jsx5(NoRoots, { onOpenSettings: closePicker, reason: roots.data.reason });
+  if (roots.error) return /* @__PURE__ */ jsx6(LoadError, { error: roots.error, onRetry: () => void roots.refetch() });
+  if (roots.data?.code === "no_roots") return /* @__PURE__ */ jsx6(NoRoots, { onOpenSettings: closePicker, reason: roots.data.reason });
   if (roots.data && (roots.data.supported === false || !roots.data.roots?.length)) {
-    return /* @__PURE__ */ jsx5(EmptyState4, { description: roots.data.reason, title: S.unsupportedTitle });
+    return /* @__PURE__ */ jsx6(EmptyState4, { description: roots.data.reason, title: S.unsupportedTitle });
   }
-  if (!roots.data) return /* @__PURE__ */ jsx5("div", { "aria-busy": "true", style: { height: 360 } });
-  if (source === "drive") return /* @__PURE__ */ jsx5(DrivePicker, { roots: roots.data });
-  return /* @__PURE__ */ jsx5(PickerBrowser, { profile, roots: roots.data });
+  if (!roots.data) return /* @__PURE__ */ jsx6("div", { "aria-busy": "true", style: { height: 360 } });
+  if (source === "drive") return /* @__PURE__ */ jsx6(DrivePicker, { roots: roots.data });
+  return /* @__PURE__ */ jsx6(PickerBrowser, { profile, roots: roots.data });
 }
 function PickerBrowser({ profile, roots }) {
   const b = useBrowser(roots, "pick");
-  const touched = useValue4($touched);
+  const touched = useValue5($touched);
   const insertable = [...b.selected.values()].filter((entry) => !hasLineBreak(entry.abs));
   const skipped = b.selected.size - insertable.length;
   const text = () => formatInsertText(profile, insertable);
@@ -2294,29 +2476,29 @@ function PickerBrowser({ profile, roots }) {
     $insertText.get()?.(text());
     closePicker();
   };
-  return /* @__PURE__ */ jsxs5("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [
-    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ui-stroke-tertiary)", paddingBottom: 6 }, children: [
-      /* @__PURE__ */ jsx5(Breadcrumbs, { b }),
-      /* @__PURE__ */ jsx5(BrowserSearch, { b }),
-      /* @__PURE__ */ jsx5(RootSelect, { b })
+  return /* @__PURE__ */ jsxs6("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [
+    /* @__PURE__ */ jsxs6("div", { style: { display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ui-stroke-tertiary)", paddingBottom: 6 }, children: [
+      /* @__PURE__ */ jsx6(Breadcrumbs, { b }),
+      /* @__PURE__ */ jsx6(BrowserSearch, { b }),
+      /* @__PURE__ */ jsx6(RootSelect, { b })
     ] }),
-    /* @__PURE__ */ jsx5(EntryList, { b, height: 360 }),
-    touched && /* @__PURE__ */ jsx5("div", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.chatChanged }),
-    /* @__PURE__ */ jsxs5(DialogFooter3, { style: { alignItems: "center" }, children: [
-      /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: S.selected(b.selected.size) }),
-      skipped > 0 && /* @__PURE__ */ jsx5("span", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.lineBreakSkipped(skipped) }),
-      /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
-      touched ? /* @__PURE__ */ jsx5(Button5, { disabled: !insertable.length, onClick: () => copyLocations(text()), children: S.copyLocations }) : /* @__PURE__ */ jsx5(Button5, { disabled: !insertable.length, onClick: insert, children: S.insert })
+    /* @__PURE__ */ jsx6(EntryList, { b, height: 360 }),
+    touched && /* @__PURE__ */ jsx6("div", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.chatChanged }),
+    /* @__PURE__ */ jsxs6(DialogFooter3, { style: { alignItems: "center" }, children: [
+      /* @__PURE__ */ jsx6("span", { "aria-live": "polite", role: "status", style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: S.selected(b.selected.size) }),
+      skipped > 0 && /* @__PURE__ */ jsx6("span", { style: { fontSize: 12, color: "var(--ui-text-secondary)" }, children: S.lineBreakSkipped(skipped) }),
+      /* @__PURE__ */ jsx6(Button6, { onClick: closePicker, variant: "text", children: S.cancel }),
+      touched ? /* @__PURE__ */ jsx6(Button6, { disabled: !insertable.length, onClick: () => copyLocations(text()), children: S.copyLocations }) : /* @__PURE__ */ jsx6(Button6, { disabled: !insertable.length, onClick: insert, children: S.insert })
     ] })
   ] });
 }
 function DrivePicker({ roots }) {
   const d = useDriveBrowser();
-  const snap = useImport(useValue4($pickerJob));
+  const snap = useImport(useValue5($pickerJob));
   const start = () => {
     const insertText = $insertText.get();
     const pin = currentPin();
-    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host5.state, hold: ownerHold(pin) });
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host6.state, hold: ownerHold(pin) });
     $pickerJob.set(job);
     void job.start().then((done) => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return;
@@ -2326,25 +2508,25 @@ function DrivePicker({ roots }) {
       if (!done.failures.length) closePicker();
     });
   };
-  return /* @__PURE__ */ jsxs5("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [
-    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ui-stroke-tertiary)", paddingBottom: 6 }, children: [
-      /* @__PURE__ */ jsx5(DriveCrumbs, { d }),
-      /* @__PURE__ */ jsx5(BrowserSearch, { b: d, label: S.searchDrive })
+  return /* @__PURE__ */ jsxs6("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [
+    /* @__PURE__ */ jsxs6("div", { style: { display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ui-stroke-tertiary)", paddingBottom: 6 }, children: [
+      /* @__PURE__ */ jsx6(DriveCrumbs, { d }),
+      /* @__PURE__ */ jsx6(BrowserSearch, { b: d, label: S.searchDrive })
     ] }),
-    /* @__PURE__ */ jsx5(DriveList, { d, height: 360 }),
-    snap && /* @__PURE__ */ jsx5(ImportFailures, { failures: snap.failures }),
-    /* @__PURE__ */ jsxs5(DialogFooter3, { style: { alignItems: "center" }, children: [
-      /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: snap ? importStatus(snap) : S.selected(d.selected.size) }),
-      snap && !snap.running ? /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, children: S.close }) : /* @__PURE__ */ jsxs5(Fragment4, { children: [
-        /* @__PURE__ */ jsx5(Button5, { onClick: closePicker, variant: "text", children: S.cancel }),
-        /* @__PURE__ */ jsx5(Button5, { disabled: !d.selected.size, loading: Boolean(snap), onClick: start, children: S.importAndInsert })
+    /* @__PURE__ */ jsx6(DriveList, { d, height: 360 }),
+    snap && /* @__PURE__ */ jsx6(ImportFailures, { failures: snap.failures }),
+    /* @__PURE__ */ jsxs6(DialogFooter3, { style: { alignItems: "center" }, children: [
+      /* @__PURE__ */ jsx6("span", { "aria-live": "polite", role: "status", style: { marginRight: "auto", fontSize: 12, color: "var(--ui-text-tertiary)" }, children: snap ? importStatus(snap) : S.selected(d.selected.size) }),
+      snap && !snap.running ? /* @__PURE__ */ jsx6(Button6, { onClick: closePicker, children: S.close }) : /* @__PURE__ */ jsxs6(Fragment4, { children: [
+        /* @__PURE__ */ jsx6(Button6, { onClick: closePicker, variant: "text", children: S.cancel }),
+        /* @__PURE__ */ jsx6(Button6, { disabled: !d.selected.size, loading: Boolean(snap), onClick: start, children: S.importAndInsert })
       ] })
     ] })
   ] });
 }
 
 // src/desktop/plugin.tsx
-import { jsx as jsx6 } from "react/jsx-runtime";
+import { jsx as jsx7 } from "react/jsx-runtime";
 var PLUGIN_ID = "hermes-cloud-file-manager";
 var PAGE_PATH = "/cloud-files";
 var PROBE_INTERVAL_MS = 6e4;
@@ -2387,7 +2569,7 @@ function registerAvailabilityGate(ctx, onChange) {
       removers = null;
     }
     if (available && !pickerRemover) {
-      pickerRemover = ctx.register({ id: "picker-host", area: COMPOSER_AREAS.underside, render: () => /* @__PURE__ */ jsx6(PickerHost, {}) });
+      pickerRemover = ctx.register({ id: "picker-host", area: COMPOSER_AREAS.underside, render: () => /* @__PURE__ */ jsx7(PickerHost, {}) });
     } else if (available === false && !pickerPinnedElsewhere()) {
       closePicker();
       pickerRemover?.();
@@ -2445,8 +2627,8 @@ function registerAvailabilityGate(ctx, onChange) {
     void probe();
   };
   const unsubscribers = [
-    host6.state.profile.listen(onAgentChange),
-    host6.state.connectionId.listen(onAgentChange),
+    host7.state.profile.listen(onAgentChange),
+    host7.state.connectionId.listen(onAgentChange),
     $pickerOpen.listen((open) => {
       if (!open && known === false && !disposed) {
         pickerRemover?.();
@@ -2476,7 +2658,7 @@ var plugin = {
       id: "page",
       area: ROUTES_AREA,
       data: { path: PAGE_PATH },
-      render: () => /* @__PURE__ */ jsx6(CloudFilesPage, {})
+      render: () => /* @__PURE__ */ jsx7(CloudFilesPage, {})
     });
     registerAvailabilityGate(ctx, (available) => $available.set(available));
   }

@@ -147,7 +147,17 @@ export const S = {
   textCopied: 'Your text is on the clipboard',
   discardReload: 'Discard mine and reload',
   goneTitle: (name: string, profile: string) => `${name} was moved or deleted on ${machineOf(profile)}.`,
-  otherAgent: (profile: string) => `This file is on ${profile}. Switch back to edit or save.`
+  otherAgent: (profile: string) => `This file is on ${profile}. Switch back to edit or save.`,
+  // Read-only viewer (images, PDFs, code and data files)
+  otherAgentPreview: (profile: string) => `This file is on ${profile}. Switch back to view it.`,
+  previewNeedsUpdate: (profile: string) => `Previews need Cloud Files 0.4.1 or newer on ${agentName(profile)}.`,
+  previewTooLarge: (size?: string) => `${size ?? 'This file'} is too large to preview here. Download it instead.`,
+  previewNotText: "This file isn't text, so it can't be previewed.",
+  previewTruncated: (size: string) => `Showing the first 1 MB of ${size}. Download it to see the rest.`,
+  tableCut: (rows: number | null, columns: number | null) =>
+    `Showing the first ${[rows && `${rows.toLocaleString()} rows`, columns && `${columns} columns`].filter(Boolean).join(' and ')}.`,
+  showAsText: 'Show as text',
+  showAsTable: 'Show as table'
 }
 
 /** Server error codes → short human text. */
@@ -184,6 +194,7 @@ export const CODE_TEXT: Record<string, string> = {
 /** /file and /file/save codes → plain sentences (the upload wording in CODE_TEXT doesn't fit an open file). */
 export const FILE_CODE_TEXT: Record<string, string> = {
   not_editable: 'Only .md, .markdown and .txt files can be opened here.',
+  not_previewable: 'This kind of file can’t be previewed here.',
   is_link: 'This file is a link, so it can’t be opened here.',
   not_a_file: 'This isn’t a regular file.',
   hard_link: 'This file has other hard links, so it can’t be opened here.',
