@@ -251,9 +251,12 @@ export const crumbStyle = (index: number, current: boolean): CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden',
   ...(current ? { flex: '0 0 auto', maxWidth: '70%', minWidth: 0 } : { flex: '0 100 auto', minWidth: index === 0 ? '2em' : 0 })
 })
-/** Which crumb holds keyboard focus, for `crumbStyle`: spread `handlers(i)` on each crumb. */
-export function useCrumbFocus() {
+/** Which crumb holds keyboard focus, for `crumbStyle`: spread `handlers(i)` on each crumb. A crumb activated from the
+ *  keyboard turns into the plain current-folder label, and removing a focused Button fires no blur, so a new `trail`
+ *  (the path on screen) forgets it: an ancestor never stays sized as if focused. */
+export function useCrumbFocus(trail: string) {
   const [focused, setFocused] = useState<number | null>(null)
+  useEffect(() => setFocused(null), [trail])
   return {
     focused,
     handlers: (index: number) => ({ onBlur: () => setFocused(f => (f === index ? null : f)), onFocus: () => setFocused(index) })
@@ -350,7 +353,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
 }) {
   const parts = folder.split('/').filter(Boolean)
   const crumbs = [{ label: rootLabel, path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
-  const focus = useCrumbFocus()
+  const focus = useCrumbFocus(`${rootLabel}/${folder}/${leaf ?? ''}/${b.query ? '?' : ''}`)
   return (
     <nav aria-label={S.breadcrumbs} style={crumbNavStyle}>
       {crumbs.map((crumb, i) => {

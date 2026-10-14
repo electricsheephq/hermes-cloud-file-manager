@@ -143,6 +143,23 @@ describe('breadcrumbs in a narrow pane', () => {
     expect(wrapper.style.flex).toBe('0 100 auto')
   })
 
+  it('an ancestor activated from the keyboard is not left sized as focused after descending again', async () => {
+    page()
+    await flush()
+    fireEvent.keyDown(option('docs'), { key: 'Enter' })
+    await flush()
+    const home = screen.getByRole('button', { name: 'Home' })
+    focus(home)
+    fireEvent.click(home, { detail: 0 })
+    await flush()
+    expect(document.activeElement).toBe(option('docs'))
+    fireEvent.keyDown(option('docs'), { key: 'Enter' })
+    await flush()
+    const [root, current] = [...screen.getByRole('navigation').children] as HTMLElement[]
+    expect(root.style.flex).toBe('0 100 auto')
+    expect(current.style.flex).toBe('0 0 auto')
+  })
+
   it('Drive crumbs follow the same rules', async () => {
     page()
     await openDrive()

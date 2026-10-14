@@ -53,7 +53,7 @@ export function useDriveBrowser() {
 export type DriveBrowser = ReturnType<typeof useDriveBrowser>
 
 export function DriveCrumbs({ d }: { d: DriveBrowser }) {
-  const focus = useCrumbFocus()
+  const focus = useCrumbFocus(`${d.trail.map(crumb => crumb.id).join('/')}/${d.q ? '?' : ''}`)
   return (
     <nav aria-label={S.breadcrumbs} style={crumbNavStyle}>
       {d.trail.map((crumb, i) => (
