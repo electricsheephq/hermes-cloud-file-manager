@@ -2,6 +2,68 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.4] - 2026-10-14
+
+Desktop half only; the agent's side is unchanged from 0.4.1.
+
+### Added
+- **The file list follows the agent.** While Cloud Files is open, a file the agent writes, moves or deletes shows up
+  in the open folder or search within about a second, without Refresh. Only that agent's list refreshes, at most once
+  a second, and not while the window is hidden (once when you come back). A file edited in place can show its old
+  size for a few seconds. Needs a Hermes Desktop that passes tool events to plugins; without it, nothing changes.
+- **Drive keyboard navigation** on the page and in the **+ → Google Drive** picker: one tab stop, arrow keys, Home and
+  End, Page Up and Page Down, and Backspace (or Alt+Up) for the parent folder. Checkboxes are mouse-only, as in the
+  Cloud list; Space and Enter work on the row.
+
+## [0.4.3] - 2026-10-14
+
+Desktop half only; the agent's side is unchanged from 0.4.1.
+
+### Added
+- **Show** on a finished upload opens its folder and puts the focus on the file, using the name it was saved under.
+- **Add to chat** in the toolbar, and while viewing or editing a file: the same `@file:` / `@folder:` references as
+  dragging, inserted into the chat beside Cloud Files, refused when that chat belongs to another agent. A path that
+  no chat reference can hold (a line break, or all three quote characters) is skipped with a notice. It needs a
+  Hermes Desktop with the composer API; without it the button doesn't show.
+- **Retry** on a preview that failed to arrive (a timeout or network error). A refusal, such as a file that is too
+  large, doesn't offer it.
+
+### Changed
+- **Import from Google Drive on the Cloud Files page** puts the files in the folder you were in, not always in
+  `uploads/drive` of the first folder. The **+ → Google Drive** picker still imports into `uploads/drive`.
+
+## [0.4.2] - 2026-10-13
+
+Desktop half only; the agent's side is unchanged from 0.4.1.
+
+### Added
+- **Drag files into the chat.** Drag a file or folder row, or the current selection, from the Cloud Files page into
+  a chat. It becomes the same `@file:` / `@folder:` reference Hermes's own Files tree makes. Hermes includes the
+  contents of files in the agent's working folder; files elsewhere are passed by location with a note.
+  - Cloud Files refuses the drag, with a notice, when the chat in focus belongs to a different agent than the files.
+  - The **+ → Cloud** picker, Google Drive rows and links that point outside the shown folders can't be dragged.
+  - Tip: right-click **Cloud Files** in the sidebar and choose **Open in split** to keep it beside the chat.
+
+### Fixed
+- Dragging something that isn't a file from your computer (such as a row) over the Cloud Files page no longer
+  shows the upload highlight.
+
+## [0.4.1] - 2026-10-13
+
+Both halves. Previews need 0.4.1 on the agent too; with an older agent side, Cloud Files says so and everything else works as before.
+
+### Added
+- **Read-only previews** of images, PDFs, and code and data files. Double-click a file, or select it and choose **Open**.
+  - Images: PNG, JPEG, GIF, WebP, BMP, ICO and SVG.
+  - PDFs.
+  - Text and code: JSON, YAML, TOML, CSV/TSV (shown as a table, or as text), logs, XML, HTML and most source languages. Previews of text and code show the first 1 MB.
+  - Images and PDFs up to 10 MB. Larger files say so; use **Download** instead.
+  - Previews are read-only. Only `.md`, `.markdown` and `.txt` files can be edited and saved, as before.
+  - HTML and SVG are never run: HTML shows as text, and SVG shows as an image.
+
+### Fixed
+- The docs said Download needs Hermes v0.21.6. It works in every Hermes Desktop this plugin supports (v0.21.5 and newer).
+
 ## [0.4.0] - 2026-10-13
 
 Desktop half only. The agent's side is unchanged, so 0.3.5 on the agent works with it.

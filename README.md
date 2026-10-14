@@ -8,12 +8,18 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 - **Cloud Files** in the sidebar: browse the agent's folders, search by name, create folders, and upload files
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
-  never overwrite — a name clash keeps both files.
+  never overwrite — a name clash keeps both files. **Show** on a finished upload opens its folder at the file.
+  While the page is open, files the agent writes, moves or deletes show up within about a second, for that
+  agent only (a file edited in place can show its old size for a few seconds).
 - **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
   The file list also works from the keyboard: arrow keys, Home and End, Page Up and Page Down, Enter to open,
   Space to select, and Alt+Up for the parent folder.
 - **Open and edit** Markdown and text files: view first, edit on purpose, review the changes, then save.
   Nothing is saved until you choose Save.
+- **Preview** images, PDFs, and code and data files (JSON, YAML, CSV as a table, logs, source code), read-only.
+- **Drag files into the chat** from the Cloud Files page, like Hermes's own Files tree: each becomes a file
+  reference for the agent. Right-click **Cloud Files** in the sidebar and choose **Open in split** to keep it beside
+  the chat.
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
   message. Nothing is uploaded again and nothing is copied into the chat; the agent opens the files where they
   are with its own tools.
@@ -97,6 +103,18 @@ installing the desktop half is harmless for your other agents.
   refused. You can then compare with their version and save knowingly, or copy your text. An open file stays
   tied to the agent you opened it on; switch back to that agent to save.
 
+- **Preview other files:** double-click an image (PNG, JPEG, GIF, WebP, BMP, ICO, SVG), a PDF, or a code or data
+  file (JSON, YAML, TOML, CSV/TSV, logs, XML, HTML, CSS and most source languages), or select it and choose **Open**.
+  It opens read-only, with **Copy path** and **Download**. CSV and TSV files show as a table; **Show as text** shows
+  the raw file. HTML and SVG are never run: HTML shows as text and SVG as an image.
+
+- **Drag into the chat:** drag a file or folder row (or a selection) from the Cloud Files page into a chat. It
+  becomes the same `@file:` / `@folder:` reference that Hermes's own Files tree makes. Hermes includes the contents
+  of a file in the agent's working folder in your message; a file elsewhere is passed by its location, with a note
+  that it is outside the working folder. Cloud Files refuses the drag when the chat in focus belongs to a
+  different agent than the files. **Add to chat** in the toolbar (or while viewing a file) does the same without
+  dragging, into the chat beside Cloud Files. The **+ → Cloud** picker still inserts locations only, exactly as before.
+
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
 
 ![Reviewing the change before saving](docs/media/screenshot-editor-review.png)
@@ -123,9 +141,11 @@ files from that Drive onto the agent's machine:
 
 ![+ → Google Drive imports and inserts](docs/media/screenshot-drive-picker.png)
 
-Imports land in `uploads/drive/` in the first shown folder, one file at a time. Google Docs and Slides arrive as
+On the Cloud Files page, imports land in the folder you were in before switching to Google Drive; from the
+**+ → Google Drive** picker they land in `uploads/drive/` in the first shown folder. One file at a time. Google Docs and Slides arrive as
 PDF, Sheets as CSV and Drawings as PNG; other files arrive as they are. A name clash keeps both files, and
-`max_file_mb` applies.
+`max_file_mb` applies. The Drive list works from the keyboard like the Cloud list: arrow keys, Home and End, Page Up and Page Down, Space
+or Enter, and Backspace for the parent folder.
 
 **Setup:** sign the agent in to Google through its `google-workspace` skill, with Drive access. Follow the
 skill's own setup, or ask the agent to do it. Within about a minute, **Google Drive** appears for that agent.
@@ -176,7 +196,9 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
   more than 24 hours old, the next time an upload or Drive import starts in that folder; at most once an hour per folder.)
 - Only Save in the editor overwrites, only the file you opened, and only if it has not changed since you opened
   it. See [SECURITY.md](SECURITY.md) for the accepted race with writers outside this process.
-- Everyone who can use the agent can see its files — the same access the agent itself has.
+- Everyone who can use the agent can see its files — the same access the agent itself has. That includes
+  previews: any image, PDF, or code or data file in the shown folders can be previewed, including configuration
+  files you keep there. The agent's Hermes home stays protected, as above.
 - **Download** goes through Hermes Desktop's own authenticated download, the same one its file tree uses. The
   plugin only offers it for files the list shows: files inside the shown folders, never from the agent's Hermes
   home except a working folder inside it, as above. Hermes's own checks still apply: for example, it refuses
@@ -187,8 +209,12 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 ## Limits in this version
 
 - No rename, move or delete (coming later; use the agent or a shell for now).
-- Download saves one file at a time. Folders and Google Drive files can't be downloaded. It needs a Hermes Desktop
-  with this download (Hermes v0.21.6 or newer, evaOS Desktop 2026.10.6 or newer); older builds simply don't show it.
+- Download saves one file at a time. Folders and Google Drive files can't be downloaded. It works in every
+  Hermes Desktop this plugin supports (v0.21.5 or newer) and in evaOS Desktop 2026.10.6 or newer; a build without
+  it simply doesn't show it.
+- Previews show the first 1 MB of a code or data file, and images and PDFs up to 10 MB; use **Download** for
+  bigger files. Previews need 0.4.1 or newer on the agent's side too; with an older agent side, Cloud Files says so.
+  A file that is being written to while it is read (a busy log, for example) can't be previewed until it settles.
 - Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
   changed since you opened it.
 - **Upload folder** cannot carry empty folders (a browser limitation); drag-and-drop keeps them.

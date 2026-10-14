@@ -19,9 +19,10 @@ import {
 import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, isNotFoundError, pluginCtx, query, type Root } from './api'
+import { AddToChat } from './chat'
 import { type LineDiff, lineDiff } from './diff'
 import { captureFor, type SaveFile } from './download'
-import { isMarkdown } from './format'
+import { isMarkdown, type PreviewKind, previewKind } from './format'
 import { fileCodeText, S } from './strings'
 import { type AgentPin, transportText } from './upload'
 
@@ -38,6 +39,7 @@ export interface Doc {
   name: string
   status: 'loading' | 'error' | 'ready'
   error?: string
+  retryPreview?: boolean
   /** The opened version, BOM stripped and CRLF turned into LF; `sha` is the server's hash of its raw bytes. */
   base: string
   sha: string
@@ -47,6 +49,8 @@ export interface Doc {
   mixed: boolean
   draft: string
   mode: 'view' | 'edit'
+  /** A read-only preview (preview.tsx) instead of the editor: its kind, then what its /file/preview read returned. */
+  preview?: { kind: PreviewKind; text?: string; truncated?: boolean; size?: number; blob?: Blob }
 }
 
 export type SetDoc = Dispatch<SetStateAction<Doc | null>>
@@ -76,7 +80,7 @@ export const encodeText = (text: string, { bom, crlf }: { bom: boolean; crlf: bo
 
 export const isDirty = (doc: Doc | null) => Boolean(doc && doc.status === 'ready' && doc.draft !== doc.base)
 
-const isCurrent = (pin: AgentPin) => pin.connectionId === host.state.connectionId.get() && pin.profile === host.state.profile.get()
+export const isCurrent = (pin: AgentPin) => pin.connectionId === host.state.connectionId.get() && pin.profile === host.state.profile.get()
 
 // ---- Drafts that outlive the page (memory only).
 export const $drafts = atom<ReadonlyMap<string, Doc>>(new Map())
@@ -154,6 +158,8 @@ export function useOpenDoc(): [Doc | null, SetDoc] {
 }
 
 let generation = 0
+/** A new load generation, shared by the editor and the viewer so neither's late answer lands in the other's file. */
+export const nextId = () => ++generation
 
 function loadText(error: unknown): string {
   if (error instanceof ApiError) return fileCodeText(error.code, error.body?.message, error.body?.max_bytes)
@@ -162,7 +168,7 @@ function loadText(error: unknown): string {
 
 /** Fetch `doc`'s file into a fresh generation of it; the answer lands only if that generation is still open. */
 function load(doc: Doc, setDoc: SetDoc) {
-  const id = ++generation
+  const id = nextId()
   setDoc({ ...doc, id, status: 'loading', error: undefined, mode: 'view', save: null })
   const save = captureFor([doc.pin.connectionId ?? 'local', doc.pin.profile])
   call<FileResponse>(query('/file', { root: doc.root, path: doc.path })).then(
@@ -176,7 +182,11 @@ function load(doc: Doc, setDoc: SetDoc) {
 
 export function openDoc(entry: Entry, root: Root, pin: AgentPin, setDoc: SetDoc) {
   const base = { bom: false, crlf: false, mixed: false, base: '', draft: '', sha: '' }
-  load({ ...base, id: 0, pin, root: root.id, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: 'loading', mode: 'view' }, setDoc)
+  const doc: Doc = { ...base, id: 0, pin, root: root.id, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: 'loading', mode: 'view' }
+  const kind = previewKind(entry.name)
+  // A preview is read by its viewer (id 0: not read yet), and only while its agent is selected.
+  if (kind) setDoc({ ...doc, preview: { kind } })
+  else load(doc, setDoc)
 }
 
 /** "Discard unsaved changes?" before any action that would drop the draft. */
@@ -209,7 +219,7 @@ export function useLeaveGuard(doc: Doc | null) {
   return { leave, dialog }
 }
 
-function copy(text: string, message: string) {
+export function copy(text: string, message: string) {
   void pluginCtx()
     .os.writeClipboard(text)
     .then(ok => ok, () => false)
@@ -384,6 +394,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
           </span>
         )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+          <AddToChat entries={() => [{ abs: doc.abs, is_dir: false }]} pin={doc.pin} />
           {editing ? (
             <>
               <Button aria-pressed={changes} onClick={() => setChanges(!changes)} size="sm" variant={changes ? 'secondary' : 'ghost'}>

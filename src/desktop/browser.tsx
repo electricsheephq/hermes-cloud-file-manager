@@ -20,11 +20,11 @@ import {
   useQueryClient,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
+import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, pluginCtx, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
-import { baseName, entryIcon, humanSize, isEditable, parentPath, shortDate } from './format'
+import { baseName, entryIcon, humanSize, isOpenable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
 import { transportText } from './upload'
 
@@ -46,17 +46,20 @@ export function requestFocus(request: FocusRequest, at: string, want: true | str
 
 /** The ref for a list's scroller: after a focus request for `at`, the folder on screen, moves focus into the list
  *  once `ready` (loaded). Matching `at` keeps a render of the previous folder from taking the request. */
-export function useListFocus(request: FocusRequest, ready: boolean, at: string | null) {
+export function useListFocus(request: FocusRequest, ready: boolean, at: string | null, fetching = false) {
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const req = request.current
     if (!req || !ready || !list.current || req.at !== at) return
+    const rows = [...list.current.querySelectorAll<HTMLElement>('[data-entry]')]
+    const wanted = rows.find(row => row.getAttribute('data-entry') === req.want)
+    // A cached listing can lack a file just written (Show after an upload): wait for the refetch under way.
+    if (!wanted && typeof req.want === 'string' && fetching) return
     request.current = null
     // The user moved on while the listing loaded (into Search, a dialog, ...): leave their focus where it is.
     const now = document.activeElement
     if (now && now !== document.body && now !== req.from && !list.current.contains(now)) return
-    const rows = [...list.current.querySelectorAll<HTMLElement>('[data-entry]')]
-    ;(rows.find(row => row.getAttribute('data-entry') === req.want) ?? rows[0] ?? list.current).focus()
+    ;(wanted ?? rows[0] ?? list.current).focus()
   })
   return list
 }
@@ -79,6 +82,55 @@ export function useScope(): [string, string] {
   const connectionId = useValue(host.state.connectionId)
   const profile = useValue(host.state.profile)
   return [connectionId ?? 'local', profile]
+}
+
+const MUTATING_TOOL_RE =
+  /terminal|shell|exec|bash|command|write|edit|patch|replace|apply|create|delete|remove|move|rename|mkdir|format/i
+export function toolMayChangeFiles(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false
+  const tool = payload as { name?: unknown; tool?: unknown; inline_diff?: unknown }
+  if (typeof tool.inline_diff === 'string' && tool.inline_diff.trim()) return true
+  const name = String(tool.name ?? tool.tool ?? '')
+  return MUTATING_TOOL_RE.test(name)
+}
+
+/** Only the open agent's Cloud listings follow tool events; older hosts have no event subscription. */
+function useLiveRefresh() {
+  const [connectionId, profile] = useScope()
+  const client = useQueryClient()
+  useEffect(() => {
+    const ctx = pluginCtx()
+    if (typeof ctx.onEvent !== 'function') return
+    let timer: number | undefined
+    let missed = false
+    const refresh = () => {
+      // Folder mtime bypasses the gateway cache for new/deleted/renamed files; an edited size can lag 5 s.
+      void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
+      void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'search'] })
+    }
+    const dispose = ctx.onEvent('tool.complete', event => {
+      // Absent or empty connection ids both mean the local agent, on either side.
+      if (event.profile === undefined || ((event.connectionId ?? '').trim() || 'local') !== (connectionId.trim() || 'local') ||
+        ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || !toolMayChangeFiles(event.payload)) return
+      if (timer !== undefined) return
+      timer = window.setTimeout(() => {
+        timer = undefined
+        if (document.visibilityState === 'hidden') missed = true
+        else refresh()
+      }, 1000)
+    })
+    const visible = () => {
+      if (document.visibilityState !== 'visible' || !missed) return
+      missed = false
+      if (timer === undefined) refresh() // else the pending timer refreshes
+    }
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      dispose()
+      if (timer !== undefined) window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [connectionId, profile])
 }
 
 export function useRoots() {
@@ -168,6 +220,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
       }),
     selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]])),
     setShown,
+    picked: () => selectedEntries(shown?.entries ?? [], selected),
     /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
      *  link outside the shown folders), captured with that data. A selection keeps its old flags across a refresh. */
     saveFor: (entry: Entry) => {
@@ -175,6 +228,12 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
       return (now && !now.is_dir && !now.link_outside && shown?.save) || null
     }
   }
+}
+
+/** Shown order first, then selected rows hidden by search; outside links never carry references. */
+export function selectedEntries(entries: readonly Entry[], selected: ReadonlyMap<string, Entry>): Entry[] {
+  const shown = new Set(entries.map(e => e.abs))
+  return [...entries.filter(e => selected.has(e.abs)), ...[...selected.values()].filter(e => !shown.has(e.abs))].filter(e => !e.link_outside)
 }
 
 export type Browser = ReturnType<typeof useBrowser>
@@ -347,9 +406,16 @@ async function listUpTo([connectionId, profile]: [string, string], root: string,
 }
 
 /** The scrolling list: folder listing, or search results while a query is active. With `onOpenFile`, opening
- *  an editable file (double-click / Enter) hands it to the editor; other files stay inert. */
-export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: number; onOpenFile?: (entry: Entry) => void }) {
+ *  an editable or previewable file (double-click / Enter) hands it to the page; other files stay inert. */
+export function EntryList({ b, height, onOpenFile, dragOut }: {
+  b: Browser
+  height?: number
+  onOpenFile?: (entry: Entry) => void
+  /** Page only: checks the listing's scope against the live host before a drag can carry paths. */
+  dragOut?: (event: DragEvent, scope: [string, string]) => boolean
+}) {
   const [connectionId, profile] = useScope()
+  useLiveRefresh()
   const rootId = b.root?.id ?? ''
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
   const [range, setRange] = useState({ folder, count: LIST_LIMIT })
@@ -390,15 +456,18 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   const stopped = reason === 'time' || reason === 'visits'
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
 
-  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path)
+  const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching)
   const { setShown } = b
   useEffect(() => setShown(active.data && !active.error ? { entries, save: active.data.save ?? null } : null), [active.data, active.error, entries, setShown])
   // One tab stop: the last focused row, else the first selected, else the first.
   const [lastFocused, setLastFocused] = useState<string | null>(null)
   const tabStop = (entries.find(e => e.abs === lastFocused) ?? entries.find(e => b.selected.has(e.abs)) ?? entries[0])?.abs
   const total = listing.data?.total ?? entries.length
+  // A Load more read is pending (its count has no data yet). A refresh of the count on screen is not: it keeps
+  // the button enabled, so keyboard focus on it survives a live refresh, and the count isn't announced again.
+  const loadingMore = listing.isFetching && client.getQueryData(listingKey) === undefined
   const announce = active.error ? S.folderFailed : !active.data ? '' : searching ? S.results(entries.length)
-    : count === LIST_LIMIT || entries.length >= total ? S.items(total) : listing.isFetching ? '' : S.showingOf(entries.length, total)
+    : count === LIST_LIMIT || entries.length >= total ? S.items(total) : loadingMore ? '' : S.showingOf(entries.length, total)
 
   const step: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity }
   const navKey = (entry: Entry, event: KeyboardEvent) => {
@@ -421,9 +490,18 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   }
 
   const open = (entry: Entry) => {
-    if (onOpenFile && isEditable(entry)) return onOpenFile(entry)
+    if (onOpenFile && isOpenable(entry)) return onOpenFile(entry)
     if (!entry.is_dir || entry.link_outside) return
     b.navigate(entry.rel)
+  }
+
+  const startDrag = (entry: Entry, event: DragEvent) => {
+    if (!dragOut?.(event, [connectionId, profile])) return
+    const picked = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter(e => !e.link_outside)
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/x-hermes-paths', JSON.stringify(picked.map(e => ({ isDirectory: e.is_dir, path: e.abs }))))
+    // The host's HTML5Backend requires a native type to let dragstart proceed.
+    event.dataTransfer.setData('text/plain', picked.map(e => e.abs).join('\n'))
   }
 
   let body: ReactNode
@@ -444,14 +522,14 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
       <>
         <div aria-label={searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || '')} aria-multiselectable="true" role="listbox">
           {entries.map(entry => (
-            <EntryRow b={b} entry={entry} key={entry.abs} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
+            <EntryRow b={b} entry={entry} key={entry.abs} onDragStart={dragOut && !entry.link_outside ? event => startDrag(entry, event) : undefined} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
           ))}
         </div>
         {searching ? truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div> :
           (listing.data?.total ?? 0) > entries.length ? (
             <div style={{ ...muted, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>{S.showingOf(entries.length, listing.data!.total)}</span>
-              <Button disabled={listing.isFetching} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
+              <Button disabled={loadingMore} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
             </div>
           ) : truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.firstOnly(entries.length)}</div>}
       </>
@@ -468,7 +546,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   )
 }
 
-function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
+function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }: {
   b: Browser
   entry: Entry
   onOpen: (entry: Entry) => void
@@ -476,6 +554,7 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
   tabStop: boolean
   onFocus: () => void
   onNavKey: (entry: Entry, event: KeyboardEvent) => void
+  onDragStart?: (event: DragEvent) => void
 }) {
   const [hover, setHover] = useState(false)
   const focus = useRowFocus()
@@ -491,8 +570,10 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
     <div
       aria-selected={checked}
       data-entry={entry.rel}
+      draggable={onDragStart ? true : undefined}
       onClick={click}
       onDoubleClick={() => onOpen(entry)}
+      onDragStart={onDragStart}
       onKeyDown={event => {
         // Only keys aimed at the row itself: Space on the nested checkbox is the checkbox's own toggle.
         if (event.target !== event.currentTarget) return

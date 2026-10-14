@@ -26,6 +26,13 @@ export const S = {
   newFolder: 'New folder',
   uploadFiles: 'Upload files',
   uploadFolder: 'Upload folder',
+  addToChat: 'Add to chat',
+  addedToChat: (n: number) => (n === 1 ? 'Added to the chat' : `Added ${n} items to the chat`),
+  openChatFirst: 'Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar → Open in split), then try again.',
+  refSkipped: (n: number) => `Skipped ${n} ${n === 1 ? 'path' : 'paths'} with a line break or all three quote characters.`,
+  addOtherAgent: (owner: string, profile: string) =>
+    `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
+  showOtherAgent: (profile: string) => `Switch back to ${agentName(profile)} to show this upload.`,
   copyPath: 'Copy path',
   download: 'Download',
   maxPerFile: (bytes: number) => `Up to ${mb(bytes)} per file`,
@@ -48,6 +55,8 @@ export const S = {
     `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : 'early'}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: 'No matches found so far',
   dropTo: (folder: string) => `Drop to upload to ${folder}`,
+  dragOtherAgent: (owner: string, profile: string) =>
+    `The chat you'd drop into is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   copied: (n: number) => (n === 1 ? 'Path copied' : `${n} paths copied`),
   copyFailed: "Couldn't copy to the clipboard",
   breadcrumbs: 'Folder path',
@@ -105,7 +114,7 @@ export const S = {
   drivePickerTitle: 'Insert from Google Drive',
   importToCloud: 'Import to Cloud Files',
   importCount: (n: number) => `Import ${n} to Cloud Files`,
-  importHint: (rootLabel: string) => `Imports go to ${rootLabel}/uploads/drive`,
+  importHint: (destination: string) => `Imports go to ${destination}`,
   importing: (n: number, total: number) => `Importing ${n} of ${total}…`,
   imported: (n: number) => `Imported ${n} ${n === 1 ? 'file' : 'files'}`,
   importPaused: (profile: string) => `Switch back to ${profile} to finish importing`,
@@ -147,7 +156,17 @@ export const S = {
   textCopied: 'Your text is on the clipboard',
   discardReload: 'Discard mine and reload',
   goneTitle: (name: string, profile: string) => `${name} was moved or deleted on ${machineOf(profile)}.`,
-  otherAgent: (profile: string) => `This file is on ${profile}. Switch back to edit or save.`
+  otherAgent: (profile: string) => `This file is on ${profile}. Switch back to edit or save.`,
+  // Read-only viewer (images, PDFs, code and data files)
+  otherAgentPreview: (profile: string) => `This file is on ${profile}. Switch back to view it.`,
+  previewNeedsUpdate: (profile: string) => `Previews need Cloud Files 0.4.1 or newer on ${agentName(profile)}.`,
+  previewTooLarge: (size?: string) => `${size ?? 'This file'} is too large to preview here. Download it instead.`,
+  previewNotText: "This file isn't text, so it can't be previewed.",
+  previewTruncated: (size: string) => `Showing the first 1 MB of ${size}. Download it to see the rest.`,
+  tableCut: (rows: number | null, columns: number | null) =>
+    `Showing the first ${[rows && `${rows.toLocaleString()} rows`, columns && `${columns} columns`].filter(Boolean).join(' and ')}.`,
+  showAsText: 'Show as text',
+  showAsTable: 'Show as table'
 }
 
 /** Server error codes → short human text. */
@@ -184,6 +203,7 @@ export const CODE_TEXT: Record<string, string> = {
 /** /file and /file/save codes → plain sentences (the upload wording in CODE_TEXT doesn't fit an open file). */
 export const FILE_CODE_TEXT: Record<string, string> = {
   not_editable: 'Only .md, .markdown and .txt files can be opened here.',
+  not_previewable: 'This kind of file can’t be previewed here.',
   is_link: 'This file is a link, so it can’t be opened here.',
   not_a_file: 'This isn’t a regular file.',
   hard_link: 'This file has other hard links, so it can’t be opened here.',

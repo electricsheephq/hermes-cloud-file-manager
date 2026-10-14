@@ -112,7 +112,7 @@ describe('Cloud Files page: Google Drive source', () => {
     fireEvent.click(option('Google Drive')!)
     await screen.findByText('report.pdf')
     for (const name of ['Upload files', 'Upload folder', 'New folder']) expect(screen.queryByRole('button', { name })).toBeNull()
-    expect(screen.getByText('Imports go to Home/uploads/drive')).toBeTruthy()
+    expect(screen.getByText('Imports go to Home')).toBeTruthy()
     const file = new File(['hello'], 'a.txt')
     const dataTransfer = { types: ['Files'], items: [{ kind: 'file', webkitGetAsEntry: () => ({ name: 'a.txt', isFile: true, isDirectory: false, file: (ok: (f: File) => void) => ok(file) }) }], files: [file] }
     const page = screen.getByText('Cloud Files').closest('section')!
@@ -158,7 +158,7 @@ describe('Cloud Files page: Import to Cloud Files', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import 2 to Cloud Files' }))
     await flush()
     expect(imports(calls)).toHaveLength(1)
-    expect(imports(calls)[0].opts).toMatchObject({ method: 'POST', body: { id: 'pdf1', root: 'home', dest: 'uploads/drive' } })
+    expect(imports(calls)[0].opts).toMatchObject({ method: 'POST', body: { id: 'pdf1', root: 'home', dest: '' } })
     expect(imports(calls)[0].opts.timeoutMs).toBeGreaterThanOrEqual(330_000)
     expect(screen.getByText('Importing 1 of 2…')).toBeTruthy()
     held[0].release()
@@ -201,16 +201,16 @@ describe('Cloud Files page: Import to Cloud Files', () => {
     expect(imports(calls)).toHaveLength(2)
   })
 
-  it('Show switches to the first cloud root at uploads/drive', async () => {
+  it('Show returns to the captured cloud root destination', async () => {
     const { calls } = setup()
     await openDrive()
     fireEvent.click(screen.getByText('report.pdf'))
     fireEvent.click(screen.getByRole('button', { name: 'Import 1 to Cloud Files' }))
     await screen.findByText('Imported 1 file')
     fireEvent.click(screen.getByRole('button', { name: 'Show' }))
-    await waitFor(() => expect(calls.some(c => c.path === '/list' && c.params.root === 'home' && c.params.path === 'uploads/drive')).toBe(true))
+    await waitFor(() => expect(calls.some(c => c.path === '/list' && c.params.root === 'home' && c.params.path === '')).toBe(true))
     expect(screen.getByRole('button', { name: 'Upload files' })).toBeTruthy()
-    expect(within(screen.getByRole('navigation')).getByText('drive')).toBeTruthy()
+    expect(within(screen.getByRole('navigation')).getByText('Home')).toBeTruthy()
   })
 
   it('stops before the next request when the agent changes mid-batch, and finishes after switching back', async () => {

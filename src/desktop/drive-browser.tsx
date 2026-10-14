@@ -2,7 +2,7 @@
 // (folder names kept client-side), debounced search, and the item list. Files multi-select across folders;
 // folders open on click and cannot be selected (imports are one file each).
 import { Button, Checkbox, Codicon, EmptyState, Skeleton, useQuery } from '@hermes/plugin-sdk'
-import { type CSSProperties, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
+import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
 
 import { call, query } from './api'
 import { DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
@@ -89,6 +89,24 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
   // Drive search answers carry no sizes: the size column shows only when some item has one.
   const sized = items.some(item => item.size != null)
   const ref = useListFocus(d.focusNext, Boolean(list.data || list.error), d.q ? null : d.folder)
+  // One tab stop: the last focused row, else the first selected file, else the first.
+  const [lastFocused, setLastFocused] = useState<string | null>(null)
+  const tabStop = (items.find(item => item.id === lastFocused) ?? items.find(item => d.selected.has(item.id)) ?? items[0])?.id
+  const step: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity }
+  const navKey = (item: DriveItem, event: KeyboardEvent) => {
+    if ((event.altKey && event.key === 'ArrowUp') || event.key === 'Backspace') {
+      event.preventDefault()
+      if (d.q || d.trail.length < 2) return
+      requestFocus(d.focusNext, d.trail[d.trail.length - 2].id, d.folder)
+      return d.crumb(d.trail.length - 2)
+    }
+    if (!(event.key in step) || event.altKey) return
+    event.preventDefault()
+    const next = Math.max(0, Math.min(items.length - 1, items.indexOf(item) + step[event.key]))
+    const row = ref.current?.querySelectorAll<HTMLElement>('[role=listitem]')[next]
+    row?.focus()
+    row?.scrollIntoView?.({ block: 'nearest' })
+  }
 
   let body: ReactNode
   if (list.error) {
@@ -107,7 +125,7 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     body = (
       <div role="list">
         {items.map(item => (
-          <DriveRow d={d} item={item} key={item.id} sized={sized} />
+          <DriveRow d={d} item={item} key={item.id} onFocus={() => setLastFocused(item.id)} onNavKey={navKey} sized={sized} tabStop={item.id === tabStop} />
         ))}
         {list.data.truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.truncated(items.length)}</div>}
       </div>
@@ -120,7 +138,14 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
   )
 }
 
-function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized: boolean }) {
+function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }: {
+  d: DriveBrowser
+  item: DriveItem
+  sized: boolean
+  tabStop: boolean
+  onFocus: () => void
+  onNavKey: (item: DriveItem, event: KeyboardEvent) => void
+}) {
   const [hover, setHover] = useState(false)
   const focus = useRowFocus()
   const checked = d.selected.has(item.id)
@@ -131,14 +156,18 @@ function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized:
       data-entry={item.id}
       onClick={activate}
       onKeyDown={event => {
-        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
-        event.preventDefault()
-        if (item.is_folder) requestFocus(d.focusNext, item.id)
-        activate()
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          if (item.is_folder) requestFocus(d.focusNext, item.id)
+          activate()
+        }
+        onNavKey(item, event)
       }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       {...focus.handlers}
+      onFocus={() => (focus.handlers.onFocus(), onFocus())}
       role="listitem"
       style={{
         display: 'grid',
@@ -153,14 +182,16 @@ function DriveRow({ d, item, sized }: { d: DriveBrowser; item: DriveItem; sized:
         background: checked ? 'var(--ui-row-active-background)' : hover || focus.focused ? 'var(--ui-row-hover-background)' : undefined,
         ...focus.ring
       }}
-      tabIndex={0}
+      tabIndex={tabStop ? 0 : -1}
     >
-      <span onClick={event => event.stopPropagation()} style={{ display: 'inline-flex' }}>
+      {/* Out of the tab order, but not aria-hidden: a list item has no aria-selected, so the box tells a screen reader. */}
+      <span onClick={event => event.stopPropagation()} onMouseDown={event => event.preventDefault()} style={{ display: 'inline-flex' }}>
         {!item.is_folder && (
           <Checkbox
             aria-label={item.name}
             checked={checked}
             onCheckedChange={() => d.toggle(item)}
+            tabIndex={-1}
             style={checked ? undefined : { borderColor: 'var(--ui-stroke-secondary)' }}
           />
         )}

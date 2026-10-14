@@ -41,8 +41,12 @@ Please include the plugin version, your Hermes and Hermes Desktop versions, how 
     cleanup stays hidden until it is older than 24 hours; then the same cleanup removes it, with its contents. Only
     real folders with exactly that name are removed, never a link or a file with that name.
 - Uploads never overwrite. Only Save in the editor overwrites, only the file you opened, and only if it has not
-  changed since you opened it. Reads and saves accept only regular `.md`, `.markdown` and `.txt` files up to
-  1 MiB. Files with more than one hard link are refused: another name could alias a protected Hermes-home file.
+  changed since you opened it. Editor reads and saves accept only regular `.md`, `.markdown` and `.txt` files up
+  to 1 MiB. Read-only previews (`GET /file/preview`) accept regular image, PDF and code/data files by extension:
+  the first 1 MiB of text, and images and PDFs up to 10 MiB, with the same path, link and Hermes-home rules.
+  Previews have no list of sensitive file names: any previewable file in a shown folder can be read, which is the
+  same access the agent itself has. Files with more than one hard link are refused by both: another name could
+  alias a protected Hermes-home file.
 - Accepted race: a writer outside this process (for example the agent) that changes the file between the save's
   current-content hash check and `os.replace` is overwritten. The window is the duration of one local write.
   Saves within this gateway run one at a time; that does not coordinate with external writers.

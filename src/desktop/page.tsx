@@ -19,10 +19,12 @@ import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, t
 
 import { $available, $driveAvailable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse } from './api'
 import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, useBrowser, useRoots } from './browser'
-import { $driveJob, DRIVE_DEST, DriveImport } from './drive'
+import { $driveJob, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
-import { baseName, humanSize, isEditable, joinPath, parentPath } from './format'
+import { baseName, humanSize, isOpenable, joinPath, parentPath } from './format'
+import { AddToChat, canReference } from './chat'
+import { Preview } from './preview'
 import { codeText, S } from './strings'
 import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
 import { collectDropEntries, filesFromInput, walkEntries } from './walk'
@@ -36,6 +38,13 @@ export const $batch = atom<null | UploadBatch>(null)
 /** The agent selected right now. Read it synchronously in the event handler that picked the files: a folder
  *  walk is async, and the files belong to the agent they were picked on even if the user switches meanwhile. */
 export const currentPin = (): AgentPin => ({ connectionId: host.state.connectionId.get(), profile: host.state.profile.get() })
+
+/** Live dragstart guard: paths have no agent identity, so the listing, selected agent and chat must agree. */
+export function dragFromPage(event: DragEvent, [connectionId, profile]: [string, string]): boolean {
+  if (canReference([connectionId, profile], S.dragOtherAgent)) return true
+  event.preventDefault()
+  return false
+}
 
 /** Queue files on the batch for `pin`'s agent. A batch for another agent pauses until it is selected again;
  *  it is never re-pinned. `limits` are the current /roots limits. */
@@ -138,13 +147,13 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
   // preventDefault on dragover AND drop, always: otherwise Electron navigates the window to the file.
   const dragOver = (event: DragEvent) => {
     event.preventDefault()
-    if (onDropInput) event.dataTransfer.dropEffect = 'copy'
+    event.dataTransfer.dropEffect = onDropInput && event.dataTransfer.types.includes('Files') ? 'copy' : 'none'
   }
   const drop = (event: DragEvent) => {
     event.preventDefault()
     depth.current = 0
     setOver(false)
-    if (!onDropInput) return
+    if (!onDropInput || !event.dataTransfer.types.includes('Files')) return
     const { entries, files } = collectDropEntries(event.dataTransfer) // synchronous: the list dies after this handler
     onDropInput(entries.length ? walkEntries(entries) : Promise.resolve(filesFromInput(files)), currentPin())
   }
@@ -152,8 +161,9 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
     <section
       onDragEnter={event => {
         event.preventDefault()
+        if (!event.dataTransfer.types.includes('Files')) return
         depth.current += 1
-        if (onDropInput && event.dataTransfer.types.includes('Files')) setOver(true)
+        if (onDropInput) setOver(true)
       }}
       onDragLeave={() => {
         depth.current = Math.max(0, depth.current - 1)
@@ -194,6 +204,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
 
 function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsResponse } & DocProps) {
   const b = useBrowser(roots, 'page')
+  const pin: AgentPin = { connectionId: useValue(host.state.connectionId), profile }
   const guard = useLeaveGuard(doc)
   const queryClient = useQueryClient()
   const [newFolder, setNewFolder] = useState(false)
@@ -238,13 +249,30 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
   // A root or source change drops the open file, so it asks first.
   const rootSelect: Browser = { ...b, switchRoot: id => guard.leave(() => (setDoc(null), b.switchRoot(id))) }
   const chooseSource = (drive: boolean) => (drive ? guard.leave(() => (setDoc(null), setSource('drive'))) : setSource('cloud'))
-  const showImports = () =>
+  const showDestination = (dest: Destination, pin: AgentPin, want?: string) => {
+    const now = currentPin()
+    if (now.connectionId !== pin.connectionId || now.profile !== pin.profile) {
+      host.notify({ kind: 'warning', message: S.showOtherAgent(pin.profile) })
+      return
+    }
     guard.leave(() => {
       setDoc(null)
       setSource('cloud')
-      b.switchRoot(roots.roots[0].id)
-      b.navigate(DRIVE_DEST)
+      // A batch or import still running hasn't refreshed the listing yet: refetch, so the focus waits for the new row.
+      void queryClient.invalidateQueries({ queryKey: ['hcfm', pin.connectionId ?? 'local', pin.profile, 'list', dest.root, dest.folder] })
+      if (dest.root !== rootId) b.switchRoot(dest.root)
+      b.navigate(dest.folder)
+      if (want) requestFocus(b.focusNext, dest.folder, want)
     })
+  }
+  const showImports = () => {
+    const snap = $driveJob.get()?.getSnapshot()
+    if (snap) showDestination(snap.dest, snap.pin)
+  }
+  const showUpload = (item: UploadItem, snap: BatchSnapshot) => {
+    const folder = parentPath(item.path)
+    showDestination({ root: item.root, folder }, snap, joinPath(folder, item.savedAs ?? baseName(item.path)))
+  }
 
   const fromInput = (input: HTMLInputElement | null) => {
     if (!input?.files) return
@@ -277,7 +305,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
       profile={profile}
     >
       {inDrive ? (
-        <DrivePane roots={roots} />
+        <DrivePane dest={dest} label={joinPath(b.root?.label ?? '', b.path)} />
       ) : (
         <>
           {/* While a file is open only the breadcrumbs stay; the folder tools come back when it closes. */}
@@ -292,8 +320,9 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
                 <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
                 <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
                 <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
+                <AddToChat disabled={![...b.selected.values()].some(e => !e.link_outside)} entries={b.picked} pin={pin} />
                 {only && save && <ToolButton icon="cloud-download" label={S.download} onClick={() => void save(only.abs, only.name)} />}
-                {only && isEditable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
+                {only && isOpenable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
               </>
             )}
             <input hidden multiple onChange={event => fromInput(event.currentTarget)} ref={filesInput} type="file" />
@@ -307,12 +336,18 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
             />
           </div>
           {!doc && <div style={{ ...muted, fontSize: 11, padding: '4px 20px', textAlign: 'right' }}>{S.maxPerFile(roots.max_file_bytes)}</div>}
-          {doc ? <Editor doc={doc} leave={guard.leave} onClose={closeDoc} setDoc={setDoc} /> : <EntryList b={b} onOpenFile={openFile} />}
+          {doc?.preview ? (
+            <Preview doc={doc} onClose={closeDoc} setDoc={setDoc} />
+          ) : doc ? (
+            <Editor doc={doc} leave={guard.leave} onClose={closeDoc} setDoc={setDoc} />
+          ) : (
+            <EntryList b={b} dragOut={dragFromPage} onOpenFile={openFile} />
+          )}
         </>
       )}
       <ImportStatus onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} onShow={showImports} />
       {guard.dialog}
-      <UploadDrawer onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} />
+      <UploadDrawer onShow={showUpload} onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} />
       <NewFolderDialog
         b={b}
         onCreated={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })}
@@ -325,13 +360,13 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
 
 const toolbar: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '0 20px 8px', borderBottom: '1px solid var(--ui-stroke-tertiary)' }
 
-/** Drive mode: browse or search the agent's Drive and import the selected files into <first root>/uploads/drive. */
-function DrivePane({ roots }: { roots: RootsResponse }) {
+/** Drive mode: import into the Cloud folder left on screen before switching sources. */
+function DrivePane({ dest, label }: { dest: Destination; label: string }) {
   const d = useDriveBrowser()
   const job = useImport(useValue($driveJob))
   const start = () => {
     // Pinned now: the requests go to this agent only, even if the user switches while it runs.
-    const next = new DriveImport([...d.selected.values()], roots.roots[0].id, currentPin(), { rest, state: host.state })
+    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host.state }, dest.folder)
     $driveJob.set(next)
     d.clear()
     void next.start()
@@ -341,7 +376,7 @@ function DrivePane({ roots }: { roots: RootsResponse }) {
       <div style={toolbar}>
         <DriveCrumbs d={d} />
         <BrowserSearch b={d} label={S.searchDrive} />
-        <span style={{ ...muted, fontSize: 11 }}>{S.importHint(roots.roots[0].label)}</span>
+        <span style={{ ...muted, fontSize: 11 }}>{S.importHint(label)}</span>
         <ToolButton
           disabled={!d.selected.size || Boolean(job?.running)}
           icon="cloud-download"
@@ -498,9 +533,12 @@ function Bar({ value, label, style }: { value: number; label: string; style?: CS
   )
 }
 
-function UploadDrawer({ onSettled }: { onSettled: () => void }) {
+function UploadDrawer({ onSettled, onShow }: { onSettled: () => void; onShow: (item: UploadItem, snap: BatchSnapshot) => void }) {
   const batch = useValue($batch)
   const snap = useBatch(batch)
+  const profile = useValue(host.state.profile)
+  const connectionId = useValue(host.state.connectionId)
+  const here = snap.profile === profile && snap.connectionId === connectionId
   const [collapsed, setCollapsed] = useState(false)
   const wasRunning = useRef(false)
   useEffect(() => {
@@ -541,7 +579,7 @@ function UploadDrawer({ onSettled }: { onSettled: () => void }) {
       {!collapsed && (
         <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4 }}>
           {snap.items.map(item => (
-            <UploadRow item={item} key={item.id} onRetry={() => batch.retry(item.id)} />
+            <UploadRow item={item} key={item.id} onRetry={() => batch.retry(item.id)} onShow={here ? () => onShow(item, snap) : undefined} />
           ))}
         </div>
       )}
@@ -557,12 +595,13 @@ function statusText(item: UploadItem): string {
   return item.savedAs ? S.savedAs(item.savedAs) : S.done
 }
 
-function UploadRow({ item, onRetry }: { item: UploadItem; onRetry: () => void }) {
+function UploadRow({ item, onRetry, onShow }: { item: UploadItem; onRetry: () => void; onShow?: () => void }) {
   return (
     <div data-upload={item.path} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '2px 8px', alignItems: 'center', fontSize: 11 }}>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.path}</span>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: item.status === 'failed' ? 'var(--ui-red)' : 'var(--ui-text-tertiary)' }}>
         {statusText(item)}
+        {item.status === 'done' && onShow && <Button onClick={onShow} size="micro" variant="textStrong">{S.show}</Button>}
         {item.status === 'failed' && item.retryable !== false && (
           <Button onClick={onRetry} size="micro" variant="textStrong">
             {S.retry}
