@@ -10,7 +10,8 @@ Agent side only; the Desktop half is unchanged from 0.4.4.
 - **Report a problem.** Ask the agent to report a problem with Cloud File Manager and it walks through a short,
   safe check, looks for an existing issue, and drafts a report with the same headings as this repository's bug form.
   It files the issue (or a comment on a matching one) with the GitHub CLI only after you have read the draft and said
-  yes; otherwise it gives you the draft and the form link. Security problems go to the private advisory form instead.
+  yes; otherwise it gives you the draft and the form link. Security problems go to the private advisory form instead,
+  and a problem in Hermes itself to the Hermes issue tracker.
   Hosts without plugin skills load the plugin as before.
 
 ## [0.4.4] - 2026-10-14
