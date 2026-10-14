@@ -1,5 +1,7 @@
 # Security policy
 
+We aim to acknowledge reports within 3 business days and to share a decision or fix plan within 14 days.
+
 ## Reporting a vulnerability
 
 Please report security problems privately through GitHub's
@@ -65,3 +67,5 @@ A way to break any of these is a vulnerability we want to hear about.
   mid-request: swapping folders for symlinks, or deleting and replacing a file name the plugin has just reserved
   for an upload. That person can already read and write the agent's files directly.
 - Anyone who can use the agent seeing the agent's files. That is the intended access model.
+
+- The hosting provider's own storage service.
