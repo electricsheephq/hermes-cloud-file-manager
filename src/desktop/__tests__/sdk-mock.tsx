@@ -1,6 +1,7 @@
 // Test double for Hermes Desktop's '@hermes/plugin-sdk' (aliased in vitest.config.ts).
 // Only what the plugin uses; behaviour mirrors the real SDK where tests depend on it.
 import { createContext, createElement, type ReactNode, useContext, useEffect, useReducer, useRef, useSyncExternalStore } from 'react'
+import type { GatewayEventLike } from '@hermes/plugin-sdk'
 
 type Listener<T> = (value: T) => void
 
@@ -67,6 +68,7 @@ export const COMPOSER_AREAS = { underside: 'composer.underside', attachments: 'c
 interface CacheEntry {
   data?: unknown
   error?: unknown
+  enabled?: boolean
   pending?: Promise<void>
   fn?: () => Promise<unknown>
   listeners: Set<() => void>
@@ -87,6 +89,8 @@ function fetchEntry(entry: CacheEntry): Promise<void> {
       entry.error = error
     }
   )
+  // Observers hear the start too (isFetching turns true), as React Query notifies them.
+  entry.listeners.forEach(fn => fn())
   return entry.pending.finally(() => {
     entry.pending = undefined
     entry.listeners.forEach(fn => fn())
@@ -108,6 +112,7 @@ export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData
   useEffect(() => {
     const entry = entryFor(key)
     entry.listeners.add(force)
+    entry.enabled = enabled
     if (enabled && !('data' in entry) && !entry.error && !entry.pending) void fetchEntry(entry)
     return () => void entry.listeners.delete(force)
   }, [key, enabled])
@@ -126,7 +131,7 @@ export function useQueryClient() {
     getQueryData: <T,>(queryKey: readonly unknown[]) => cache.get(JSON.stringify(queryKey))?.data as T | undefined,
     invalidateQueries: async ({ queryKey }: { queryKey: readonly unknown[] }) => {
       const prefix = JSON.stringify(queryKey).slice(0, -1)
-      await Promise.all([...cache].filter(([key]) => key.startsWith(prefix)).map(([, entry]) => fetchEntry(entry)))
+      await Promise.all([...cache].filter(([key, entry]) => key.startsWith(prefix) && entry.enabled).map(([, entry]) => fetchEntry(entry)))
     }
   }
 }
@@ -172,6 +177,7 @@ export const SelectValue = passthrough('span')
 
 export interface TestContextOptions {
   rest?: (path: string, opts?: any) => Promise<any>
+  onEvent?: boolean
 }
 
 /** A PluginContext double that records live contributions and lets tests drive timers manually. */
@@ -179,12 +185,19 @@ export function createTestContext(options: TestContextOptions = {}) {
   const live = new Map<string, any>()
   const intervals: Array<() => void> = []
   const disposers: Array<() => void> = []
+  const listeners = new Map<string, Set<(event: GatewayEventLike) => void>>()
+  let eventDisposals = 0
   const ctx = {
     register(contribution: any) {
       live.set(contribution.id, contribution)
       return () => live.delete(contribution.id)
     },
     onDispose: (fn: () => void) => disposers.push(fn),
+    onEvent: options.onEvent === false ? undefined : (type: string, listener: (event: GatewayEventLike) => void) => {
+      if (!listeners.has(type)) listeners.set(type, new Set())
+      listeners.get(type)!.add(listener)
+      return () => { listeners.get(type)!.delete(listener); eventDisposals++ }
+    },
     setTimeout: (fn: () => void) => (fn(), () => undefined),
     setInterval: (fn: () => void) => (intervals.push(fn), () => undefined),
     rest: options.rest ?? (async () => ({ ok: true })),
@@ -194,6 +207,9 @@ export function createTestContext(options: TestContextOptions = {}) {
   return {
     ctx,
     live,
+    listeners,
+    eventDisposals: () => eventDisposals,
+    emitEvent: (event: GatewayEventLike) => listeners.get(event.type)?.forEach(listener => listener(event)),
     tickIntervals: () => intervals.forEach(fn => fn()),
     dispose: () => disposers.forEach(fn => fn())
   }
