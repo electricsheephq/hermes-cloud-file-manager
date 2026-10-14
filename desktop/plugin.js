@@ -981,10 +981,16 @@ var crumbStyle = (index, current) => ({
   ...current ? { flex: "0 0 auto", maxWidth: "70%", minWidth: 0 } : { flex: "0 100 auto", minWidth: index === 0 ? "2em" : 0 }
 });
 function useCrumbFocus(trail) {
+  const ref = useRef(null);
   const [focused, setFocused] = useState(null);
-  useEffect(() => setFocused(null), [trail]);
+  useEffect(() => {
+    const active = document.activeElement;
+    const index = ref.current && active instanceof HTMLButtonElement ? [...ref.current.children].findIndex((crumb) => crumb.contains(active)) : -1;
+    setFocused(index >= 0 ? index : null);
+  }, [trail]);
   return {
     focused,
+    ref,
     handlers: (index) => ({ onBlur: () => setFocused((f) => f === index ? null : f), onFocus: () => setFocused(index) })
   };
 }
@@ -1039,7 +1045,7 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
   const parts = folder.split("/").filter(Boolean);
   const crumbs = [{ label: rootLabel, path: "" }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join("/") }))];
   const focus = useCrumbFocus(`${rootLabel}/${folder}/${leaf ?? ""}/${b.query ? "?" : ""}`);
-  return /* @__PURE__ */ jsxs("nav", { "aria-label": S.breadcrumbs, style: crumbNavStyle, children: [
+  return /* @__PURE__ */ jsxs("nav", { "aria-label": S.breadcrumbs, ref: focus.ref, style: crumbNavStyle, children: [
     crumbs.map((crumb, i) => {
       const last = i === crumbs.length - 1;
       return /* @__PURE__ */ jsxs("span", { ...focus.handlers(i), style: crumbStyle(i, last && !leaf || focus.focused === i), children: [
@@ -1320,7 +1326,7 @@ function useDriveBrowser() {
 }
 function DriveCrumbs({ d }) {
   const focus = useCrumbFocus(`${d.trail.map((crumb) => crumb.id).join("/")}/${d.q ? "?" : ""}`);
-  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: crumbNavStyle, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { ...focus.handlers(i), style: crumbStyle(i, i === d.trail.length - 1 || focus.focused === i), children: [
+  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, ref: focus.ref, style: crumbNavStyle, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { ...focus.handlers(i), style: crumbStyle(i, i === d.trail.length - 1 || focus.focused === i), children: [
     i > 0 && /* @__PURE__ */ jsx2(Codicon2, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
     i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.name, children: crumb.name }) : /* @__PURE__ */ jsx2(
       Button2,
