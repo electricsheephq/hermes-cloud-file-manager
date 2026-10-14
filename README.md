@@ -255,6 +255,16 @@ python -m pytest                                           # gateway half (needs
 `desktop/plugin.js` is generated from `src/desktop/` by `npm run build` and committed; CI fails if it is stale,
 if it imports anything but the plugin SDK and React, or if either pinned Hermes Desktop loader would refuse it.
 
+## Troubleshooting and reporting a bug
+
+There is no agent-callable Cloud File Manager diagnostic yet; note the Cloud Files panel error and which file or folder was involved, with private names redacted.
+Desktop's internal `/available` probe reports the plugin ID and version only; do not call gateway or file APIs with credentials to diagnose a problem.
+For recent log excerpts, use `hermes logs gui -n 300 | grep -i hermes-cloud-file-manager` for the agent side (its file API runs in the dashboard server) and `hermes logs desktop -n 300 | grep -i cloud` for the Desktop side; these best-effort filters may return nothing.
+Include the plugin version/source from `hermes plugins list --json`, `hermes --version`, and your Desktop version; remove secrets and private paths.
+From the next release, ask your Hermes agent to "report a problem with Cloud File Manager" to draft a report for your review.
+Use the [bug report form](https://github.com/electricsheephq/hermes-cloud-file-manager/issues/new?template=bug_report.yml) for ordinary bugs.
+Report path escapes, files crossing isolated user/profile boundaries, or exposed secrets through a [private advisory](https://github.com/electricsheephq/hermes-cloud-file-manager/security/advisories/new).
+
 ## License
 
 MIT © Electric Sheep
