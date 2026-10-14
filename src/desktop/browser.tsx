@@ -251,14 +251,21 @@ export const crumbStyle = (index: number, current: boolean): CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden',
   ...(current ? { flex: '0 0 auto', maxWidth: '70%', minWidth: 0 } : { flex: '0 100 auto', minWidth: index === 0 ? '2em' : 0 })
 })
-/** Which crumb holds keyboard focus, for `crumbStyle`: spread `handlers(i)` on each crumb. A crumb activated from the
- *  keyboard turns into the plain current-folder label, and removing a focused Button fires no blur, so a new `trail`
- *  (the path on screen) forgets it: an ancestor never stays sized as if focused. */
+/** Which crumb holds keyboard focus, for `crumbStyle`: put `ref` on the nav and spread `handlers(i)` on each crumb.
+ *  A crumb activated from the keyboard turns into the plain current-folder label, and removing a focused Button fires
+ *  no blur, so whenever `trail` (the path on screen) changes, the focused crumb is read again from the document: an
+ *  ancestor is never left sized as focused, and a crumb that still holds focus keeps its size. */
 export function useCrumbFocus(trail: string) {
+  const ref = useRef<HTMLElement>(null)
   const [focused, setFocused] = useState<number | null>(null)
-  useEffect(() => setFocused(null), [trail])
+  useEffect(() => {
+    const active = document.activeElement
+    const index = ref.current && active instanceof HTMLButtonElement ? [...ref.current.children].findIndex(crumb => crumb.contains(active)) : -1
+    setFocused(index >= 0 ? index : null)
+  }, [trail])
   return {
     focused,
+    ref,
     handlers: (index: number) => ({ onBlur: () => setFocused(f => (f === index ? null : f)), onFocus: () => setFocused(index) })
   }
 }
@@ -355,7 +362,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
   const crumbs = [{ label: rootLabel, path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
   const focus = useCrumbFocus(`${rootLabel}/${folder}/${leaf ?? ''}/${b.query ? '?' : ''}`)
   return (
-    <nav aria-label={S.breadcrumbs} style={crumbNavStyle}>
+    <nav aria-label={S.breadcrumbs} ref={focus.ref} style={crumbNavStyle}>
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (

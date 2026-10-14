@@ -160,6 +160,23 @@ describe('breadcrumbs in a narrow pane', () => {
     expect(current.style.flex).toBe('0 0 auto')
   })
 
+  it('a crumb that keeps focus while a search settles keeps its size', async () => {
+    page()
+    await flush()
+    fireEvent.keyDown(option('docs'), { key: 'Enter' })
+    await flush()
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'a' } })
+    const home = screen.getByRole('button', { name: 'Home' })
+    focus(home)
+    expect(home.parentElement!.style.flex).toBe('0 0 auto')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
+    await flush()
+    // The search has settled: the current folder is now a crumb Button back out of the results.
+    expect(screen.getByRole('button', { name: 'docs' })).toBeTruthy()
+    expect(document.activeElement).toBe(home)
+    expect(home.parentElement!.style.flex).toBe('0 0 auto')
+  })
+
   it('Drive crumbs follow the same rules', async () => {
     page()
     await openDrive()
@@ -174,5 +191,22 @@ describe('breadcrumbs in a narrow pane', () => {
     expect(current.style.flex).toBe('0 0 auto')
     expect(current.style.maxWidth).toBe('70%')
     expect(current.querySelector('[title="Projects"]')).toBeTruthy()
+  })
+
+  it('a Drive crumb that keeps focus while a search settles keeps its size', async () => {
+    page()
+    await openDrive()
+    fireEvent.keyDown(item('Projects'), { key: 'Enter' })
+    await flush()
+    fireEvent.change(screen.getByLabelText('Search Google Drive'), { target: { value: 'a' } })
+    const drive = screen.getAllByRole('navigation').find(nav => nav.textContent?.includes('Projects'))!
+    const rootButton = [...drive.querySelectorAll('button')].find(button => button.title)!
+    focus(rootButton)
+    expect(rootButton.parentElement!.style.flex).toBe('0 0 auto')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
+    await flush()
+    expect(screen.getByRole('button', { name: 'Projects' })).toBeTruthy()
+    expect(document.activeElement).toBe(rootButton)
+    expect(rootButton.parentElement!.style.flex).toBe('0 0 auto')
   })
 })

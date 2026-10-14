@@ -55,7 +55,7 @@ export type DriveBrowser = ReturnType<typeof useDriveBrowser>
 export function DriveCrumbs({ d }: { d: DriveBrowser }) {
   const focus = useCrumbFocus(`${d.trail.map(crumb => crumb.id).join('/')}/${d.q ? '?' : ''}`)
   return (
-    <nav aria-label={S.breadcrumbs} style={crumbNavStyle}>
+    <nav aria-label={S.breadcrumbs} ref={focus.ref} style={crumbNavStyle}>
       {d.trail.map((crumb, i) => (
         <span key={`${i}:${crumb.id}`} {...focus.handlers(i)} style={crumbStyle(i, i === d.trail.length - 1 || focus.focused === i)}>
           {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
