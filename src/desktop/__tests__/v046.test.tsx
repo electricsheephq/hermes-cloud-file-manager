@@ -89,6 +89,8 @@ describe('breadcrumbs in a narrow pane', () => {
     fireEvent.keyDown(option('docs'), { key: 'Enter' })
     await flush()
     const nav = screen.getByRole('navigation')
+    // A real basis: the wrapping toolbar moves its tools to the next line rather than squeezing the path.
+    expect(nav.style.flex).toBe('1 1 160px')
     const home = screen.getByRole('button', { name: 'Home' })
     expect(home.title).toBe('Home')
     expect(home.style.flexShrink).toBe('1')
@@ -123,6 +125,7 @@ describe('breadcrumbs in a narrow pane', () => {
     fireEvent.keyDown(item('Projects'), { key: 'Enter' })
     await flush()
     const drive = screen.getAllByRole('navigation').find(nav => nav.textContent?.includes('Projects'))!
+    expect(drive.style.flex).toBe('1 1 160px')
     const rootButton = [...drive.querySelectorAll('button')].find(button => button.title)!
     expect(rootButton.style.flexShrink).toBe('1')
     const [root, current] = [...drive.children] as HTMLElement[]

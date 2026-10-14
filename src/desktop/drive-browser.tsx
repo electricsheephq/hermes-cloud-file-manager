@@ -5,7 +5,7 @@ import { Button, Checkbox, Codicon, EmptyState, Skeleton, useQuery } from '@herm
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
 
 import { call, query } from './api'
-import { chevronStyle, crumbButtonStyle, crumbLabelStyle, crumbStyle, DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useCrumbFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
+import { chevronStyle, crumbButtonStyle, crumbLabelStyle, crumbNavStyle, crumbStyle, DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useCrumbFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
 import { type DriveImport, driveIcon, type DriveItem, type DriveListResponse, type ImportFailure, type ImportSnapshot } from './drive'
 import { humanSize, shortDate } from './format'
 import { S } from './strings'
@@ -55,7 +55,7 @@ export type DriveBrowser = ReturnType<typeof useDriveBrowser>
 export function DriveCrumbs({ d }: { d: DriveBrowser }) {
   const focus = useCrumbFocus()
   return (
-    <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
+    <nav aria-label={S.breadcrumbs} style={crumbNavStyle}>
       {d.trail.map((crumb, i) => (
         <span key={`${i}:${crumb.id}`} {...focus.handlers(i)} style={crumbStyle(i, i === d.trail.length - 1 || focus.focused === i)}>
           {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}

@@ -263,6 +263,9 @@ export function useCrumbFocus() {
     handlers: (index: number) => ({ onBlur: () => setFocused(f => (f === index ? null : f)), onFocus: () => setFocused(index) })
   }
 }
+/** The path's own share of a toolbar row: a 160 px basis, so a wrapping toolbar moves its tools to the next line in a
+ *  narrow pane instead of squeezing the path to a few pixels (with a 0 basis it never forced a wrap). */
+export const crumbNavStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: '1 1 160px', fontSize: 12, ...ellipsis }
 export const crumbButtonStyle: CSSProperties = { flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }
 export const crumbLabelStyle: CSSProperties = { ...ellipsis, minWidth: 0 }
 export const chevronStyle: CSSProperties = { ...muted, flexShrink: 0 }
@@ -353,7 +356,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
   const crumbs = [{ label: rootLabel, path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
   const focus = useCrumbFocus()
   return (
-    <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
+    <nav aria-label={S.breadcrumbs} style={crumbNavStyle}>
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (
