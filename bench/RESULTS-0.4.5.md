@@ -10,18 +10,18 @@ Between v0.3.5 and v0.4.5, `dashboard/plugin_api.py` gained only the read-only `
 |---|---:|---:|---|
 | list 1000 first page (0,500), cold | 10.14 | 10.06 | yes |
 | list 1000 page (2000,500), cold | 6.38 | 6.41 | yes |
-| list 1000 desktop Load more x4 | 16.52 | 16.44 | yes |
+| list 1000 Load more x4 | 16.52 | 16.44 | yes |
 | list 5000 first page (0,500), cold | 31.81 | 31.46 | yes |
 | list 5000 page (2000,500), cold | 31.3 | 31.3 | yes |
-| list 5000 desktop Load more x4 | 49.08 | 48.54 | yes |
+| list 5000 Load more x4 | 49.08 | 48.54 | yes |
 | list 20000 first page (0,500), cold | 112.61 | 113.17 | yes |
 | list 20000 page (2000,500), cold | 142.45 | 138.07 | yes |
-| list 20000 desktop Load more x4 | 159.63 | 160.75 | yes |
+| list 20000 Load more x4 | 159.63 | 160.75 | yes |
 | list 25000 first page (0,500), cold | 140.14 | 140.27 | yes |
 | list 25000 page (2000,500), cold | 140.92 | 144.42 | yes |
-| list 25000 desktop Load more x4 | 161.8 | 164.8 | yes |
+| list 25000 Load more x4 | 161.8 | 164.8 | yes |
 
-No change: every median is within 3%, and every response is identical.
+No change: every median is within 3.1%, and every response is identical. The "Load more x4" rows time the harness's fixed five-request sequence; Desktop stops asking once it has the whole folder, so for 1,000 entries it sends only the first two.
 
 ## Full run at v0.4.5
 
@@ -72,7 +72,7 @@ No change: every median is within 3%, and every response is identical.
 
 What it shows:
 - **Folders.** A first visit to a 20,000-entry folder costs about 140 ms on the gateway. Revisits and Load more within 5 s cost about 5 ms.
-- **Search.** Searches that reach the 200-result limit stay under 75 ms, even across 500,000 files. A search with no match walks the whole tree: 1.2 s at 500,000 files.
+- **Search.** Searches that reach the 200-result limit have medians under 75 ms, even across 500,000 files. A search with no match walks the whole tree: 1.2 s at 500,000 files.
 - **Uploads.** They run at about 350 MiB/s over loopback. A 100 MiB upload grows server memory by about 23 MiB.
 
 Not covered here:
