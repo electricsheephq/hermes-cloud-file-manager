@@ -106,7 +106,7 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     if (!(event.key in step) || event.altKey) return
     event.preventDefault()
     const next = Math.max(0, Math.min(items.length - 1, items.indexOf(item) + step[event.key]))
-    const row = ref.current?.querySelectorAll<HTMLElement>('[role=listitem]')[next]
+    const row = ref.current?.querySelectorAll<HTMLElement>('[role=option]')[next]
     row?.focus()
     row?.scrollIntoView?.({ block: 'nearest' })
   }
@@ -126,7 +126,9 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     body = <EmptyState title={d.q ? S.noResults : S.driveEmpty} />
   } else {
     body = (
-      <div role="list">
+      // A listbox of options, like the Cloud list: Hermes Desktop leaves Enter and Space on an option to the row, but sends
+      // them to a visible chat's message box from anything it doesn't know handles them (a listitem did that, 0.4.5).
+      <div aria-label={d.q ? S.searchResults : S.filesIn(d.trail[d.trail.length - 1].name)} aria-multiselectable="true" role="listbox">
         {items.map(item => (
           <DriveRow d={d} item={item} key={item.id} onFocus={() => setLastFocused(item.id)} onNavKey={navKey} sized={sized} tabStop={item.id === tabStop} />
         ))}
@@ -135,7 +137,7 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     )
   }
   return (
-    <div data-hcfm-list="" ref={ref} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
+    <div ref={ref} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
     </div>
   )
@@ -171,7 +173,7 @@ function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }: {
       onMouseLeave={() => setHover(false)}
       {...focus.handlers}
       onFocus={() => (focus.handlers.onFocus(), onFocus())}
-      role="listitem"
+      role="option"
       style={{
         display: 'grid',
         gridTemplateColumns: `16px 16px minmax(0, 1fr)${sized ? ' 72px' : ''} 96px`,

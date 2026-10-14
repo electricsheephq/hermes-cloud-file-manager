@@ -1,4 +1,4 @@
-// v0.4.6: keyboard focus waits on the list while a folder loads, and breadcrumbs shrink without overlapping.
+// v0.4.6: Drive rows keep Enter and Space beside a chat, focus lands after a slow folder load, and breadcrumbs fit a narrow pane.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 import { createTestContext, resetHost, resetQueryCache } from './sdk-mock'
@@ -12,8 +12,22 @@ import { closePicker } from '../picker'
 const flush = async () => { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve() }) }
 const focus = (element: HTMLElement) => act(() => element.focus())
 const option = (name: string) => screen.getByText(name).closest('[role=option]') as HTMLElement
-const item = (name: string) => screen.getByText(name).closest('[role=listitem]') as HTMLElement
-const list = () => document.activeElement?.hasAttribute('data-hcfm-list') ?? false
+const item = (name: string) => screen.getByText(name).closest('[role=option][data-entry]') as HTMLElement
+
+/** Hermes Desktop's soft keys (lib/keybinds/composer-focus-keys.ts, a capture-phase window listener): Enter or Space
+ *  on anything it doesn't know handles them moves focus to a visible chat's message box. An excerpt of its list. */
+const HOST_HANDLES_ENTER = 'a[href],button,input,textarea,select,[role="button"],[role="checkbox"],[role="option"],[role="tab"],[role="treeitem"]'
+function hostComposer() {
+  const composer = document.createElement('textarea')
+  composer.setAttribute('aria-label', 'Message')
+  document.body.append(composer)
+  const soft = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement
+    if ((event.key === 'Enter' || event.key === ' ') && target !== document.body && !target.closest(HOST_HANDLES_ENTER)) setTimeout(() => composer.focus(), 0)
+  }
+  window.addEventListener('keydown', soft, { capture: true })
+  return { composer, dispose: () => { window.removeEventListener('keydown', soft, { capture: true }); composer.remove() } }
+}
 
 /** The page over the fake backend; requests matching `slow` wait until `release()`. */
 function page(slow: (path: string) => boolean = () => false) {
@@ -41,33 +55,44 @@ beforeEach(() => {
 afterEach(() => { act(closePicker); cleanup(); vi.restoreAllMocks() })
 
 describe('keyboard focus while a folder loads', () => {
-  it('Drive: Enter on a folder keeps focus on the list until it loads, then focuses the first row', async () => {
-    const backend = page(path => path.startsWith('/drive/list') && path.includes('folder=fold1'))
-    await openDrive()
-    focus(item('Projects'))
-    fireEvent.keyDown(item('Projects'), { key: 'Enter' })
-    await flush()
-    expect(screen.queryByText('Budget')).toBeNull()
-    expect(list()).toBe(true)
-    backend.release()
-    await flush()
-    expect(document.activeElement).toBe(item('Budget'))
+  it('Drive rows are options in a listbox, so a visible chat never takes their Enter or Space', async () => {
+    const host = hostComposer()
+    try {
+      const backend = page(path => path.startsWith('/drive/list') && path.includes('folder=fold1'))
+      await openDrive()
+      const box = item('Projects').closest('[role=listbox]') as HTMLElement
+      expect(box.getAttribute('aria-multiselectable')).toBe('true')
+      expect(box.getAttribute('aria-label')).toBe('Files in Google Drive')
+      focus(item('Plan'))
+      fireEvent.keyDown(item('Plan'), { key: ' ' })
+      await flush()
+      expect(item('Plan').getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(item('Plan'))
+      focus(item('Projects'))
+      fireEvent.keyDown(item('Projects'), { key: 'Enter' })
+      await flush()
+      expect(document.activeElement).not.toBe(host.composer)
+      backend.release()
+      await flush()
+      expect(document.activeElement).toBe(item('Budget'))
+    } finally {
+      host.dispose()
+    }
   })
 
-  it('Cloud: Enter on a folder keeps focus on the list until it loads, then focuses the first row', async () => {
+  it('Cloud: Enter on a folder that loads slowly still focuses its first row', async () => {
     const backend = page(path => path.startsWith('/list') && path.includes('path=docs'))
     await flush()
     focus(option('docs'))
     fireEvent.keyDown(option('docs'), { key: 'Enter' })
     await flush()
     expect(screen.queryByText('a.pdf')).toBeNull()
-    expect(list()).toBe(true)
     backend.release()
     await flush()
     expect(document.activeElement).toBe(option('a.pdf'))
   })
 
-  it('a breadcrumb opened from the keyboard leaves focus alone until the folder loads', async () => {
+  it('a breadcrumb opened from the keyboard focuses the folder\'s first row', async () => {
     page()
     await flush()
     focus(option('docs'))
@@ -76,7 +101,6 @@ describe('keyboard focus while a folder loads', () => {
     const crumb = screen.getByRole('button', { name: 'Home' })
     focus(crumb)
     fireEvent.click(crumb, { detail: 0 })
-    expect(list()).toBe(false)
     await flush()
     expect(document.activeElement).toBe(option('docs'))
   })

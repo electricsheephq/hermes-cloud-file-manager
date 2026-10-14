@@ -13,7 +13,7 @@ import { closePicker, cloudProvider, driveProvider, PickerHost } from '../picker
 const flush = async () => { for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve() }) }
 const advance = async (ms: number) => { await act(async () => { vi.advanceTimersByTime(ms) }); await flush() }
 const event = (extra = {}) => ({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1', payload: { name: 'write_file' }, ...extra })
-const row = (name: string) => screen.getByText(name).closest('[role=listitem]') as HTMLElement
+const row = (name: string) => screen.getByText(name).closest('[role=option]') as HTMLElement
 const focus = (element: HTMLElement) => act(() => element.focus())
 function page(onEvent = true, overrides: Parameters<typeof fakeBackend>[0] = {}) {
   const backend = fakeBackend(overrides)
@@ -260,7 +260,7 @@ describe('Cloud live refresh', () => {
 describe('Drive keyboard parity', () => {
   it('has one row tab stop, preferring last focus then selection; checkboxes are mouse-only', async () => {
     await drivePage()
-    const rows = screen.getAllByRole('listitem')
+    const rows = screen.getAllByRole('option').filter(el => el.hasAttribute('data-entry'))
     expect(rows.map(el => el.tabIndex)).toEqual([0, -1, -1])
     for (const checkbox of screen.getAllByRole('checkbox', { hidden: true })) {
       expect(checkbox.tabIndex).toBe(-1)
@@ -274,7 +274,7 @@ describe('Drive keyboard parity', () => {
 
   it('moves focus with arrows, pages and Home/End, clamps and scrolls without Shift selection', async () => {
     await drivePage()
-    const rows = screen.getAllByRole('listitem')
+    const rows = screen.getAllByRole('option').filter(el => el.hasAttribute('data-entry'))
     const scroll = vi.fn()
     rows.forEach(el => { el.scrollIntoView = scroll })
     focus(rows[0])
@@ -343,7 +343,7 @@ describe('Drive keyboard parity', () => {
     render(<PickerHost />)
     act(() => void driveProvider.run({ insertText: vi.fn() }))
     await flush()
-    const rows = within(screen.getByRole('dialog')).getAllByRole('listitem')
+    const rows = within(screen.getByRole('dialog')).getAllByRole('option').filter(el => el.hasAttribute('data-entry'))
     expect(rows.map(el => el.tabIndex)).toEqual([0, -1, -1])
     focus(rows[0])
     fireEvent.keyDown(rows[0], { key: 'ArrowDown' })

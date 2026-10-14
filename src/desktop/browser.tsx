@@ -39,13 +39,9 @@ export const SETTINGS_PATH = '/settings?tab=plugins&agent=hermes-cloud-file-mana
  *  `true`) the first row, else the list itself. Set by keyboard navigation and by closing the editor. */
 export type FocusRequest = MutableRefObject<null | { at: string; want: true | string; from: Element | null }>
 
-/** Asks for focus to move into folder `at`'s list once it has loaded, remembering where focus is now. Asked from a
- *  row, focus waits on the list itself meanwhile: the row is about to unmount, and focus that falls to the page body
- *  while a slow listing loads was lost in the real app (a Drive folder opened with Enter, 0.4.5). */
+/** Asks for focus to move into folder `at`'s list once it has loaded, remembering where focus is now. */
 export function requestFocus(request: FocusRequest, at: string, want: true | string = true) {
-  const from = document.activeElement
-  request.current = { at, want, from }
-  from?.closest<HTMLElement>('[data-hcfm-list]')?.focus({ preventScroll: true })
+  request.current = { at, want, from: document.activeElement }
 }
 
 /** The ref for a list's scroller: after a focus request for `at`, the folder on screen, moves focus into the list
@@ -570,7 +566,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   // A plain scroller, not ScrollArea: Radix's viewport lays children out as a table, which defeats the
   // rows' text-overflow ellipsis on long names.
   return (
-    <div data-hcfm-list="" ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
+    <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       <div aria-live="polite" style={hidden}>{announce}</div>
     </div>
