@@ -5,7 +5,7 @@ import { Button, Checkbox, Codicon, EmptyState, Skeleton, useQuery } from '@herm
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
 
 import { call, query } from './api'
-import { DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
+import { chevronStyle, crumbButtonStyle, crumbLabelStyle, crumbStyle, DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
 import { type DriveImport, driveIcon, type DriveItem, type DriveListResponse, type ImportFailure, type ImportSnapshot } from './drive'
 import { humanSize, shortDate } from './format'
 import { S } from './strings'
@@ -56,10 +56,10 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
   return (
     <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
       {d.trail.map((crumb, i) => (
-        <span key={`${i}:${crumb.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-          {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={muted} />}
+        <span key={`${i}:${crumb.id}`} style={crumbStyle(i === d.trail.length - 1)}>
+          {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
           {i === d.trail.length - 1 && !d.q ? (
-            <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.name}</span>
+            <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.name}>{crumb.name}</span>
           ) : (
             <Button
               onClick={(event?: MouseEvent) => {
@@ -67,9 +67,11 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
                 d.crumb(i)
               }}
               size="inline"
+              style={crumbButtonStyle}
+              title={crumb.name}
               variant="text"
             >
-              {crumb.name}
+              <span style={crumbLabelStyle}>{crumb.name}</span>
             </Button>
           )}
         </span>
@@ -132,7 +134,7 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     )
   }
   return (
-    <div ref={ref} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
+    <div data-hcfm-list="" ref={ref} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
     </div>
   )

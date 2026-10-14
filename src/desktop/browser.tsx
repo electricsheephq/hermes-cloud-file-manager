@@ -39,9 +39,13 @@ export const SETTINGS_PATH = '/settings?tab=plugins&agent=hermes-cloud-file-mana
  *  `true`) the first row, else the list itself. Set by keyboard navigation and by closing the editor. */
 export type FocusRequest = MutableRefObject<null | { at: string; want: true | string; from: Element | null }>
 
-/** Asks for focus to move into folder `at`'s list once it has loaded, remembering where focus is now. */
+/** Asks for focus to move into folder `at`'s list once it has loaded, remembering where focus is now. Asked from a
+ *  row, focus waits on the list itself meanwhile: the row is about to unmount, and focus that falls to the page body
+ *  while a slow listing loads was lost in the real app (a Drive folder opened with Enter, 0.4.5). */
 export function requestFocus(request: FocusRequest, at: string, want: true | string = true) {
-  request.current = { at, want, from: document.activeElement }
+  const from = document.activeElement
+  request.current = { at, want, from }
+  from?.closest<HTMLElement>('[data-hcfm-list]')?.focus({ preventScroll: true })
 }
 
 /** The ref for a list's scroller: after a focus request for `at`, the folder on screen, moves focus into the list
@@ -241,6 +245,14 @@ export type Browser = ReturnType<typeof useBrowser>
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 const hidden: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+/** Crumbs share a narrow pane. Folders above the current one shrink first, each down to a sliver with an ellipsis,
+ *  and no crumb draws over the next: the host Button never shrinks by default (`shrink-0`), so its style overrides
+ *  that and the label ellipsizes inside it. `title` keeps the full name on hover. */
+export const crumbStyle = (last: boolean): CSSProperties =>
+  ({ display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden', minWidth: last ? 0 : '2em', flex: last ? '0 1 auto' : '0 100 auto' })
+export const crumbButtonStyle: CSSProperties = { flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }
+export const crumbLabelStyle: CSSProperties = { ...ellipsis, minWidth: 0 }
+export const chevronStyle: CSSProperties = { ...muted, flexShrink: 0 }
 
 /** A failed load. A 404 on our own route means the agent's gateway half is missing, disabled or older than
  *  this Desktop half: say so plainly and keep the raw error as a small details line. */
@@ -331,10 +343,10 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (
-          <span key={crumb.path || '/'} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-            {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={muted} />}
+          <span key={crumb.path || '/'} style={crumbStyle(last && !leaf)}>
+            {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
             {last && !b.query && !leaf ? (
-              <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.label}</span>
+              <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.label}>{crumb.label}</span>
             ) : (
               <Button
                 onClick={(event?: MouseEvent) => {
@@ -342,18 +354,20 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
                   onNavigate(crumb.path)
                 }}
                 size="inline"
+                style={crumbButtonStyle}
+                title={crumb.label}
                 variant="text"
               >
-                {crumb.label}
+                <span style={crumbLabelStyle}>{crumb.label}</span>
               </Button>
             )}
           </span>
         )
       })}
       {leaf && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-          <Codicon name="chevron-right" size="0.75rem" style={muted} />
-          <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{leaf}</span>
+        <span style={crumbStyle(true)}>
+          <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />
+          <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={leaf}>{leaf}</span>
         </span>
       )}
     </nav>
@@ -539,7 +553,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   // A plain scroller, not ScrollArea: Radix's viewport lays children out as a table, which defeats the
   // rows' text-overflow ellipsis on long names.
   return (
-    <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
+    <div data-hcfm-list="" ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       <div aria-live="polite" style={hidden}>{announce}</div>
     </div>
