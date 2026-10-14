@@ -5,6 +5,7 @@ import { Button, Codicon, host, Skeleton, useValue } from '@hermes/plugin-sdk'
 import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 
 import { ApiError, call, isNotFoundError, query } from './api'
+import { AddToChat } from './chat'
 import { captureFor } from './download'
 import { copy, type Doc, isCurrent, nextId, type SetDoc } from './editor'
 import { humanSize, parseDelimited, type PreviewKind } from './format'
@@ -65,7 +66,7 @@ function load(doc: Doc, setDoc: SetDoc) {
           : { kind: res.kind, blob: toBlob(res.data ?? '', res.mime ?? ''), size: res.size }
       setDoc(d => (d?.id === id ? { ...d, status: 'ready', save, preview } : d))
     },
-    error => setDoc(d => (d?.id === id ? { ...d, status: 'error', error: previewText(error, doc.pin.profile), save } : d))
+    error => setDoc(d => (d?.id === id ? { ...d, status: 'error', error: previewText(error, doc.pin.profile), retryPreview: !(error instanceof ApiError) && !isNotFoundError(error), save } : d))
   )
 }
 
@@ -120,7 +121,17 @@ export function Preview({ doc, setDoc, onClose }: { doc: Doc; setDoc: SetDoc; on
         </div>
       )
   } else if (doc.status === 'error') {
-    body = <p style={{ ...muted, fontSize: 13, padding: '12px 20px' }}>{doc.error}</p>
+    body = (
+      <div style={{ ...muted, fontSize: 13, padding: '12px 20px', display: 'grid', gap: 8, justifyItems: 'start' }}>
+        <p style={{ margin: 0 }}>{doc.error}</p>
+        {/* Only a transport failure may pass on a second try; a refusal or an older agent side answers the same. */}
+        {doc.retryPreview && (
+          <Button disabled={!here} onClick={() => load(doc, setDoc)} size="sm" variant="secondary">
+            {S.retry}
+          </Button>
+        )}
+      </div>
+    )
   } else if (doc.preview?.kind === 'image') {
     body = (
       <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 20px 20px' }}>
@@ -176,6 +187,7 @@ export function Preview({ doc, setDoc, onClose }: { doc: Doc; setDoc: SetDoc; on
           <span style={{ ...muted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.abs}</span>
         </span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+          <AddToChat entries={() => [{ abs: doc.abs, is_dir: false }]} pin={doc.pin} />
           {doc.status === 'ready' && table?.rows.length ? (
             <Button onClick={() => setTextOf(asTable ? doc.id : -1)} size="sm" variant="ghost">
               {asTable ? S.showAsText : S.showAsTable}

@@ -19,6 +19,7 @@ import {
 import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, isNotFoundError, pluginCtx, query, type Root } from './api'
+import { AddToChat } from './chat'
 import { type LineDiff, lineDiff } from './diff'
 import { captureFor, type SaveFile } from './download'
 import { isMarkdown, type PreviewKind, previewKind } from './format'
@@ -38,6 +39,7 @@ export interface Doc {
   name: string
   status: 'loading' | 'error' | 'ready'
   error?: string
+  retryPreview?: boolean
   /** The opened version, BOM stripped and CRLF turned into LF; `sha` is the server's hash of its raw bytes. */
   base: string
   sha: string
@@ -392,6 +394,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
           </span>
         )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+          <AddToChat entries={() => [{ abs: doc.abs, is_dir: false }]} pin={doc.pin} />
           {editing ? (
             <>
               <Button aria-pressed={changes} onClick={() => setChanges(!changes)} size="sm" variant={changes ? 'secondary' : 'ghost'}>

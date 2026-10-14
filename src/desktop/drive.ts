@@ -5,7 +5,7 @@ import { atom } from '@hermes/plugin-sdk'
 
 import type { Entry } from './api'
 import { codeText } from './strings'
-import { type AgentPin, transportText, type UploadDeps } from './upload'
+import { type AgentPin, type Destination, transportText, type UploadDeps } from './upload'
 
 export const DRIVE_DEST = 'uploads/drive'
 /** The gateway allows 300 s for the download; leave room for the copy into the root. */
@@ -56,6 +56,7 @@ export interface ImportFailure {
 
 export interface ImportSnapshot {
   pin: AgentPin
+  dest: Destination
   total: number
   settled: number
   imported: Entry[]
@@ -81,9 +82,10 @@ export class DriveImport {
     private readonly items: readonly DriveItem[],
     private readonly root: string,
     pin: AgentPin,
-    private readonly deps: Pick<UploadDeps, 'rest' | 'state'> & { hold?: ImportHold }
+    private readonly deps: Pick<UploadDeps, 'rest' | 'state'> & { hold?: ImportHold },
+    private readonly folder: string = DRIVE_DEST
   ) {
-    this.snapshot = { pin, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false }
+    this.snapshot = { pin: { ...pin }, dest: { root, folder }, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false }
   }
 
   getSnapshot = (): ImportSnapshot => this.snapshot
@@ -121,7 +123,7 @@ export class DriveImport {
         this.set({ paused: false })
         let failure: null | string = null
         try {
-          const body = { id: item.id, root: this.root, dest: DRIVE_DEST }
+          const body = { id: item.id, root: this.root, dest: this.folder }
           const res = await rest<ImportReply>('/drive/import', { method: 'POST', body, timeoutMs: IMPORT_TIMEOUT_MS })
           if (res?.ok && res.entry) this.set({ imported: [...this.snapshot.imported, res.entry] })
           else failure = codeText(res?.code, res?.message)
