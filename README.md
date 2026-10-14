@@ -15,6 +15,9 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 - **Open and edit** Markdown and text files: view first, edit on purpose, review the changes, then save.
   Nothing is saved until you choose Save.
 - **Preview** images, PDFs, and code and data files (JSON, YAML, CSV as a table, logs, source code), read-only.
+- **Drag files into the chat** from the Cloud Files page, like Hermes's own Files tree: each becomes a file
+  reference for the agent. Right-click **Cloud Files** in the sidebar and choose **Open in split** to keep it beside
+  the chat.
 - **Cloud** in the chat **+** menu: pick files already on the agent's machine and drop their locations into your
   message. Nothing is uploaded again and nothing is copied into the chat; the agent opens the files where they
   are with its own tools.
@@ -102,6 +105,12 @@ installing the desktop half is harmless for your other agents.
   file (JSON, YAML, TOML, CSV/TSV, logs, XML, HTML, CSS and most source languages), or select it and choose **Open**.
   It opens read-only, with **Copy path** and **Download**. CSV and TSV files show as a table; **Show as text** shows
   the raw file. HTML and SVG are never run: HTML shows as text and SVG as an image.
+
+- **Drag into the chat:** drag a file or folder row (or a selection) from the Cloud Files page into a chat. It
+  becomes the same `@file:` / `@folder:` reference that Hermes's own Files tree makes. Hermes includes the contents
+  of a file in the agent's working folder in your message; a file elsewhere is passed by its location, with a note
+  that it is outside the working folder. Cloud Files refuses the drag when the chat in focus belongs to a
+  different agent than the files. The **+ → Cloud** picker still inserts locations only, exactly as before.
 
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
 

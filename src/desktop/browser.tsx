@@ -20,7 +20,7 @@ import {
   useQueryClient,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
@@ -348,7 +348,13 @@ async function listUpTo([connectionId, profile]: [string, string], root: string,
 
 /** The scrolling list: folder listing, or search results while a query is active. With `onOpenFile`, opening
  *  an editable or previewable file (double-click / Enter) hands it to the page; other files stay inert. */
-export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: number; onOpenFile?: (entry: Entry) => void }) {
+export function EntryList({ b, height, onOpenFile, dragOut }: {
+  b: Browser
+  height?: number
+  onOpenFile?: (entry: Entry) => void
+  /** Page only: checks the listing's scope against the live host before a drag can carry paths. */
+  dragOut?: (event: DragEvent, scope: [string, string]) => boolean
+}) {
   const [connectionId, profile] = useScope()
   const rootId = b.root?.id ?? ''
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
@@ -426,6 +432,19 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
     b.navigate(entry.rel)
   }
 
+  const startDrag = (entry: Entry, event: DragEvent) => {
+    if (!dragOut?.(event, [connectionId, profile])) return
+    // Selected rows a search hides still count, as they do for the toolbar: shown order first, then the rest.
+    const shown = new Set(entries.map(e => e.abs))
+    const picked = (b.selected.has(entry.abs)
+      ? [...entries.filter(e => b.selected.has(e.abs)), ...[...b.selected.values()].filter(e => !shown.has(e.abs))]
+      : [entry]).filter(e => !e.link_outside)
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/x-hermes-paths', JSON.stringify(picked.map(e => ({ isDirectory: e.is_dir, path: e.abs }))))
+    // The host's HTML5Backend requires a native type to let dragstart proceed.
+    event.dataTransfer.setData('text/plain', picked.map(e => e.abs).join('\n'))
+  }
+
   let body: ReactNode
   if (active.error) {
     body = <LoadError error={active.error} onRetry={() => void active.refetch()} />
@@ -444,7 +463,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
       <>
         <div aria-label={searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || '')} aria-multiselectable="true" role="listbox">
           {entries.map(entry => (
-            <EntryRow b={b} entry={entry} key={entry.abs} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
+            <EntryRow b={b} entry={entry} key={entry.abs} onDragStart={dragOut && !entry.link_outside ? event => startDrag(entry, event) : undefined} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
           ))}
         </div>
         {searching ? truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div> :
@@ -468,7 +487,7 @@ export function EntryList({ b, height, onOpenFile }: { b: Browser; height?: numb
   )
 }
 
-function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
+function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }: {
   b: Browser
   entry: Entry
   onOpen: (entry: Entry) => void
@@ -476,6 +495,7 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
   tabStop: boolean
   onFocus: () => void
   onNavKey: (entry: Entry, event: KeyboardEvent) => void
+  onDragStart?: (event: DragEvent) => void
 }) {
   const [hover, setHover] = useState(false)
   const focus = useRowFocus()
@@ -491,8 +511,10 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey }: {
     <div
       aria-selected={checked}
       data-entry={entry.rel}
+      draggable={onDragStart ? true : undefined}
       onClick={click}
       onDoubleClick={() => onOpen(entry)}
+      onDragStart={onDragStart}
       onKeyDown={event => {
         // Only keys aimed at the row itself: Space on the nested checkbox is the checkbox's own toggle.
         if (event.target !== event.currentTarget) return

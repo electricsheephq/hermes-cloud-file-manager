@@ -1,9 +1,9 @@
 {
   "name": "hermes-cloud-file-manager",
   "label": "Cloud Files",
-  "description": "Browse, search, upload, preview, download and edit files on the machine your agent runs on.",
+  "description": "Browse, search, upload, preview, download and edit files on the machine your agent runs on, and drag them into the chat.",
   "icon": "Cloud",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "tab": { "path": "/cloud-files", "hidden": true },
   "entry": "dist/index.js",
   "api": "plugin_api.py"
