@@ -206,7 +206,7 @@ describe('excluded surfaces and upload drops', () => {
     await screen.findByText('notes.txt')
     fireEvent.click(screen.getAllByRole('option').find(el => el.textContent === 'Google Drive')!)
     await screen.findByText('Plan')
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.getAllByRole('option').filter(row => row.hasAttribute('data-entry'))).toHaveLength(3)
     expect(view.container.querySelector('[draggable="true"]')).toBeNull()
   })
 
@@ -217,7 +217,7 @@ describe('excluded surfaces and upload drops', () => {
     act(() => void driveProvider.run({ insertText: vi.fn() }))
     const dialog = await screen.findByRole('dialog')
     await within(dialog).findByText('Plan')
-    expect(within(dialog).getAllByRole('listitem')).toHaveLength(3)
+    expect(within(dialog).getAllByRole('option').filter(row => row.hasAttribute('data-entry'))).toHaveLength(3)
     expect(dialog.querySelector('[draggable="true"]')).toBeNull()
   })
 

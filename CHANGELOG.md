@@ -2,6 +2,23 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.6] - 2026-10-15
+
+Desktop half only; the agent's side is unchanged from 0.4.5 apart from the version.
+
+### Fixed
+- **Breadcrumbs in a narrow pane.** With Cloud Files open beside a chat, the folder path was squeezed to a few
+  pixels and its names drew on top of each other. Now the toolbar's buttons move to a second line when the pane is
+  narrow, the current folder keeps most of the path's width, the folders above it shrink first, and a shortened name
+  shows in full on hover. The Google Drive path works the same way.
+- **Google Drive keys beside a chat.** With a chat open next to Cloud Files, Enter (open a folder) and Space
+  (select a file) on a Google Drive row no longer move keyboard focus to the chat's message box. Opening a folder
+  lands on its first row, as in the Cloud list.
+
+### Documentation
+- The README says to answer No if the installer offers to install Node dependencies: `package.json` holds only
+  build and test tools.
+
 ## [0.4.5] - 2026-10-15
 
 Agent side only; the Desktop half is unchanged from 0.4.4.

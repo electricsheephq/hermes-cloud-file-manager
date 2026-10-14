@@ -241,6 +241,40 @@ export type Browser = ReturnType<typeof useBrowser>
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 const hidden: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+/** Crumbs share a narrow pane without drawing over each other: the host Button never shrinks by default
+ *  (`shrink-0`), so its style overrides that and the label ellipsizes inside it. The current folder keeps up to 70%
+ *  of the width; the folders above it shrink first, the root down to a sliver with an ellipsis, the ones between down
+ *  to nothing, which keeps the current folder in sight on any realistic path. A crumb holding keyboard focus is
+ *  sized like the current one, so Tab never rests on a crumb that has shrunk out of sight. `title` keeps the full
+ *  name on hover. */
+export const crumbStyle = (index: number, current: boolean): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden',
+  ...(current ? { flex: '0 0 auto', maxWidth: '70%', minWidth: 0 } : { flex: '0 100 auto', minWidth: index === 0 ? '2em' : 0 })
+})
+/** Which crumb holds keyboard focus, for `crumbStyle`: put `ref` on the nav and spread `handlers(i)` on each crumb.
+ *  A crumb activated from the keyboard turns into the plain current-folder label, and removing a focused Button fires
+ *  no blur, so whenever `trail` (the path on screen) changes, the focused crumb is read again from the document: an
+ *  ancestor is never left sized as focused, and a crumb that still holds focus keeps its size. */
+export function useCrumbFocus(trail: string) {
+  const ref = useRef<HTMLElement>(null)
+  const [focused, setFocused] = useState<number | null>(null)
+  useEffect(() => {
+    const active = document.activeElement
+    const index = ref.current && active instanceof HTMLButtonElement ? [...ref.current.children].findIndex(crumb => crumb.contains(active)) : -1
+    setFocused(index >= 0 ? index : null)
+  }, [trail])
+  return {
+    focused,
+    ref,
+    handlers: (index: number) => ({ onBlur: () => setFocused(f => (f === index ? null : f)), onFocus: () => setFocused(index) })
+  }
+}
+/** The path's own share of a toolbar row: a 160 px basis, so a wrapping toolbar moves its tools to the next line in a
+ *  narrow pane instead of squeezing the path to a few pixels (with a 0 basis it never forced a wrap). */
+export const crumbNavStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: '1 1 160px', fontSize: 12, ...ellipsis }
+export const crumbButtonStyle: CSSProperties = { flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }
+export const crumbLabelStyle: CSSProperties = { ...ellipsis, minWidth: 0 }
+export const chevronStyle: CSSProperties = { ...muted, flexShrink: 0 }
 
 /** A failed load. A 404 on our own route means the agent's gateway half is missing, disabled or older than
  *  this Desktop half: say so plainly and keep the raw error as a small details line. */
@@ -326,15 +360,16 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
 }) {
   const parts = folder.split('/').filter(Boolean)
   const crumbs = [{ label: rootLabel, path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
+  const focus = useCrumbFocus(`${rootLabel}/${folder}/${leaf ?? ''}/${b.query ? '?' : ''}`)
   return (
-    <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
+    <nav aria-label={S.breadcrumbs} ref={focus.ref} style={crumbNavStyle}>
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (
-          <span key={crumb.path || '/'} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-            {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={muted} />}
+          <span key={crumb.path || '/'} {...focus.handlers(i)} style={crumbStyle(i, (last && !leaf) || focus.focused === i)}>
+            {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
             {last && !b.query && !leaf ? (
-              <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.label}</span>
+              <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.label}>{crumb.label}</span>
             ) : (
               <Button
                 onClick={(event?: MouseEvent) => {
@@ -342,18 +377,20 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
                   onNavigate(crumb.path)
                 }}
                 size="inline"
+                style={crumbButtonStyle}
+                title={crumb.label}
                 variant="text"
               >
-                {crumb.label}
+                <span style={crumbLabelStyle}>{crumb.label}</span>
               </Button>
             )}
           </span>
         )
       })}
       {leaf && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-          <Codicon name="chevron-right" size="0.75rem" style={muted} />
-          <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{leaf}</span>
+        <span style={crumbStyle(crumbs.length, true)}>
+          <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />
+          <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={leaf}>{leaf}</span>
         </span>
       )}
     </nav>

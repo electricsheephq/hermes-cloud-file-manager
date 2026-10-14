@@ -21,7 +21,7 @@ const flush = async (rounds = 10) => {
 // The root selector's options (the file list's rows are options too).
 const options = () => screen.queryAllByRole('option').filter(el => el.closest('[data-select]'))
 const option = (name: string) => options().find(el => el.textContent === name)
-const rows = () => screen.getAllByRole('listitem').map(row => row.getAttribute('data-entry'))
+const rows = () => screen.getAllByRole('option').filter(row => row.hasAttribute('data-entry')).map(row => row.getAttribute('data-entry'))
 const imports = (calls: ReturnType<typeof fakeBackend>['calls']) => calls.filter(c => c.path === '/drive/import')
 
 /** A /drive/import that answers only when the test releases it, one request at a time. */
@@ -69,10 +69,10 @@ describe('Cloud Files page: Google Drive source', () => {
     await openDrive()
     expect(rows()).toEqual(['fold1', 'doc1', 'pdf1'])
     expect(calls.find(c => c.path === '/drive/list')?.params).toEqual({ folder: 'root' })
-    const doc = screen.getByText('Plan').closest('[role=listitem]') as HTMLElement
+    const doc = screen.getByText('Plan').closest('[role=option]') as HTMLElement
     expect(within(doc).getByText('—')).toBeTruthy()
     expect(within(doc).getByText(shortDate(Date.parse('2024-03-04T10:00:00Z') / 1000))).toBeTruthy()
-    const pdf = screen.getByText('report.pdf').closest('[role=listitem]') as HTMLElement
+    const pdf = screen.getByText('report.pdf').closest('[role=option]') as HTMLElement
     expect(within(pdf).getByText('2.0 KB')).toBeTruthy()
     expect(doc.querySelector('[data-codicon]')?.getAttribute('data-codicon')).toBe('file-text')
     expect(pdf.querySelector('[data-codicon]')?.getAttribute('data-codicon')).toBe('file-pdf')

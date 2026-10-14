@@ -66,6 +66,9 @@ hermes plugins enable hermes-cloud-file-manager
 # on Hermes 0.21.5, restart the gateway (or your hermes dashboard service) so the API is mounted
 ```
 
+If the installer asks whether to install Node dependencies, answer **No**. The plugin ships prebuilt, and its
+`package.json` holds only build and test tools, so a yes downloads about 100 MB that the plugin never uses.
+
 Then add the desktop half on each computer that uses it: in **Capabilities → Plugins**, choose **+ Add to this Agent**
 on the catalog entry, and switch on **Desktop** on the plugin's card.
 

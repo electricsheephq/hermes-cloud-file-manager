@@ -5,7 +5,7 @@ import { Button, Checkbox, Codicon, EmptyState, Skeleton, useQuery } from '@herm
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode, useRef, useState, useSyncExternalStore } from 'react'
 
 import { call, query } from './api'
-import { DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
+import { chevronStyle, crumbButtonStyle, crumbLabelStyle, crumbNavStyle, crumbStyle, DEBOUNCE_MS, type FocusRequest, fromKeyboard, LoadError, requestFocus, useCrumbFocus, useDebounced, useListFocus, useRowFocus, useScope } from './browser'
 import { type DriveImport, driveIcon, type DriveItem, type DriveListResponse, type ImportFailure, type ImportSnapshot } from './drive'
 import { humanSize, shortDate } from './format'
 import { S } from './strings'
@@ -53,13 +53,14 @@ export function useDriveBrowser() {
 export type DriveBrowser = ReturnType<typeof useDriveBrowser>
 
 export function DriveCrumbs({ d }: { d: DriveBrowser }) {
+  const focus = useCrumbFocus(`${d.trail.map(crumb => crumb.id).join('/')}/${d.q ? '?' : ''}`)
   return (
-    <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
+    <nav aria-label={S.breadcrumbs} ref={focus.ref} style={crumbNavStyle}>
       {d.trail.map((crumb, i) => (
-        <span key={`${i}:${crumb.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-          {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={muted} />}
+        <span key={`${i}:${crumb.id}`} {...focus.handlers(i)} style={crumbStyle(i, i === d.trail.length - 1 || focus.focused === i)}>
+          {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
           {i === d.trail.length - 1 && !d.q ? (
-            <span style={{ ...ellipsis, color: 'var(--ui-text-primary)', fontWeight: 500 }}>{crumb.name}</span>
+            <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.name}>{crumb.name}</span>
           ) : (
             <Button
               onClick={(event?: MouseEvent) => {
@@ -67,9 +68,11 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
                 d.crumb(i)
               }}
               size="inline"
+              style={crumbButtonStyle}
+              title={crumb.name}
               variant="text"
             >
-              {crumb.name}
+              <span style={crumbLabelStyle}>{crumb.name}</span>
             </Button>
           )}
         </span>
@@ -103,7 +106,7 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     if (!(event.key in step) || event.altKey) return
     event.preventDefault()
     const next = Math.max(0, Math.min(items.length - 1, items.indexOf(item) + step[event.key]))
-    const row = ref.current?.querySelectorAll<HTMLElement>('[role=listitem]')[next]
+    const row = ref.current?.querySelectorAll<HTMLElement>('[role=option]')[next]
     row?.focus()
     row?.scrollIntoView?.({ block: 'nearest' })
   }
@@ -123,7 +126,9 @@ export function DriveList({ d, height }: { d: DriveBrowser; height?: number }) {
     body = <EmptyState title={d.q ? S.noResults : S.driveEmpty} />
   } else {
     body = (
-      <div role="list">
+      // A listbox of options, like the Cloud list: Hermes Desktop leaves Enter and Space on an option to the row, but sends
+      // them to a visible chat's message box from anything it doesn't know handles them (a listitem did that, 0.4.5).
+      <div aria-label={d.q ? S.searchResults : S.filesIn(d.trail[d.trail.length - 1].name)} aria-multiselectable="true" role="listbox">
         {items.map(item => (
           <DriveRow d={d} item={item} key={item.id} onFocus={() => setLastFocused(item.id)} onNavKey={navKey} sized={sized} tabStop={item.id === tabStop} />
         ))}
@@ -168,7 +173,7 @@ function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }: {
       onMouseLeave={() => setHover(false)}
       {...focus.handlers}
       onFocus={() => (focus.handlers.onFocus(), onFocus())}
-      role="listitem"
+      role="option"
       style={{
         display: 'grid',
         gridTemplateColumns: `16px 16px minmax(0, 1fr)${sized ? ' 72px' : ''} 96px`,

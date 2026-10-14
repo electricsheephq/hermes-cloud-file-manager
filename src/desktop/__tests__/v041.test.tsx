@@ -356,7 +356,7 @@ describe('the pinned agent and the open file', () => {
     act(() => $driveAvailable.set(true))
     await screen.findByText('data.json')
     fireEvent.click(screen.getAllByRole('option').find(el => el.textContent === 'Google Drive')!)
-    const pdf = (await screen.findByText('report.pdf')).closest('[role=listitem]') as HTMLElement
+    const pdf = (await screen.findByText('report.pdf')).closest('[role=option]') as HTMLElement
     fireEvent.doubleClick(pdf)
     fireEvent.keyDown(pdf, { key: 'Enter' })
     await flush()
