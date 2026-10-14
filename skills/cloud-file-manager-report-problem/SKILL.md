@@ -50,7 +50,7 @@ Quote only short log excerpts and status lines that the user has seen. Leave out
 With a signed-in GitHub CLI, save two or three key words to their own file (with a file tool, not the shell), then run exactly this form:
 
 ```
-gh issue list -R electricsheephq/hermes-cloud-file-manager --state all --search "$(cat <search file>)"
+gh issue list -R electricsheephq/hermes-cloud-file-manager --state all --search "$(cat '<search file>')"
 ```
 
 The shell reads the words from the file and passes them unchanged. Never type the search words themselves into the command.
@@ -86,12 +86,12 @@ An earlier "report it", "just fix it" or an ambiguous reply does not approve thi
 - New issue, with a signed-in GitHub CLI:
 
   ```
-  gh issue create -R electricsheephq/hermes-cloud-file-manager --title "$(cat <title file>)" --body-file <draft file>
+  gh issue create -R electricsheephq/hermes-cloud-file-manager --title "$(cat '<title file>')" --body-file '<draft file>'
   ```
 
   The shell reads the title from the file and passes it unchanged, quotes and all. Never type the title itself into the command.
   A maintainer of this repository also adds `--label bug,triage-pending,agent-drafted`.
-- Comment on a matching issue: `gh issue comment <number> -R electricsheephq/hermes-cloud-file-manager --body-file <draft file>`
+- Comment on a matching issue: `gh issue comment <number> -R electricsheephq/hermes-cloud-file-manager --body-file '<draft file>'`
 - No CLI, no file tools, or the command failed: give the user the draft so they can paste it themselves, as a comment on the matching issue (give its link) or, for a new report, into the form:
   https://github.com/electricsheephq/hermes-cloud-file-manager/issues/new?template=bug_report.yml
 
