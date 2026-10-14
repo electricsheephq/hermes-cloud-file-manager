@@ -71,7 +71,7 @@ body:
     id: logs
     attributes:
       label: Relevant log lines
-      description: Short excerpts only, for example from `hermes logs gui -n 300 | grep -i hermes-cloud-file-manager` (the agent side: its file API runs in the dashboard server) and `hermes logs desktop -n 300 | grep -i cloud` (the Desktop side). This is a best-effort plugin-ID filter, not a dedicated logger; no output is inconclusive. Leave out tokens, keys, private paths and private message text.
+      description: Short excerpts only, for example from `hermes logs gui -n 300 | grep -i hermes-cloud-file-manager` (the agent side, whose file API runs in the dashboard server) and `hermes logs desktop -n 300 | grep -i cloud` (the Desktop side). This is a best-effort plugin-ID filter, not a dedicated logger; no output is inconclusive. Leave out tokens, keys, private paths and private message text.
       render: text
   - type: checkboxes
     id: checks
