@@ -248,11 +248,21 @@ const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', 
 /** Crumbs share a narrow pane without drawing over each other: the host Button never shrinks by default
  *  (`shrink-0`), so its style overrides that and the label ellipsizes inside it. The current folder keeps up to 70%
  *  of the width; the folders above it shrink first, the root down to a sliver with an ellipsis, the ones between down
- *  to nothing, so a deep path never pushes the current folder out of sight. `title` keeps the full name on hover. */
-export const crumbStyle = (index: number, last: boolean): CSSProperties => ({
+ *  to nothing, which keeps the current folder in sight on any realistic path. A crumb holding keyboard focus is
+ *  sized like the current one, so Tab never rests on a crumb that has shrunk out of sight. `title` keeps the full
+ *  name on hover. */
+export const crumbStyle = (index: number, current: boolean): CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden',
-  ...(last ? { flex: '0 0 auto', maxWidth: '70%', minWidth: 0 } : { flex: '0 100 auto', minWidth: index === 0 ? '2em' : 0 })
+  ...(current ? { flex: '0 0 auto', maxWidth: '70%', minWidth: 0 } : { flex: '0 100 auto', minWidth: index === 0 ? '2em' : 0 })
 })
+/** Which crumb holds keyboard focus, for `crumbStyle`: spread `handlers(i)` on each crumb. */
+export function useCrumbFocus() {
+  const [focused, setFocused] = useState<number | null>(null)
+  return {
+    focused,
+    handlers: (index: number) => ({ onBlur: () => setFocused(f => (f === index ? null : f)), onFocus: () => setFocused(index) })
+  }
+}
 export const crumbButtonStyle: CSSProperties = { flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }
 export const crumbLabelStyle: CSSProperties = { ...ellipsis, minWidth: 0 }
 export const chevronStyle: CSSProperties = { ...muted, flexShrink: 0 }
@@ -341,12 +351,13 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
 }) {
   const parts = folder.split('/').filter(Boolean)
   const crumbs = [{ label: rootLabel, path: '' }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join('/') }))]
+  const focus = useCrumbFocus()
   return (
     <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (
-          <span key={crumb.path || '/'} style={crumbStyle(i, last && !leaf)}>
+          <span key={crumb.path || '/'} {...focus.handlers(i)} style={crumbStyle(i, (last && !leaf) || focus.focused === i)}>
             {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
             {last && !b.query && !leaf ? (
               <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.label}>{crumb.label}</span>

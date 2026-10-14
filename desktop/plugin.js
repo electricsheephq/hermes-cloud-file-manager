@@ -975,13 +975,20 @@ function selectedEntries(entries, selected) {
 var muted = { color: "var(--ui-text-tertiary)" };
 var hidden = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" };
 var ellipsis = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-var crumbStyle = (index, last) => ({
+var crumbStyle = (index, current) => ({
   display: "inline-flex",
   alignItems: "center",
   gap: 2,
   overflow: "hidden",
-  ...last ? { flex: "0 0 auto", maxWidth: "70%", minWidth: 0 } : { flex: "0 100 auto", minWidth: index === 0 ? "2em" : 0 }
+  ...current ? { flex: "0 0 auto", maxWidth: "70%", minWidth: 0 } : { flex: "0 100 auto", minWidth: index === 0 ? "2em" : 0 }
 });
+function useCrumbFocus() {
+  const [focused, setFocused] = useState(null);
+  return {
+    focused,
+    handlers: (index) => ({ onBlur: () => setFocused((f) => f === index ? null : f), onFocus: () => setFocused(index) })
+  };
+}
 var crumbButtonStyle = { flexShrink: 1, minWidth: 0, maxWidth: "100%", overflow: "hidden" };
 var crumbLabelStyle = { ...ellipsis, minWidth: 0 };
 var chevronStyle = { ...muted, flexShrink: 0 };
@@ -1031,10 +1038,11 @@ function RootSelect({ b, drive }) {
 function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf, onNavigate = b.navigate }) {
   const parts = folder.split("/").filter(Boolean);
   const crumbs = [{ label: rootLabel, path: "" }, ...parts.map((part, i) => ({ label: part, path: parts.slice(0, i + 1).join("/") }))];
+  const focus = useCrumbFocus();
   return /* @__PURE__ */ jsxs("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }, children: [
     crumbs.map((crumb, i) => {
       const last = i === crumbs.length - 1;
-      return /* @__PURE__ */ jsxs("span", { style: crumbStyle(i, last && !leaf), children: [
+      return /* @__PURE__ */ jsxs("span", { ...focus.handlers(i), style: crumbStyle(i, last && !leaf || focus.focused === i), children: [
         i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
         last && !b.query && !leaf ? /* @__PURE__ */ jsx("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.label, children: crumb.label }) : /* @__PURE__ */ jsx(
           Button,
@@ -1311,7 +1319,8 @@ function useDriveBrowser() {
   };
 }
 function DriveCrumbs({ d }) {
-  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { style: crumbStyle(i, i === d.trail.length - 1), children: [
+  const focus = useCrumbFocus();
+  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { ...focus.handlers(i), style: crumbStyle(i, i === d.trail.length - 1 || focus.focused === i), children: [
     i > 0 && /* @__PURE__ */ jsx2(Codicon2, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
     i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.name, children: crumb.name }) : /* @__PURE__ */ jsx2(
       Button2,

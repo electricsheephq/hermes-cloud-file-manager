@@ -102,6 +102,21 @@ describe('breadcrumbs in a narrow pane', () => {
     expect(current.querySelector('[title="docs"]')).toBeTruthy()
   })
 
+  it('a crumb holding keyboard focus is sized like the current one, so it never sits shrunk out of sight', async () => {
+    page()
+    await flush()
+    fireEvent.keyDown(option('docs'), { key: 'Enter' })
+    await flush()
+    const home = screen.getByRole('button', { name: 'Home' })
+    const wrapper = home.parentElement as HTMLElement
+    expect(wrapper.style.flex).toBe('0 100 auto')
+    act(() => home.focus())
+    expect(wrapper.style.flex).toBe('0 0 auto')
+    expect(wrapper.style.maxWidth).toBe('70%')
+    act(() => home.blur())
+    expect(wrapper.style.flex).toBe('0 100 auto')
+  })
+
   it('Drive crumbs follow the same rules', async () => {
     page()
     await openDrive()
