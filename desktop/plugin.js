@@ -814,9 +814,7 @@ var SEARCH_LIMIT = 200;
 var DEBOUNCE_MS = 300;
 var SETTINGS_PATH = "/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager";
 function requestFocus(request, at, want = true) {
-  const from = document.activeElement;
-  request.current = { at, want, from };
-  from?.closest("[data-hcfm-list]")?.focus({ preventScroll: true });
+  request.current = { at, want, from: document.activeElement };
 }
 function useListFocus(request, ready, at, fetching = false) {
   const list = useRef(null);
@@ -1203,7 +1201,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
     ] });
   }
-  return /* @__PURE__ */ jsxs("div", { "data-hcfm-list": "", ref: list, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: [
+  return /* @__PURE__ */ jsxs("div", { ref: list, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: [
     body,
     /* @__PURE__ */ jsx("div", { "aria-live": "polite", style: hidden, children: announce })
   ] });
@@ -1362,7 +1360,7 @@ function DriveList({ d, height }) {
     if (!(event.key in step) || event.altKey) return;
     event.preventDefault();
     const next = Math.max(0, Math.min(items.length - 1, items.indexOf(item) + step[event.key]));
-    const row = ref.current?.querySelectorAll("[role=listitem]")[next];
+    const row = ref.current?.querySelectorAll("[role=option]")[next];
     row?.focus();
     row?.scrollIntoView?.({ block: "nearest" });
   };
@@ -1374,12 +1372,14 @@ function DriveList({ d, height }) {
   } else if (!items.length) {
     body = /* @__PURE__ */ jsx2(EmptyState2, { title: d.q ? S.noResults : S.driveEmpty });
   } else {
-    body = /* @__PURE__ */ jsxs2("div", { role: "list", children: [
+    body = // A listbox of options, like the Cloud list: Hermes Desktop leaves Enter and Space on an option to the row, but sends
+    // them to a visible chat's message box from anything it doesn't know handles them (a listitem did that, 0.4.5).
+    /* @__PURE__ */ jsxs2("div", { "aria-label": d.q ? S.searchResults : S.filesIn(d.trail[d.trail.length - 1].name), "aria-multiselectable": "true", role: "listbox", children: [
       items.map((item) => /* @__PURE__ */ jsx2(DriveRow, { d, item, onFocus: () => setLastFocused(item.id), onNavKey: navKey, sized, tabStop: item.id === tabStop }, item.id)),
       list.data.truncated && /* @__PURE__ */ jsx2("div", { style: { ...muted2, fontSize: 11, padding: "8px 12px" }, children: S.truncated(items.length) })
     ] });
   }
-  return /* @__PURE__ */ jsx2("div", { "data-hcfm-list": "", ref, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
+  return /* @__PURE__ */ jsx2("div", { ref, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
 }
 function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }) {
   const [hover, setHover] = useState2(false);
@@ -1405,7 +1405,7 @@ function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }) {
       onMouseLeave: () => setHover(false),
       ...focus.handlers,
       onFocus: () => (focus.handlers.onFocus(), onFocus()),
-      role: "listitem",
+      role: "option",
       style: {
         display: "grid",
         gridTemplateColumns: `16px 16px minmax(0, 1fr)${sized ? " 72px" : ""} 96px`,

@@ -11,8 +11,9 @@ Desktop half only; the agent's side is unchanged from 0.4.5 apart from the versi
   pixels and its names drew on top of each other. Now the toolbar's buttons move to a second line when the pane is
   narrow, the current folder keeps most of the path's width, the folders above it shrink first, and a shortened name
   shows in full on hover. The Google Drive path works the same way.
-- **Keyboard focus after opening a folder.** Opening a folder with Enter now always lands on its first row, also
-  when the folder takes a moment to load. Before, a Google Drive folder could lose keyboard focus while it loaded.
+- **Google Drive keys beside a chat.** With a chat open next to Cloud Files, Enter (open a folder) and Space
+  (select a file) on a Google Drive row no longer move keyboard focus to the chat's message box. Opening a folder
+  lands on its first row, as in the Cloud list.
 
 ### Documentation
 - The README says to answer No if the installer offers to install Node dependencies: `package.json` holds only
