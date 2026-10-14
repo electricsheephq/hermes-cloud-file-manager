@@ -39,3 +39,5 @@ Every case reports the median, p95, min and max over `--reps` timed repetitions,
 ## Reading results
 
 Absolute numbers depend on the machine and on its load. Compare variants with `ab_list.py`, which runs every variant within each repetition. Do not compare two separate runs.
+
+Recorded runs live next to this file as `RESULTS-<version>.md`.
