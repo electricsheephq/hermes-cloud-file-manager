@@ -4,8 +4,8 @@
 
 Please report security problems privately through GitHub's
 [private vulnerability reporting](https://github.com/electricsheephq/hermes-cloud-file-manager/security/advisories/new)
-for this repository. Do not open a public issue. We aim to acknowledge reports within three working days and to
-ship a fix or mitigation for confirmed issues as quickly as we can.
+for this repository. Do not open a public issue. We aim to acknowledge reports within three working days, to
+share a decision or fix plan within 14 days, and to ship a fix or mitigation for confirmed issues as quickly as we can.
 
 Please include the plugin version, your Hermes and Hermes Desktop versions, how the agent's gateway is reached
 (local, remote with a token, remote with sign-in), and the smallest set of steps that shows the problem.
