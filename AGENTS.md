@@ -44,7 +44,7 @@ install. Leave those to CI.
 
 - Keep each change small and focused: one change per PR.
 - Don't bump versions, create tags, or add CHANGELOG release headings. Maintainers cut releases.
-- After Desktop source changes, regenerate `desktop/plugin.js` with the build command above. CI's `check:bundle` step rejects a stale bundle; never hand-edit it.
+- After Desktop source changes, regenerate `desktop/plugin.js` with `npm run build`. CI's `check:bundle` step rejects a stale bundle; never hand-edit it.
 - Keep gateway authentication and per-profile isolation delegated to Hermes; preserve configured-root and Hermes-home path guards.
 - Use mocked backends and temporary files in tests. Never use real Google credentials or billed API calls.
 - Never commit secrets, tokens, real user data, or machine-specific paths.
