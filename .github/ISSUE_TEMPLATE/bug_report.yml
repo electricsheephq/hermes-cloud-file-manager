@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. From the next release, your Hermes agent can draft it for you: ask it to "report a problem with Cloud File Manager".
+        Thanks for the report. Your Hermes agent can draft it for you: ask it to "report a problem with Cloud File Manager".
         **Security problems** (path escapes or files crossing isolated user/profile boundaries, or anything that exposes a secret) go to a [private advisory](https://github.com/electricsheephq/hermes-cloud-file-manager/security/advisories/new), not here.
         **Problems in Hermes itself** belong in [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent/issues).
   - type: textarea
