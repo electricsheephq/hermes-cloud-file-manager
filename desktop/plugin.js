@@ -814,7 +814,9 @@ var SEARCH_LIMIT = 200;
 var DEBOUNCE_MS = 300;
 var SETTINGS_PATH = "/settings?tab=plugins&agent=hermes-cloud-file-manager&plugin=hermes-cloud-file-manager";
 function requestFocus(request, at, want = true) {
-  request.current = { at, want, from: document.activeElement };
+  const from = document.activeElement;
+  request.current = { at, want, from };
+  from?.closest("[data-hcfm-list]")?.focus({ preventScroll: true });
 }
 function useListFocus(request, ready, at, fetching = false) {
   const list = useRef(null);
@@ -973,6 +975,10 @@ function selectedEntries(entries, selected) {
 var muted = { color: "var(--ui-text-tertiary)" };
 var hidden = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" };
 var ellipsis = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+var crumbStyle = (last) => ({ display: "inline-flex", alignItems: "center", gap: 2, overflow: "hidden", minWidth: last ? 0 : "2em", flex: last ? "0 1 auto" : "0 100 auto" });
+var crumbButtonStyle = { flexShrink: 1, minWidth: 0, maxWidth: "100%", overflow: "hidden" };
+var crumbLabelStyle = { ...ellipsis, minWidth: 0 };
+var chevronStyle = { ...muted, flexShrink: 0 };
 function LoadError({ error, onRetry }) {
   const retry = /* @__PURE__ */ jsx("div", { style: { display: "flex", justifyContent: "center" }, children: /* @__PURE__ */ jsx(Button, { onClick: onRetry, size: "sm", variant: "secondary", children: S.retry }) });
   if (isNotFoundError(error)) {
@@ -1022,9 +1028,9 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
   return /* @__PURE__ */ jsxs("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }, children: [
     crumbs.map((crumb, i) => {
       const last = i === crumbs.length - 1;
-      return /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
-        i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: muted }),
-        last && !b.query && !leaf ? /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.label }) : /* @__PURE__ */ jsx(
+      return /* @__PURE__ */ jsxs("span", { style: crumbStyle(last && !leaf), children: [
+        i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
+        last && !b.query && !leaf ? /* @__PURE__ */ jsx("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.label, children: crumb.label }) : /* @__PURE__ */ jsx(
           Button,
           {
             onClick: (event) => {
@@ -1032,15 +1038,17 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
               onNavigate(crumb.path);
             },
             size: "inline",
+            style: crumbButtonStyle,
+            title: crumb.label,
             variant: "text",
-            children: crumb.label
+            children: /* @__PURE__ */ jsx("span", { style: crumbLabelStyle, children: crumb.label })
           }
         )
       ] }, crumb.path || "/");
     }),
-    leaf && /* @__PURE__ */ jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
-      /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: muted }),
-      /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)", fontWeight: 500 }, children: leaf })
+    leaf && /* @__PURE__ */ jsxs("span", { style: crumbStyle(true), children: [
+      /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
+      /* @__PURE__ */ jsx("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: leaf, children: leaf })
     ] })
   ] });
 }
@@ -1180,7 +1188,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
     ] });
   }
-  return /* @__PURE__ */ jsxs("div", { ref: list, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: [
+  return /* @__PURE__ */ jsxs("div", { "data-hcfm-list": "", ref: list, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: [
     body,
     /* @__PURE__ */ jsx("div", { "aria-live": "polite", style: hidden, children: announce })
   ] });
@@ -1297,9 +1305,9 @@ function useDriveBrowser() {
   };
 }
 function DriveCrumbs({ d }) {
-  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { style: { display: "inline-flex", alignItems: "center", gap: 2, minWidth: 0 }, children: [
-    i > 0 && /* @__PURE__ */ jsx2(Codicon2, { name: "chevron-right", size: "0.75rem", style: muted2 }),
-    i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...ellipsis2, color: "var(--ui-text-primary)", fontWeight: 500 }, children: crumb.name }) : /* @__PURE__ */ jsx2(
+  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { style: crumbStyle(i === d.trail.length - 1), children: [
+    i > 0 && /* @__PURE__ */ jsx2(Codicon2, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
+    i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.name, children: crumb.name }) : /* @__PURE__ */ jsx2(
       Button2,
       {
         onClick: (event) => {
@@ -1307,8 +1315,10 @@ function DriveCrumbs({ d }) {
           d.crumb(i);
         },
         size: "inline",
+        style: crumbButtonStyle,
+        title: crumb.name,
         variant: "text",
-        children: crumb.name
+        children: /* @__PURE__ */ jsx2("span", { style: crumbLabelStyle, children: crumb.name })
       }
     )
   ] }, `${i}:${crumb.id}`)) });
@@ -1353,7 +1363,7 @@ function DriveList({ d, height }) {
       list.data.truncated && /* @__PURE__ */ jsx2("div", { style: { ...muted2, fontSize: 11, padding: "8px 12px" }, children: S.truncated(items.length) })
     ] });
   }
-  return /* @__PURE__ */ jsx2("div", { ref, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
+  return /* @__PURE__ */ jsx2("div", { "data-hcfm-list": "", ref, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: body });
 }
 function DriveRow({ d, item, sized, tabStop, onFocus, onNavKey }) {
   const [hover, setHover] = useState2(false);
