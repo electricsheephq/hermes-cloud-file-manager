@@ -8,8 +8,8 @@ Desktop half only; the agent's side is unchanged from 0.4.5 apart from the versi
 
 ### Fixed
 - **Breadcrumbs in a narrow pane.** With Cloud Files open beside a chat, the folder path no longer draws its names
-  on top of each other. The folders above the current one shrink first, down to an ellipsis, then the current
-  folder's name; hover a shortened name to see it in full. The Google Drive path works the same way.
+  on top of each other. The current folder keeps most of the width, the folders above it shrink first, and a
+  shortened name shows in full on hover. The Google Drive path works the same way.
 - **Keyboard focus after opening a folder.** Opening a folder with Enter now always lands on its first row, also
   when the folder takes a moment to load. Before, a Google Drive folder could lose keyboard focus while it loaded.
 

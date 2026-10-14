@@ -975,7 +975,13 @@ function selectedEntries(entries, selected) {
 var muted = { color: "var(--ui-text-tertiary)" };
 var hidden = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" };
 var ellipsis = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-var crumbStyle = (last) => ({ display: "inline-flex", alignItems: "center", gap: 2, overflow: "hidden", minWidth: last ? 0 : "2em", flex: last ? "0 1 auto" : "0 100 auto" });
+var crumbStyle = (index, last) => ({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 2,
+  overflow: "hidden",
+  ...last ? { flex: "0 0 auto", maxWidth: "70%", minWidth: 0 } : { flex: "0 100 auto", minWidth: index === 0 ? "2em" : 0 }
+});
 var crumbButtonStyle = { flexShrink: 1, minWidth: 0, maxWidth: "100%", overflow: "hidden" };
 var crumbLabelStyle = { ...ellipsis, minWidth: 0 };
 var chevronStyle = { ...muted, flexShrink: 0 };
@@ -1028,7 +1034,7 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
   return /* @__PURE__ */ jsxs("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }, children: [
     crumbs.map((crumb, i) => {
       const last = i === crumbs.length - 1;
-      return /* @__PURE__ */ jsxs("span", { style: crumbStyle(last && !leaf), children: [
+      return /* @__PURE__ */ jsxs("span", { style: crumbStyle(i, last && !leaf), children: [
         i > 0 && /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
         last && !b.query && !leaf ? /* @__PURE__ */ jsx("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.label, children: crumb.label }) : /* @__PURE__ */ jsx(
           Button,
@@ -1046,7 +1052,7 @@ function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? "", leaf
         )
       ] }, crumb.path || "/");
     }),
-    leaf && /* @__PURE__ */ jsxs("span", { style: crumbStyle(true), children: [
+    leaf && /* @__PURE__ */ jsxs("span", { style: crumbStyle(crumbs.length, true), children: [
       /* @__PURE__ */ jsx(Codicon, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
       /* @__PURE__ */ jsx("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: leaf, children: leaf })
     ] })
@@ -1305,7 +1311,7 @@ function useDriveBrowser() {
   };
 }
 function DriveCrumbs({ d }) {
-  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { style: crumbStyle(i === d.trail.length - 1), children: [
+  return /* @__PURE__ */ jsx2("nav", { "aria-label": S.breadcrumbs, style: { display: "flex", alignItems: "center", gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis2 }, children: d.trail.map((crumb, i) => /* @__PURE__ */ jsxs2("span", { style: crumbStyle(i, i === d.trail.length - 1), children: [
     i > 0 && /* @__PURE__ */ jsx2(Codicon2, { name: "chevron-right", size: "0.75rem", style: chevronStyle }),
     i === d.trail.length - 1 && !d.q ? /* @__PURE__ */ jsx2("span", { style: { ...crumbLabelStyle, color: "var(--ui-text-primary)", fontWeight: 500 }, title: crumb.name, children: crumb.name }) : /* @__PURE__ */ jsx2(
       Button2,

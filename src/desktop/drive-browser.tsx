@@ -56,7 +56,7 @@ export function DriveCrumbs({ d }: { d: DriveBrowser }) {
   return (
     <nav aria-label={S.breadcrumbs} style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, fontSize: 12, ...ellipsis }}>
       {d.trail.map((crumb, i) => (
-        <span key={`${i}:${crumb.id}`} style={crumbStyle(i === d.trail.length - 1)}>
+        <span key={`${i}:${crumb.id}`} style={crumbStyle(i, i === d.trail.length - 1)}>
           {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
           {i === d.trail.length - 1 && !d.q ? (
             <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.name}>{crumb.name}</span>

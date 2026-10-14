@@ -245,11 +245,14 @@ export type Browser = ReturnType<typeof useBrowser>
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 const hidden: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }
 const ellipsis: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-/** Crumbs share a narrow pane. Folders above the current one shrink first, each down to a sliver with an ellipsis,
- *  and no crumb draws over the next: the host Button never shrinks by default (`shrink-0`), so its style overrides
- *  that and the label ellipsizes inside it. `title` keeps the full name on hover. */
-export const crumbStyle = (last: boolean): CSSProperties =>
-  ({ display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden', minWidth: last ? 0 : '2em', flex: last ? '0 1 auto' : '0 100 auto' })
+/** Crumbs share a narrow pane without drawing over each other: the host Button never shrinks by default
+ *  (`shrink-0`), so its style overrides that and the label ellipsizes inside it. The current folder keeps up to 70%
+ *  of the width; the folders above it shrink first, the root down to a sliver with an ellipsis, the ones between down
+ *  to nothing, so a deep path never pushes the current folder out of sight. `title` keeps the full name on hover. */
+export const crumbStyle = (index: number, last: boolean): CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 2, overflow: 'hidden',
+  ...(last ? { flex: '0 0 auto', maxWidth: '70%', minWidth: 0 } : { flex: '0 100 auto', minWidth: index === 0 ? '2em' : 0 })
+})
 export const crumbButtonStyle: CSSProperties = { flexShrink: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }
 export const crumbLabelStyle: CSSProperties = { ...ellipsis, minWidth: 0 }
 export const chevronStyle: CSSProperties = { ...muted, flexShrink: 0 }
@@ -343,7 +346,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (
-          <span key={crumb.path || '/'} style={crumbStyle(last && !leaf)}>
+          <span key={crumb.path || '/'} style={crumbStyle(i, last && !leaf)}>
             {i > 0 && <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />}
             {last && !b.query && !leaf ? (
               <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={crumb.label}>{crumb.label}</span>
@@ -365,7 +368,7 @@ export function Breadcrumbs({ b, folder = b.path, rootLabel = b.root?.label ?? '
         )
       })}
       {leaf && (
-        <span style={crumbStyle(true)}>
+        <span style={crumbStyle(crumbs.length, true)}>
           <Codicon name="chevron-right" size="0.75rem" style={chevronStyle} />
           <span style={{ ...crumbLabelStyle, color: 'var(--ui-text-primary)', fontWeight: 500 }} title={leaf}>{leaf}</span>
         </span>

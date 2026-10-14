@@ -83,7 +83,7 @@ describe('keyboard focus while a folder loads', () => {
 })
 
 describe('breadcrumbs in a narrow pane', () => {
-  it('folder crumbs shrink before the current one, carry their full name and ellipsize inside the button', async () => {
+  it('folder crumbs shrink before the current one (which keeps up to 70%), carry their full name and ellipsize inside the button', async () => {
     page()
     await flush()
     fireEvent.keyDown(option('docs'), { key: 'Enter' })
@@ -94,9 +94,11 @@ describe('breadcrumbs in a narrow pane', () => {
     expect(home.style.flexShrink).toBe('1')
     expect(home.style.minWidth).toBe('0px')
     expect((home.firstElementChild as HTMLElement).style.textOverflow).toBe('ellipsis')
-    const [ancestor, current] = [...nav.children] as HTMLElement[]
-    expect(ancestor.style.flex).toBe('0 100 auto')
-    expect(current.style.flex).toBe('0 1 auto')
+    const [root, current] = [...nav.children] as HTMLElement[]
+    expect(root.style.flex).toBe('0 100 auto')
+    expect(root.style.minWidth).toBe('2em')
+    expect(current.style.flex).toBe('0 0 auto')
+    expect(current.style.maxWidth).toBe('70%')
     expect(current.querySelector('[title="docs"]')).toBeTruthy()
   })
 
@@ -106,11 +108,12 @@ describe('breadcrumbs in a narrow pane', () => {
     fireEvent.keyDown(item('Projects'), { key: 'Enter' })
     await flush()
     const drive = screen.getAllByRole('navigation').find(nav => nav.textContent?.includes('Projects'))!
-    const root = [...drive.querySelectorAll('button')].find(button => button.title)!
-    expect(root.style.flexShrink).toBe('1')
-    const [ancestor, current] = [...drive.children] as HTMLElement[]
-    expect(ancestor.style.flex).toBe('0 100 auto')
-    expect(current.style.flex).toBe('0 1 auto')
+    const rootButton = [...drive.querySelectorAll('button')].find(button => button.title)!
+    expect(rootButton.style.flexShrink).toBe('1')
+    const [root, current] = [...drive.children] as HTMLElement[]
+    expect(root.style.flex).toBe('0 100 auto')
+    expect(current.style.flex).toBe('0 0 auto')
+    expect(current.style.maxWidth).toBe('70%')
     expect(current.querySelector('[title="Projects"]')).toBeTruthy()
   })
 })
