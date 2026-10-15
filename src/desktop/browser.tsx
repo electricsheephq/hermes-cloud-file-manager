@@ -496,6 +496,8 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   const skipped = searching && !truncated ? found.data?.skipped ?? 0 : 0
   const skippedNote = skipped > 0 ? S.searchSkipped(skipped) : null
   const searchNote = !searching ? null : truncated ? truncationNote : skippedNote
+  // The note on screen, under the results or as the empty state's text, where a limit note would read "the first 0".
+  const shownNote = !searching ? null : entries.length ? searchNote : stopped ? truncationNote : skippedNote
 
   const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching)
   const { setShown } = b
@@ -507,7 +509,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   // A Load more read is pending (its count has no data yet). A refresh of the count on screen is not: it keeps
   // the button enabled, so keyboard focus on it survives a live refresh, and the count isn't announced again.
   const loadingMore = listing.isFetching && client.getQueryData(listingKey) === undefined
-  const announce = active.error ? S.folderFailed : !active.data ? '' : searching ? S.results(entries.length)
+  const announce = active.error ? S.folderFailed : !active.data ? '' : searching ? [S.results(entries.length), shownNote].filter(Boolean).join('. ')
     : count === LIST_LIMIT || entries.length >= total ? S.items(total) : loadingMore ? '' : S.showingOf(entries.length, total)
 
   const step: Record<string, number> = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity }
@@ -557,7 +559,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
       </div>
     )
   } else if (!entries.length) {
-    body = <EmptyState description={stopped ? truncationNote : skippedNote ?? undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
+    body = <EmptyState description={shownNote ?? undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
   } else {
     body = (
       <>
