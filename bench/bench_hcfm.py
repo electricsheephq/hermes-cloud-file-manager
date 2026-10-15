@@ -297,6 +297,9 @@ def build_locked(work: Path, n: int = LOCKED_N) -> tuple[Path, Path]:
 
 def suite_locked(client, api, work, reps, out):
     """B3: bounded time and honest partial results over genuinely unreadable folders (the plan's B3)."""
+    if not hasattr(os, "geteuid"):
+        out["locked (B3)"] = {"error": "not exercised: mode 000 folders need a POSIX system"}
+        return
     if os.geteuid() == 0:
         out["locked (B3)"] = {"error": "not exercised: running as root, so mode 000 folders stay readable"}
         return
@@ -344,9 +347,10 @@ def _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, 
                  visited=body["visited"], skipped=body["skipped"], expected_skipped=locked_leaves,
                  us_per_visit=round(stats["median_ms"] * 1000 / max(1, body["visited"]), 2))
     out[f"locked tree {n} search no match ({locked_leaves} mode-000 leaves)"] = stats
-    stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="newest-late-9c1e"), reps)
-    stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
-                 visited=body["visited"], skipped=body["skipped"],
+    # limit=1 stops at the find, so skipped counts the locked leaves the walk had passed by then.
+    stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="newest-late-9c1e", limit=1), reps)
+    stats.update(results=len(body["results"]), reason=body["reason"],
+                 visited_at_find=body["visited"], locked_leaves_passed_at_find=body["skipped"],
                  found_mtime_is_newest=bool(body["results"]) and body["results"][0].get("mtime", 0) > time.time())
     out[f"locked tree {n} search the late newest file"] = stats
     saved = api.SEARCH_SECONDS
