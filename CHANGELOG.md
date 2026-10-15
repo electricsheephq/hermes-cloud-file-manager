@@ -2,6 +2,17 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.4.7] - 2026-10-15
+
+Desktop half only; the agent's side is unchanged from 0.4.6 apart from the version.
+
+### Fixed
+- **Search says when it passed folders it couldn't open.** A search that finished but had to pass folders the
+  agent's user can't open (no permission, or macOS privacy protection for folders such as Desktop or Documents)
+  looked complete: "No matching files", with nothing to say matches might be inside those folders. It now adds
+  "N folders couldn't be opened, so matches inside them may be missing" under the results or the empty state, in
+  Cloud Files and the + → Cloud picker (#71). The agent's side already counted these folders.
+
 ## [0.4.6] - 2026-10-15
 
 Desktop half only; the agent's side is unchanged from 0.4.5 apart from the version.
