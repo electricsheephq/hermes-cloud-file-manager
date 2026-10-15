@@ -254,7 +254,7 @@ def _unlock(folder: Path):
         for d in dirs:
             path = os.path.join(parent, d)
             if not os.access(path, os.R_OK | os.X_OK):
-                os.chmod(path, 0o755)
+                os.chmod(path, 0o700)
 
 
 def build_locked(work: Path, n: int = LOCKED_N) -> tuple[Path, Path]:
