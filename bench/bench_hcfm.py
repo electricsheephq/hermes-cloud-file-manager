@@ -298,9 +298,10 @@ def build_locked(work: Path, n: int = LOCKED_N) -> tuple[Path, Path]:
 def suite_locked(client, api, work, reps, out):
     """B3: bounded time and honest partial results over genuinely unreadable folders (the plan's B3)."""
     if os.geteuid() == 0:
-        out["locked (B3)"] = {"note": "not exercised: running as root, so mode 000 folders stay readable"}
+        out["locked (B3)"] = {"error": "not exercised: running as root, so mode 000 folders stay readable"}
         return
     n = LOCKED_N
+    twin = build_tree(work, n)  # the same layout with nothing locked, for a per-visit comparison in the same run
     flat, tree = build_locked(work, n)
     rel_flat, rel_tree = flat.name, tree.name
     leaves = n // 100
@@ -310,7 +311,7 @@ def suite_locked(client, api, work, reps, out):
         api._LIST_CACHE.clear()
 
     try:
-        _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, cold)
+        _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, cold, twin.name)
     finally:
         # Never leave mode-000 folders in --work: a plain `rm -rf` of the fixtures would fail on them.
         for folder in (flat, tree):
@@ -319,7 +320,7 @@ def suite_locked(client, api, work, reps, out):
         (work / f".done_locked_{n}").unlink(missing_ok=True)
 
 
-def _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, cold):
+def _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, cold, rel_twin):
     stats, body = timed(lambda: get(client, "list", root="r0", path=rel_flat, offset=0, limit=500), reps,
                         before=cold)
     stats.update(total=body["total"], truncated=body["truncated"],
@@ -334,9 +335,14 @@ def _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, 
     stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
                  visited=body["visited"], skipped=body["skipped"], expected_skipped=10)
     out[f"locked flat {LOCKED_FLAT_N}+10 search a name only inside locked folders"] = stats
+    stats, body = timed(lambda: get(client, "search", root="r0", path=rel_twin, q="zz-no-match"), reps)
+    stats.update(results=len(body["results"]), reason=body["reason"], visited=body["visited"], skipped=body["skipped"],
+                 us_per_visit=round(stats["median_ms"] * 1000 / max(1, body["visited"]), 2))
+    out[f"unlocked twin tree {n} search no match (same layout, nothing locked)"] = stats
     stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="zz-no-match"), reps)
     stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
-                 visited=body["visited"], skipped=body["skipped"], expected_skipped=locked_leaves)
+                 visited=body["visited"], skipped=body["skipped"], expected_skipped=locked_leaves,
+                 us_per_visit=round(stats["median_ms"] * 1000 / max(1, body["visited"]), 2))
     out[f"locked tree {n} search no match ({locked_leaves} mode-000 leaves)"] = stats
     stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="newest-late-9c1e"), reps)
     stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
