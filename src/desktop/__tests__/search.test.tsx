@@ -152,6 +152,23 @@ it('keeps the plain empty state for an older gateway that capped an empty search
   expect(screen.queryByText(/couldn't be opened/)).toBeNull()
 })
 
+describe('the live region reads the search note after the count (#73)', () => {
+  const live = () => document.querySelector('div[aria-live="polite"]:not([role])')?.textContent
+  it.each<[string, SearchResponse, string]>([
+    ['a complete search that passed folders it could not open', { ok: true, results: [], truncated: false, reason: null, visited: 7, skipped: 2 }, "0 results. 2 folders couldn't be opened, so matches inside them may be missing."],
+    ['an empty search stopped by the time cap', { ok: true, results: [], truncated: true, reason: 'time', visited: 12345 }, `0 results. ${stopped}`],
+    ['a search that hit the result limit', { ok: true, results: [result], truncated: true, reason: 'results', visited: 12345 }, '1 result. Showing the first match. Type more to narrow the search.'],
+    ['an empty capped search from an older gateway (no note on screen, none read)', { ok: true, results: [], truncated: true, visited: 12345, skipped: 3 }, '0 results'],
+    ['a complete search with nothing skipped', { ok: true, results: [result], truncated: false, reason: null, visited: 7 }, '1 result']
+  ])('%s', async (_, response, text) => {
+    setup(response)
+    render(<CloudFilesPage />)
+    await screen.findByText('docs')
+    search()
+    await waitFor(() => expect(live()).toBe(text))
+  })
+})
+
 it('keeps the ordinary empty state for a complete search', async () => {
   setup({ ok: true, results: [], truncated: false, reason: null, visited: 7 })
   render(<CloudFilesPage />)

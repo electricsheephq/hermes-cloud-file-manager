@@ -12,6 +12,8 @@ Desktop half only; the agent's side is unchanged from 0.4.6 apart from the versi
   looked complete: "No matching files", with nothing to say matches might be inside those folders. It now adds
   "N folders couldn't be opened, so matches inside them may be missing" under the results or the empty state, in
   Cloud Files and the + → Cloud picker (#71). The agent's side already counted these folders.
+- **Search notes reach screen readers.** The live region read only the result count. It now reads the search's note
+  after it: a stopped search, only the first matches shown, or folders that couldn't be opened (#73).
 
 ## [0.4.6] - 2026-10-15
 
