@@ -1155,7 +1155,8 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   const stopped = reason === "time" || reason === "visits";
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === "results" ? S.searchMore(entries.length) : S.truncated(entries.length);
   const skipped = searching && !truncated ? found.data?.skipped ?? 0 : 0;
-  const searchNote = !searching ? null : truncated ? truncationNote : skipped > 0 ? S.searchSkipped(skipped) : null;
+  const skippedNote = skipped > 0 ? S.searchSkipped(skipped) : null;
+  const searchNote = !searching ? null : truncated ? truncationNote : skippedNote;
   const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching);
   const { setShown } = b;
   useEffect(() => setShown(active.data && !active.error ? { entries, save: active.data.save ?? null } : null), [active.data, active.error, entries, setShown]);
@@ -1201,7 +1202,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   } else if (!active.data) {
     body = /* @__PURE__ */ jsx("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: "8px 12px" }, children: [0, 1, 2, 3, 4].map((i) => /* @__PURE__ */ jsx(Skeleton, { style: { height: 18, opacity: 1 - i * 0.15 } }, i)) });
   } else if (!entries.length) {
-    body = /* @__PURE__ */ jsx(EmptyState, { description: searchNote ?? void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : b.mode === "pick" ? S.emptyFolderPick : S.emptyFolder });
+    body = /* @__PURE__ */ jsx(EmptyState, { description: stopped ? truncationNote : skippedNote ?? void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : b.mode === "pick" ? S.emptyFolderPick : S.emptyFolder });
   } else {
     body = /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { "aria-label": searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || ""), "aria-multiselectable": "true", role: "listbox", children: entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onDragStart: dragOut && !entry.link_outside ? (event) => startDrag(entry, event) : void 0, onFocus: () => setLastFocused(entry.abs), onNavKey: navKey, onOpen: open, searching, tabStop: entry.abs === tabStop }, entry.abs)) }),
