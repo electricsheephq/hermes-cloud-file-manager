@@ -54,6 +54,8 @@ export const S = {
   searchStopped: (visited: number) =>
     `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : 'early'}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: 'No matches found so far',
+  searchSkipped: (n: number) =>
+    `${n === 1 ? "1 folder couldn't" : `${n.toLocaleString()} folders couldn't`} be opened, so matches inside them may be missing.`,
   dropTo: (folder: string) => `Drop to upload to ${folder}`,
   dragOtherAgent: (owner: string, profile: string) =>
     `The chat you'd drop into is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,

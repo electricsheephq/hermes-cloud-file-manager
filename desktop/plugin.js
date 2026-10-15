@@ -59,6 +59,7 @@ var S = {
   searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: "No matches found so far",
+  searchSkipped: (n) => `${n === 1 ? "1 folder couldn't" : `${n.toLocaleString()} folders couldn't`} be opened, so matches inside them may be missing.`,
   dropTo: (folder) => `Drop to upload to ${folder}`,
   dragOtherAgent: (owner, profile) => `The chat you'd drop into is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   copied: (n) => n === 1 ? "Path copied" : `${n} paths copied`,
@@ -1153,6 +1154,9 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === "results" ? S.searchMore(entries.length) : S.truncated(entries.length);
+  const skipped = searching && !truncated ? found.data?.skipped ?? 0 : 0;
+  const skippedNote = skipped > 0 ? S.searchSkipped(skipped) : null;
+  const searchNote = !searching ? null : truncated ? truncationNote : skippedNote;
   const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching);
   const { setShown } = b;
   useEffect(() => setShown(active.data && !active.error ? { entries, save: active.data.save ?? null } : null), [active.data, active.error, entries, setShown]);
@@ -1198,11 +1202,11 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   } else if (!active.data) {
     body = /* @__PURE__ */ jsx("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: "8px 12px" }, children: [0, 1, 2, 3, 4].map((i) => /* @__PURE__ */ jsx(Skeleton, { style: { height: 18, opacity: 1 - i * 0.15 } }, i)) });
   } else if (!entries.length) {
-    body = /* @__PURE__ */ jsx(EmptyState, { description: stopped ? truncationNote : void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : b.mode === "pick" ? S.emptyFolderPick : S.emptyFolder });
+    body = /* @__PURE__ */ jsx(EmptyState, { description: stopped ? truncationNote : skippedNote ?? void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : b.mode === "pick" ? S.emptyFolderPick : S.emptyFolder });
   } else {
     body = /* @__PURE__ */ jsxs(Fragment, { children: [
       /* @__PURE__ */ jsx("div", { "aria-label": searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || ""), "aria-multiselectable": "true", role: "listbox", children: entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onDragStart: dragOut && !entry.link_outside ? (event) => startDrag(entry, event) : void 0, onFocus: () => setLastFocused(entry.abs), onNavKey: navKey, onOpen: open, searching, tabStop: entry.abs === tabStop }, entry.abs)) }),
-      searching ? truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: truncationNote }) : (listing.data?.total ?? 0) > entries.length ? /* @__PURE__ */ jsxs("div", { style: { ...muted, fontSize: 11, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }, children: [
+      searching ? searchNote && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: searchNote }) : (listing.data?.total ?? 0) > entries.length ? /* @__PURE__ */ jsxs("div", { style: { ...muted, fontSize: 11, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }, children: [
         /* @__PURE__ */ jsx("span", { children: S.showingOf(entries.length, listing.data.total) }),
         /* @__PURE__ */ jsx(Button, { disabled: loadingMore, onClick: () => setRange({ folder, count: count + LIST_LIMIT }), size: "sm", variant: "text", children: S.loadMore })
       ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })

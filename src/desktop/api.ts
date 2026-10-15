@@ -44,6 +44,8 @@ export interface SearchResponse {
   truncated: boolean
   reason?: 'results' | 'time' | 'visits' | null
   visited?: number
+  /** Folders the search could not open (no permission, or macOS privacy protection). */
+  skipped?: number
 }
 
 /** An in-band `{ok:false, code}` answer, raised so queries surface it as an error. */
