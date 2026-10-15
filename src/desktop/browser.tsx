@@ -494,7 +494,8 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
   // A complete search can still have passed folders it couldn't open; say so rather than look exhaustive.
   const skipped = searching && !truncated ? found.data?.skipped ?? 0 : 0
-  const searchNote = !searching ? null : truncated ? truncationNote : skipped > 0 ? S.searchSkipped(skipped) : null
+  const skippedNote = skipped > 0 ? S.searchSkipped(skipped) : null
+  const searchNote = !searching ? null : truncated ? truncationNote : skippedNote
 
   const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching)
   const { setShown } = b
@@ -556,7 +557,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
       </div>
     )
   } else if (!entries.length) {
-    body = <EmptyState description={searchNote ?? undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
+    body = <EmptyState description={stopped ? truncationNote : skippedNote ?? undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
   } else {
     body = (
       <>
