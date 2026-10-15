@@ -244,6 +244,116 @@ def suite_searchcap(client, api, work, reps, out):
         api.SEARCH_SECONDS, api.SEARCH_VISIT_LIMIT = saved
 
 
+LOCKED_N = 40_000
+LOCKED_FLAT_N = 19_990  # plus 10 locked subfolders = 20,000 entries, exactly the list scan cap
+
+
+def _unlock(folder: Path):
+    """Give mode-000 fixture folders back their mode so they can be rebuilt or removed (top-down, before descending)."""
+    for parent, dirs, _ in os.walk(folder):
+        for d in dirs:
+            path = os.path.join(parent, d)
+            if not os.access(path, os.R_OK | os.X_OK):
+                os.chmod(path, 0o755)
+
+
+def build_locked(work: Path, n: int = LOCKED_N) -> tuple[Path, Path]:
+    """B3 fixtures: n files with folders the bench user genuinely cannot read (mode 000, not root).
+
+    locked_flat_<LOCKED_FLAT_N>: 19,990 files in one folder plus 10 mode-000 subfolders, each hiding a "hidden-needle"
+    file (20,000 entries: the whole folder fits the list scan cap, so every locked subfolder is listed).
+    locked_tree_<n>: leaf folders of 100 files, 20 per mid folder; every 10th leaf (leaf % 10 == 5) is mode 000.
+    The newest file ("newest-late-9c1e.txt", mtime +1 h) sits in the very last leaf, which is readable and
+    comes last in breadth-first order, so a search must get past every locked leaf to find it."""
+    flat, tree = work / "root" / f"locked_flat_{LOCKED_FLAT_N}", work / "root" / f"locked_tree_{n}"
+    marker = work / f".done_locked_{n}"
+    if marker.exists():
+        return flat, tree
+    for folder in (flat, tree):
+        _unlock(folder)
+        shutil.rmtree(folder, ignore_errors=True)
+    _touch_many(flat, [f"{WORDS[k % len(WORDS)]}_{k:06d}{EXTS[k % len(EXTS)]}" for k in range(LOCKED_FLAT_N)])
+    locked = []
+    for i in range(10):
+        d = flat / f"locked_{i:02d}"
+        _touch_many(d, [f"hidden-needle-{i:02d}.txt"])
+        locked.append(d)
+    leaves = n // 100
+    for leaf in range(leaves):
+        d = tree / f"mid_{leaf // 20:04d}" / f"leaf_{leaf:05d}"
+        _touch_many(d, [f"{WORDS[(leaf + k) % len(WORDS)]}_{leaf:05d}_{k:03d}{EXTS[k % len(EXTS)]}" for k in range(100)])
+        if leaf % 10 == 5:
+            _touch_many(d, [f"hidden-needle-{leaf:05d}.txt"])
+            locked.append(d)
+    newest = tree / f"mid_{(leaves - 1) // 20:04d}" / f"leaf_{leaves - 1:05d}" / "newest-late-9c1e.txt"
+    newest.touch()
+    later = time.time() + 3600
+    os.utime(newest, (later, later))
+    for d in locked:
+        d.chmod(0)
+    marker.touch()
+    return flat, tree
+
+
+def suite_locked(client, api, work, reps, out):
+    """B3: bounded time and honest partial results over genuinely unreadable folders (the plan's B3)."""
+    if os.geteuid() == 0:
+        out["locked (B3)"] = {"note": "not exercised: running as root, so mode 000 folders stay readable"}
+        return
+    n = LOCKED_N
+    flat, tree = build_locked(work, n)
+    rel_flat, rel_tree = flat.name, tree.name
+    leaves = n // 100
+    locked_leaves = len([leaf for leaf in range(leaves) if leaf % 10 == 5])
+
+    def cold():
+        api._LIST_CACHE.clear()
+
+    try:
+        _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, cold)
+    finally:
+        # Never leave mode-000 folders in --work: a plain `rm -rf` of the fixtures would fail on them.
+        for folder in (flat, tree):
+            _unlock(folder)
+            shutil.rmtree(folder, ignore_errors=True)
+        (work / f".done_locked_{n}").unlink(missing_ok=True)
+
+
+def _locked_cases(client, api, reps, out, n, rel_flat, rel_tree, locked_leaves, cold):
+    stats, body = timed(lambda: get(client, "list", root="r0", path=rel_flat, offset=0, limit=500), reps,
+                        before=cold)
+    stats.update(total=body["total"], truncated=body["truncated"],
+                 locked_dirs_listed=sum(1 for e in body["entries"] if e["name"].startswith("locked_")))
+    out[f"locked flat {LOCKED_FLAT_N}+10 list first page cold (10 mode-000 subfolders)"] = stats
+    r = client.get(f"{PREFIX}/list", params={"root": "r0", "path": f"{rel_flat}/locked_00"}).json()
+    stats, _ = timed(lambda: client.get(f"{PREFIX}/list", params={"root": "r0", "path": f"{rel_flat}/locked_00"}).json(), reps,
+                     before=cold)
+    stats.update(ok=r.get("ok"), code=r.get("code"))
+    out["locked flat open a mode-000 folder"] = stats
+    stats, body = timed(lambda: get(client, "search", root="r0", path=rel_flat, q="hidden-needle"), reps)
+    stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
+                 visited=body["visited"], skipped=body["skipped"], expected_skipped=10)
+    out[f"locked flat {LOCKED_FLAT_N}+10 search a name only inside locked folders"] = stats
+    stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="zz-no-match"), reps)
+    stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
+                 visited=body["visited"], skipped=body["skipped"], expected_skipped=locked_leaves)
+    out[f"locked tree {n} search no match ({locked_leaves} mode-000 leaves)"] = stats
+    stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="newest-late-9c1e"), reps)
+    stats.update(results=len(body["results"]), truncated=body["truncated"], reason=body["reason"],
+                 visited=body["visited"], skipped=body["skipped"],
+                 found_mtime_is_newest=bool(body["results"]) and body["results"][0].get("mtime", 0) > time.time())
+    out[f"locked tree {n} search the late newest file"] = stats
+    saved = api.SEARCH_SECONDS
+    try:
+        api.SEARCH_SECONDS = 0.01
+        stats, body = timed(lambda: get(client, "search", root="r0", path=rel_tree, q="zz-no-match"), reps)
+        stats.update(cap_ms=10, reason=body["reason"], truncated=body["truncated"], visited=body["visited"],
+                     skipped=body["skipped"])
+        out[f"locked tree {n} search time cap patched to 0.01 s"] = stats
+    finally:
+        api.SEARCH_SECONDS = saved
+
+
 def _upload(client, size, payload_chunk: bytes, chunk_bytes, base=""):
     """One upload through start/chunk/finish over a real HTTP client. Returns seconds (bodies pre-built)."""
     name = f"bench-{os.getpid()}-{time.monotonic_ns()}.bin"
@@ -571,6 +681,8 @@ def main():
             suite_file(client, work, args.reps, results)
         elif name == "drive":
             suite_drive(client, api, args.reps, results)
+        elif name == "locked":
+            suite_locked(client, api, work, args.reps, results)
     if args.core:
         print("[bench] core ...", file=sys.stderr, flush=True)
         suite_core(args, results)
