@@ -492,6 +492,9 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   const reason = searching ? found.data?.reason : undefined
   const stopped = reason === 'time' || reason === 'visits'
   const truncationNote = stopped ? S.searchStopped(found.data?.visited ?? 0) : reason === 'results' ? S.searchMore(entries.length) : S.truncated(entries.length)
+  // A complete search can still have passed folders it couldn't open; say so rather than look exhaustive.
+  const skipped = searching && !truncated ? found.data?.skipped ?? 0 : 0
+  const searchNote = !searching ? null : truncated ? truncationNote : skipped > 0 ? S.searchSkipped(skipped) : null
 
   const list = useListFocus(b.focusNext, Boolean(active.data || active.error), searching ? null : b.path, active.isFetching)
   const { setShown } = b
@@ -553,7 +556,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
       </div>
     )
   } else if (!entries.length) {
-    body = <EmptyState description={stopped ? truncationNote : undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
+    body = <EmptyState description={searchNote ?? undefined} title={stopped ? S.noResultsYet : searching ? S.noResults : b.mode === 'pick' ? S.emptyFolderPick : S.emptyFolder} />
   } else {
     body = (
       <>
@@ -562,7 +565,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
             <EntryRow b={b} entry={entry} key={entry.abs} onDragStart={dragOut && !entry.link_outside ? event => startDrag(entry, event) : undefined} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
           ))}
         </div>
-        {searching ? truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{truncationNote}</div> :
+        {searching ? searchNote && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{searchNote}</div> :
           (listing.data?.total ?? 0) > entries.length ? (
             <div style={{ ...muted, fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>{S.showingOf(entries.length, listing.data!.total)}</span>

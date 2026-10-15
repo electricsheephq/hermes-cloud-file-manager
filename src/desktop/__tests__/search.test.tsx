@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { $available, $driveAvailable, bindContext, type SearchResponse } from '../api'
 import { EntryList, useBrowser } from '../browser'
@@ -112,6 +112,34 @@ it('names the folder being searched below the root, keeping the field label', as
   fireEvent.doubleClick(await screen.findByText('docs'))
   await screen.findByText('a.pdf')
   expect(screen.getByLabelText('Search files').getAttribute('placeholder')).toBe('Search in docs')
+})
+
+it.each([
+  [1, "1 folder couldn't be opened, so matches inside them may be missing."],
+  [12345, `${(12345).toLocaleString()} folders couldn't be opened, so matches inside them may be missing.`]
+] as const)('says when a complete search passed %s folders it could not open', async (skipped, copy) => {
+  setup({ ok: true, results: [], truncated: false, reason: null, visited: 7, skipped })
+  render(<CloudFilesPage />)
+  await screen.findByText('docs')
+  search()
+  expect(await screen.findByText('No matching files')).toBeTruthy()
+  expect(screen.getByText(copy)).toBeTruthy()
+})
+
+it('notes unopened folders under results too, but not when a cap or the limit already says matches are missing', async () => {
+  setup({ ok: true, results: [result], truncated: false, reason: null, visited: 7, skipped: 2 })
+  render(<CloudFilesPage />)
+  await screen.findByText('docs')
+  search()
+  expect(await screen.findByText("2 folders couldn't be opened, so matches inside them may be missing.")).toBeTruthy()
+  cleanup()
+  resetQueryCache()
+  setup({ ok: true, results: [], truncated: true, reason: 'time', visited: 12345, skipped: 2 })
+  render(<CloudFilesPage />)
+  await screen.findByText('docs')
+  search()
+  expect(await screen.findByText(stopped)).toBeTruthy()
+  expect(screen.queryByText(/couldn't be opened/)).toBeNull()
 })
 
 it('keeps the ordinary empty state for a complete search', async () => {
