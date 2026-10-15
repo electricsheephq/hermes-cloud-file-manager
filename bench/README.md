@@ -33,6 +33,7 @@ python bench/diff_list.py --base . --cand ../other-checkout --work <empty dir>  
 | upload | 1 MiB and 100 MiB through `uploads/start`, `uploads/chunk` and `uploads/finish` over real HTTP: MiB/s and the server's peak RSS growth |
 | file | `GET /file` and `POST /file/save` of a 1 MiB Markdown file |
 | drive | the subprocess floor, `drive/available` cold and warm, `drive/list` (200 items) and `drive/import` (1 MiB) |
+| locked | opt-in (not in the default list). Folders the bench user genuinely cannot open (mode 000; not exercised as root or without POSIX modes): a flat folder of 19,990 files plus 10 locked subfolders, and a 40k-file tree with every tenth leaf locked, plus an unlocked twin of the same tree for comparison. It times the listing, opening a locked folder, searches that must pass the locked folders (`skipped` against the expected count), the newest file (with `limit=1`, recording how far the walk had got), and the time cap. The suite deletes its locked fixtures when it ends. |
 
 Every case reports the median, p95, min and max over `--reps` timed repetitions, after one warm-up. Machine info, the filesystem, the Python and FastAPI versions, and the sha256 prefix of `plugin_api.py` are recorded.
 
