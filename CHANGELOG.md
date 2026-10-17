@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [Unreleased]
+
+### Added
+- **Sort by date on the agent's side.** The folder list can return newest entries first, with files and folders
+  interleaved, among the first 20,000 entries scanned. Desktop support follows.
+
+### Fixed
+- **Text preview truncation.** A text preview now says it was cut short even when the file's reported size is stale (#57).
+
 ## [0.4.8] - 2026-10-17
 
 Desktop half only; the agent's side is unchanged from 0.4.7 apart from the version.
