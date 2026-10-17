@@ -2,7 +2,9 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-17
+
+Both halves change: the agent's side and the Desktop.
 
 ### Added
 - **Sort by date modified.** Cloud Files and the + → Cloud picker get a Sort control (Name / Date modified). Date lists the
