@@ -5,8 +5,11 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 ## [Unreleased]
 
 ### Added
-- **Sort by date on the agent's side.** The folder list can return newest entries first, with files and folders
-  interleaved, among the first 20,000 entries scanned. Desktop support follows.
+- **Sort by date modified.** Cloud Files and the + → Cloud picker get a Sort control (Name / Date modified). Date lists the
+  open folder newest first, files and folders together, among the first 20,000 entries scanned. It needs the agent's side
+  from this release; on an older agent Date is disabled with a hint and Name works as before.
+- **Copy diagnostics** in the Cloud Files header, also when browsing fails. It copies only versions, states, counts and
+  error codes: no folder names, paths or error text (#61).
 
 ### Fixed
 - **Text preview truncation.** A text preview now says it was cut short even when the file's reported size is stale (#57).
@@ -14,10 +17,6 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 ## [0.4.8] - 2026-10-17
 
 Desktop half only; the agent's side is unchanged from 0.4.7 apart from the version.
-
-### Added
-- **Sort by date modified** in Cloud Files and the Cloud picker, newest first on agents that support it. Older agents keep Name order and show an update hint.
-- **Copy diagnostics** in the Cloud Files header, including when browsing fails; copies only safe versions, states, counts and error codes (#61).
 
 ### Fixed
 - **Retry a preview after a temporary read failure.** A file changing during a read or a temporary I/O error

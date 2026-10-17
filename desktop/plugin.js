@@ -2447,7 +2447,7 @@ function filesFromInput(list) {
 import { Fragment as Fragment4, jsx as jsx7, jsxs as jsxs6 } from "react/jsx-runtime";
 var muted5 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
-var desktopVersion = true ? "0.4.7" : "unknown";
+var desktopVersion = true ? "0.4.8" : "unknown";
 var $batch = atom6(null);
 var currentPin = () => ({ connectionId: host8.state.connectionId.get(), profile: host8.state.profile.get() });
 function dragFromPage(event, [connectionId, profile]) {
