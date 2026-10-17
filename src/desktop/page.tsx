@@ -148,7 +148,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
   const copyDiagnostics = () => {
     const text = [`Cloud Files desktop ${desktopVersion}`, `Agent side: ${info?.agent ?? 'unknown'}`,
       `Google Drive: ${info?.drive ?? 'unknown'}`, `Sort by date: ${info?.date === undefined ? 'unknown' : info.date ? 'supported' : 'not supported'}`,
-      `Folders configured: ${info?.folders ?? 'unknown'}`, `Last error: ${info?.error ?? 'none'}`].join('\n')
+      `Folders available: ${info?.folders ?? 'unknown'}`, `Last error: ${info?.error ?? 'none'}`].join('\n')
     void pluginCtx().os.writeClipboard(text).then(ok => ok, () => false)
       .then(ok => host.notify(ok ? { kind: 'success', message: S.diagnosticsCopied } : { kind: 'error', message: S.copyFailed }))
   }

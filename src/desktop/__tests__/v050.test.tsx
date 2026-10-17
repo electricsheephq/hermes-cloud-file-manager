@@ -6,7 +6,10 @@ import { registerAvailabilityGate } from '../plugin'
 import { fakeBackend, ROOTS } from './fake-backend'
 import { createTestContext, host, resetHost, resetQueryCache, useQueryClient } from './sdk-mock'
 
-const entry = (rel: string, is_dir = false): Entry => ({ name: rel.split('/').pop()!, rel, abs: `/home/agent/${rel}`, is_dir, size: 1, mtime: 0 })
+// Several cases render 800+ rows in jsdom, which takes a few seconds on CI runners (about 5x this Mac).
+vi.setConfig({ testTimeout: 30_000 })
+
+const entry =(rel: string, is_dir = false): Entry => ({ name: rel.split('/').pop()!, rel, abs: `/home/agent/${rel}`, is_dir, size: 1, mtime: 0 })
 const files = (n: number) => Array.from({ length: n }, (_, i) => entry(`f${String(i).padStart(4, '0')}.txt`))
 const rows = () => [...document.querySelectorAll('[data-entry]')].map(row => row.getAttribute('data-entry'))
 const sort = () => screen.getByLabelText('Sort') as HTMLSelectElement
@@ -170,7 +173,7 @@ it.each(['normal', 'unavailable', 'roots-error', 'loading', 'unreachable', 'unkn
     'Cloud Files desktop unknown', `Agent side: ${unavailable ? 'unavailable' : state === 'unreachable' ? 'unreachable' : state === 'loading' ? 'unknown' : '0.1.0'}`,
     `Google Drive: ${unknown ? 'unknown' : unavailable ? 'unavailable' : 'available'}`,
     `Sort by date: ${state === 'normal' ? 'supported' : 'unknown'}`,
-    `Folders configured: ${state === 'normal' ? '1' : 'unknown'}`,
+    `Folders available: ${state === 'normal' ? '1' : 'unknown'}`,
     `Last error: ${state === 'roots-error' ? 'protected' : state === 'unreachable' || state === 'unknown-code' ? 'other' : 'none'}`
   ].join('\n'))
   for (const forbidden of [ROOTS.roots[0].label, ROOTS.roots[0].path, 'conn-1', 'default', '/private/label']) expect(copy.mock.calls[0][0]).not.toContain(forbidden)
@@ -211,11 +214,11 @@ it('diagnostics never borrow A facts while B probes or after B answers late', as
   render(<CloudFilesPage />); await flush()
   act(() => host.state.profile.set('B')); await flush()
   fireEvent.click(screen.getByText('Copy diagnostics')); await flush()
-  expect(copy).toHaveBeenLastCalledWith('Cloud Files desktop unknown\nAgent side: unknown\nGoogle Drive: unknown\nSort by date: unknown\nFolders configured: unknown\nLast error: none')
+  expect(copy).toHaveBeenLastCalledWith('Cloud Files desktop unknown\nAgent side: unknown\nGoogle Drive: unknown\nSort by date: unknown\nFolders available: unknown\nLast error: none')
   act(() => host.state.profile.set('default')); await flush()
   await act(async () => release({ version: '9.9.9' })); await flush()
   fireEvent.click(screen.getByText('Copy diagnostics')); await flush()
-  expect(copy).toHaveBeenLastCalledWith('Cloud Files desktop unknown\nAgent side: 0.5.0\nGoogle Drive: available\nSort by date: supported\nFolders configured: 1\nLast error: none')
+  expect(copy).toHaveBeenLastCalledWith('Cloud Files desktop unknown\nAgent side: 0.5.0\nGoogle Drive: available\nSort by date: supported\nFolders available: 1\nLast error: none')
   act(() => context.dispose())
 })
 it.each([false, 'reject'])('diagnostics uses clipboard failure handling (%s)', async result => {

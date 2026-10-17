@@ -2516,7 +2516,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
       `Agent side: ${info?.agent ?? "unknown"}`,
       `Google Drive: ${info?.drive ?? "unknown"}`,
       `Sort by date: ${info?.date === void 0 ? "unknown" : info.date ? "supported" : "not supported"}`,
-      `Folders configured: ${info?.folders ?? "unknown"}`,
+      `Folders available: ${info?.folders ?? "unknown"}`,
       `Last error: ${info?.error ?? "none"}`
     ].join("\n");
     void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host8.notify(ok ? { kind: "success", message: S.diagnosticsCopied } : { kind: "error", message: S.copyFailed }));
