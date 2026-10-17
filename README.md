@@ -93,6 +93,10 @@ installing the desktop half is harmless for your other agents.
   and its subfolders. Search skips `.git`, `node_modules`, `__pycache__`, `.venv`, `venv`, `.tox`, `.mypy_cache` and
   `.cache` folders. On a very large folder, search stops after 5 seconds and says that some matches may be missing;
   open a subfolder to search inside it.
+- **Sort:** choose **Name** or **Date modified** in the toolbar of Cloud Files or the **+ → Cloud** picker. Date
+  modified lists the open folder's files and folders together, newest first; in a folder with more than 20,000
+  entries, the order covers the first 20,000 scanned. Search results keep their own order, so Sort is off while you
+  search. Date modified needs version 0.5.0 or later on the agent too; on an older agent it is disabled with a hint.
 - **Read and edit Markdown:** double-click a `.md`, `.markdown` or `.txt` file (or select it and choose
   **Open**). It opens read-only, rendered like chat. Choose **Edit** to change the source, **Changes** to see
   your edits line by line, and **Review & save** to check the diff before **Save**. Nothing is written until you
