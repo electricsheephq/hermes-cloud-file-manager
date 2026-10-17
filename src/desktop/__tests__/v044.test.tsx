@@ -205,7 +205,7 @@ describe('Cloud live refresh', () => {
     const remove = vi.spyOn(document, 'removeEventListener')
     act(() => backend.emitEvent(event()))
     backend.view.unmount()
-    expect(backend.eventDisposals()).toBe(1)
+    expect(backend.eventDisposals()).toBe(2)
     expect(backend.listeners.get('tool.complete')?.size).toBe(0)
     expect(remove).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
     await advance(1000)
@@ -220,7 +220,7 @@ describe('Cloud live refresh', () => {
     act(() => host.state[store].set('other'))
     await flush()
     const start = backend.calls.length
-    expect(backend.eventDisposals()).toBe(1)
+    expect(backend.eventDisposals()).toBe(2)
     await advance(1000)
     expect(backend.calls.slice(start)).toHaveLength(0)
     act(() => backend.emitEvent(event()))

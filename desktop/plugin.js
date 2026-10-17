@@ -884,24 +884,23 @@ function useLiveRefresh() {
     const refresh = () => {
       refreshList();
       void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "search"] });
+      if (followup !== void 0) window.clearTimeout(followup);
+      followup = window.setTimeout(() => {
+        followup = void 0;
+        if (document.visibilityState === "hidden") missed = true;
+        else refreshList();
+      }, LIST_CACHE_FOLLOWUP_MS);
     };
-    const dispose = ctx.onEvent("tool.complete", (event) => {
-      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || !toolMayChangeFiles(event.payload)) return;
+    const disposers = ["tool.complete", "subagent.complete"].map((type) => ctx.onEvent(type, (event) => {
+      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || type === "tool.complete" && !toolMayChangeFiles(event.payload)) return;
+      if (followup !== void 0) window.clearTimeout(followup);
       if (timer !== void 0) return;
       timer = window.setTimeout(() => {
         timer = void 0;
         if (document.visibilityState === "hidden") missed = true;
-        else {
-          refresh();
-          if (followup !== void 0) window.clearTimeout(followup);
-          followup = window.setTimeout(() => {
-            followup = void 0;
-            if (document.visibilityState === "hidden") missed = true;
-            else refreshList();
-          }, LIST_CACHE_FOLLOWUP_MS);
-        }
+        else refresh();
       }, 1e3);
-    });
+    }));
     const visible = () => {
       if (document.visibilityState !== "visible" || !missed) return;
       missed = false;
@@ -909,7 +908,7 @@ function useLiveRefresh() {
     };
     document.addEventListener("visibilitychange", visible);
     liveRefresh.set(key, { holders: 1, dispose: () => {
-      dispose();
+      disposers.forEach((dispose) => dispose());
       if (timer !== void 0) window.clearTimeout(timer);
       if (followup !== void 0) window.clearTimeout(followup);
       document.removeEventListener("visibilitychange", visible);
@@ -935,6 +934,7 @@ function useBrowser(roots, mode) {
   const [localPath, setLocalPath] = useState("");
   const [localSearch, setLocalSearch] = useState("");
   const [localSelected, setLocalSelected] = useState(/* @__PURE__ */ new Map());
+  const selectedAt = useRef(/* @__PURE__ */ new Map());
   const scope = useScope().join("::");
   const picked = useValue($pickState);
   const fresh = () => ({ scope, rootId: roots.roots[0]?.id ?? "", path: "", search: "", selected: /* @__PURE__ */ new Map() });
@@ -962,7 +962,10 @@ function useBrowser(roots, mode) {
   const navigate = (next) => {
     setPath(next);
     setSearch("");
-    if (mode === "page") setSelected(/* @__PURE__ */ new Map());
+    if (mode === "page") {
+      selectedAt.current.clear();
+      setSelected(/* @__PURE__ */ new Map());
+    }
   };
   return {
     roots,
@@ -978,20 +981,31 @@ function useBrowser(roots, mode) {
     switchRoot: (id) => {
       setRootId(id);
       navigate("");
+      selectedAt.current.clear();
       setSelected(/* @__PURE__ */ new Map());
     },
     toggle: (entry) => setSelected((prev) => {
       const next = new Map(prev);
-      if (!next.delete(entry.abs)) next.set(entry.abs, entry);
+      if (next.delete(entry.abs)) selectedAt.current.delete(entry.abs);
+      else {
+        next.set(entry.abs, entry);
+        selectedAt.current.set(entry.abs, Date.now());
+      }
       return next;
     }),
-    selectOnly: (entry) => setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]])),
+    selectOnly: (entry) => {
+      selectedAt.current = /* @__PURE__ */ new Map([[entry.abs, Date.now()]]);
+      setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]]));
+    },
     prune: (data) => {
       if (data.truncated || data.entries.length < data.total) return;
       const present = new Set(data.entries.map((entry) => entry.abs));
       const next = new Map(selected);
       for (const entry of selected.values()) {
-        if (parentPath(entry.rel) === path && !present.has(entry.abs)) next.delete(entry.abs);
+        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? Infinity) < data.readAt) {
+          next.delete(entry.abs);
+          selectedAt.current.delete(entry.abs);
+        }
       }
       if (next.size !== selected.size) setSelected(next);
     },
@@ -1160,6 +1174,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     // A first read of this count is a Load more: hand it the listing on screen (the previous count).
     // The save is captured with the read, never at click time: it belongs to the agent that answered.
     queryFn: async () => {
+      const readAt = Date.now();
       const save = captureFor([connectionId, profile]);
       return { ...await listUpTo(
         [connectionId, profile],
@@ -1167,7 +1182,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
         b.path,
         count,
         client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 6), count - LIST_LIMIT]) : void 0
-      ), save };
+      ), save, readAt };
     },
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
@@ -1184,8 +1199,8 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   });
   const active = searching ? found : listing;
   useEffect(() => {
-    if (!b.search.trim() && listing.data && !listing.error) b.prune(listing.data);
-  }, [listing.data, listing.error, b.search, rootId, b.path]);
+    if (!b.search.trim() && listing.data && !listing.error && !listing.isFetching) b.prune(listing.data);
+  }, [listing.data, listing.error, listing.isFetching, b.search, rootId, b.path]);
   const entries = useMemo(() => {
     if (searching) return found.data?.results ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
@@ -1234,8 +1249,10 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     if (!dragOut?.(event, [connectionId, profile])) return;
     const candidates = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter((e) => !e.link_outside);
     const picked = candidates.filter((e) => !dragWouldChange(e.abs) && formatRef(e.abs) !== null);
-    const skipped2 = candidates.length - picked.length;
-    if (skipped2) host2.notify({ kind: "warning", message: S.dragSkipped(skipped2) });
+    const unrepresentable = candidates.filter((e) => formatRef(e.abs) === null).length;
+    const ambiguous = candidates.length - picked.length - unrepresentable;
+    if (ambiguous) host2.notify({ kind: "warning", message: S.dragSkipped(ambiguous) });
+    if (unrepresentable) host2.notify({ kind: "warning", message: S.refSkipped(unrepresentable) });
     if (!picked.length) {
       event.preventDefault();
       return;

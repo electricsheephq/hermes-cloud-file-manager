@@ -124,7 +124,7 @@ export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData
   return {
     data: enabled ? data ?? placeholderData?.(last.current?.data, last.current && { queryKey: last.current.queryKey }) : undefined,
     error: enabled ? entry?.error : undefined,
-    isFetching: Boolean(entry?.pending || (enabled && entry?.stale)),
+    isFetching: Boolean(entry?.pending || (enabled && entry?.stale && !entry.error)),
     refetch: () => fetchEntry(entryFor(key))
   }
 }

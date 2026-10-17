@@ -23,6 +23,8 @@ CSV of 1,000 rows × 50 columns (288 KiB).
 
 Reading:
 - Images and PDFs up to the 10 MiB limit show in a quarter of a second on loopback.
-- The CSV is slower because of rendering 50,000 table cells, not transfer. It is still well inside any timeout.
+- The CSV is slower. Its phases weren't timed separately, so the cause isn't isolated. Transfer is an unlikely cause: at
+  288 KiB it is smaller than the 1 MiB files that show in 60–160 ms. Parsing it and rendering 50,000 table cells are the
+  likelier causes. Either way it is well inside any timeout.
 - No preview failed, so the preview timeout stays as it is (roadmap R1: bump only if B2 reproduces a failure).
 - Loopback says nothing about a slow link. A real-WAN journey is B4, at v0.5.0.

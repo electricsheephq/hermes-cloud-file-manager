@@ -17,6 +17,8 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
   disappeared. Complete folder listings now clear those selections, keeping selections in other folders (#60).
 - **Drag leaves ambiguous names out.** Names ending in punctuation or a line range could reach the chat as a
   different path. Drag now skips those and unrepresentable paths with a notice to use Add to chat (#67).
+- **Delegated work refreshes the list too.** When the agent hands work to a subagent, the list now refreshes when that
+  subagent finishes, not only after the agent's own tool calls (#60).
 - **One unopened folder reads correctly.** The search note said "1 folder couldn't be opened, so matches inside
   them may be missing". It now says "inside it" for one folder.
 
