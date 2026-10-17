@@ -65,7 +65,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: There is no agent-callable diagnostic. Describe the Cloud Files panel error, file/folder (redacted), and Desktop version. Its internal /available probe returns plugin identity and version only; do not call gateway APIs with credentials.
+      description: Use Copy diagnostics in the Cloud Files header (also available when loading fails), then paste here. Add your Desktop version and describe the panel error with private names redacted. Do not call gateway APIs with credentials.
       render: text
   - type: textarea
     id: logs

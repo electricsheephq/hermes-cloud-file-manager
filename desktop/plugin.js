@@ -3,13 +3,13 @@
 // src/desktop/plugin.tsx
 import {
   COMPOSER_AREAS,
-  host as host8,
+  host as host9,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA
 } from "@hermes/plugin-sdk";
 
 // src/desktop/api.ts
-import { atom } from "@hermes/plugin-sdk";
+import { atom, host } from "@hermes/plugin-sdk";
 
 // src/desktop/strings.ts
 var machineOf = (profile) => profile && profile !== "default" ? `${profile}'s machine` : "the agent's machine";
@@ -57,6 +57,10 @@ var S = {
   loadMore: "Load more",
   agentChanged: "The selected agent changed while this folder was loading.",
   firstOnly: (n) => `Showing the first ${n.toLocaleString()} items. Search finds the rest.`,
+  dateScanLimit: "Date order covers the first 20,000 entries scanned.",
+  sortUpdate: "Update Cloud File Manager on the agent to sort by date.",
+  copyDiagnostics: "Copy diagnostics",
+  diagnosticsCopied: "Diagnostics copied",
   searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: "No matches found so far",
@@ -218,6 +222,7 @@ var SAVE_CODE_TEXT = {
 };
 var fileCodeText = (code, message, maxBytes, saving = false) => code === "too_large" ? `Too large to ${saving ? "save" : "open"} here (over ${mb(maxBytes ?? 1024 * 1024)}).` : saving && SAVE_CODE_TEXT[code] || FILE_CODE_TEXT[code] || codeText(code, message);
 var codeText = (code, message) => code && CODE_TEXT[code] || message || code || "Something went wrong";
+var knownCode = (code) => [CODE_TEXT, FILE_CODE_TEXT, SAVE_CODE_TEXT].some((map) => Object.hasOwn(map, code)) ? code : "other";
 
 // src/desktop/api.ts
 var ApiError = class extends Error {
@@ -233,6 +238,12 @@ var bound = null;
 var $available = atom(null);
 var $driveAvailable = atom(null);
 var $unreachable = atom(null);
+var $scopeInfo = atom({});
+var scopeKey = (c = host.state.connectionId.get(), p = host.state.profile.get()) => `${c?.trim() || "local"}|${p.trim() || "default"}`;
+function remember(scope, info) {
+  if (scope !== scopeKey()) return;
+  $scopeInfo.set({ ...$scopeInfo.get(), [scope]: { ...$scopeInfo.get()[scope], ...info } });
+}
 function bindContext(ctx) {
   bound = ctx;
 }
@@ -244,10 +255,17 @@ function rest(path, opts) {
   return pluginCtx().rest(path, opts);
 }
 async function call(path, opts) {
-  const res = await rest(path, opts);
-  const rootsUnsupported = path.split("?")[0] === "/roots" && res?.code === "unsupported_backend";
-  if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? "error", codeText(res.code, res.message), res);
-  return res;
+  const scope = scopeKey();
+  try {
+    const res = await rest(path, opts);
+    const rootsUnsupported = path.split("?")[0] === "/roots" && res?.code === "unsupported_backend";
+    if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? "error", codeText(res.code, res.message), res);
+    if (path.split("?")[0] === "/roots") remember(scope, { folders: res.roots?.length, ...res.code ? { error: knownCode(res.code) } : {} });
+    return res;
+  } catch (error) {
+    remember(scope, { error: error instanceof ApiError ? knownCode(error.code) : "other" });
+    throw error;
+  }
 }
 function isNotFoundError(error) {
   return httpStatus(error) === 404;
@@ -768,7 +786,7 @@ import {
   DialogHeader as DialogHeader3,
   DialogTitle as DialogTitle3,
   EmptyState as EmptyState4,
-  host as host7,
+  host as host8,
   Input,
   Skeleton as Skeleton5,
   useQueryClient as useQueryClient2,
@@ -784,7 +802,7 @@ import {
   Codicon,
   EmptyState,
   ErrorState,
-  host as host2,
+  host as host3,
   SearchField,
   Select,
   SelectContent,
@@ -800,13 +818,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 // src/desktop/download.ts
 import * as sdk from "@hermes/plugin-sdk";
-import { host } from "@hermes/plugin-sdk";
+import { host as host2 } from "@hermes/plugin-sdk";
 function captureDownload() {
   const capture = sdk.captureGatewayFileDownload;
   return typeof capture === "function" ? capture() : null;
 }
 function captureFor([connectionId, profile]) {
-  const here = (host.state.connectionId.get() ?? "local") === connectionId && host.state.profile.get() === profile;
+  const here = (host2.state.connectionId.get() ?? "local") === connectionId && host2.state.profile.get() === profile;
   return here ? captureDownload() : null;
 }
 
@@ -845,8 +863,8 @@ function useRowFocus() {
 }
 var fromKeyboard = (event) => !event?.detail;
 function useScope() {
-  const connectionId = useValue(host2.state.connectionId);
-  const profile = useValue(host2.state.profile);
+  const connectionId = useValue(host3.state.connectionId);
+  const profile = useValue(host3.state.profile);
   return [connectionId ?? "local", profile];
 }
 var MUTATING_TOOL_RE = /terminal|shell|exec|bash|command|write|edit|patch|replace|apply|create|delete|remove|move|rename|mkdir|format/i;
@@ -934,6 +952,9 @@ function useDebounced(value, ms) {
 }
 var $pickState = atom3(null);
 function useBrowser(roots, mode) {
+  const [connectionId, profile] = useScope();
+  const info = useValue($scopeInfo)[scopeKey(connectionId, profile)];
+  const sort = info?.date === false ? "name" : info?.sort ?? "name";
   const [localRootId, setLocalRootId] = useState(roots.roots[0]?.id ?? "");
   const [localPath, setLocalPath] = useState("");
   const [localSearch, setLocalSearch] = useState("");
@@ -973,6 +994,9 @@ function useBrowser(roots, mode) {
     }
   };
   return {
+    sort,
+    dateSupported: info?.date,
+    setSort: (sort2) => remember(scopeKey(connectionId, profile), { sort: sort2 }),
     roots,
     root,
     path,
@@ -1075,7 +1099,7 @@ function NoRoots({ reason, onOpenSettings }) {
       {
         onClick: () => {
           onOpenSettings?.();
-          host2.navigate(SETTINGS_PATH);
+          host3.navigate(SETTINGS_PATH);
         },
         size: "sm",
         variant: "secondary",
@@ -1134,19 +1158,29 @@ function BrowserSearch({ b, label = S.search }) {
   const folder = b.path?.split("/").pop();
   return /* @__PURE__ */ jsx("span", { onKeyDown: (event) => event.key === "Escape" && b.setSearch(""), children: /* @__PURE__ */ jsx(SearchField, { "aria-label": label, onChange: b.setSearch, placeholder: folder ? S.searchIn(folder) : label, value: b.search }) });
 }
+function SortControl({ b }) {
+  return /* @__PURE__ */ jsxs("label", { style: { fontSize: 12 }, title: b.dateSupported === false ? S.sortUpdate : void 0, children: [
+    "Sort ",
+    /* @__PURE__ */ jsxs("select", { "aria-label": "Sort", disabled: Boolean(b.search), value: b.sort, onChange: (e) => b.setSort(e.target.value === "mtime" ? "mtime" : "name"), children: [
+      /* @__PURE__ */ jsx("option", { value: "name", children: "Name" }),
+      /* @__PURE__ */ jsx("option", { disabled: b.dateSupported === false, value: "mtime", children: "Date modified" })
+    ] }),
+    b.dateSupported === false && /* @__PURE__ */ jsx("span", { style: muted, children: S.sortUpdate })
+  ] });
+}
 function sortEntries(entries, highlights, atRoot) {
   const rank = (entry) => atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length;
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name));
 }
-async function listUpTo([connectionId, profile], root, path, count, shown) {
-  const read = (offset, limit) => {
-    if ((host2.state.connectionId.get() ?? "local") !== connectionId || host2.state.profile.get() !== profile) throw new Error(S.agentChanged);
-    return call(query("/list", { root, path, offset, limit }));
+async function listUpTo([connectionId, profile], root, path, sort, count, shown) {
+  const read = async (offset, limit) => {
+    if ((host3.state.connectionId.get() ?? "local") !== connectionId || host3.state.profile.get() !== profile) throw new Error(S.agentChanged);
+    return call(query("/list", { root, path, offset, limit, ...sort === "mtime" ? { sort } : {} }));
   };
   const have = shown?.entries.length ?? 0;
-  if (shown && have && have < count && count - have < LIST_PAGE_MAX) {
+  if (sort === "name" && shown && have && have < count && count - have < LIST_PAGE_MAX) {
     const next = await read(have - 1, count - have + 1);
-    if (next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
+    if (next.applied_sort === shown.applied_sort && next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
       const seen2 = new Set(shown.entries.map((entry) => entry.abs));
       return { ...next, entries: [...shown.entries, ...next.entries.filter((entry) => !seen2.has(entry.abs))] };
     }
@@ -1154,24 +1188,27 @@ async function listUpTo([connectionId, profile], root, path, count, shown) {
   const seen = /* @__PURE__ */ new Set();
   const entries = [];
   let last;
+  let supported = true;
   for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
     last = await read(offset, Math.min(LIST_PAGE_MAX, count - offset));
+    supported = supported && last.applied_sort !== void 0;
+    if (sort === "mtime" && last.applied_sort !== "mtime") return { ...last, applied_sort: void 0, entries: [] };
     for (const entry of last.entries) if (!seen.has(entry.abs)) {
       seen.add(entry.abs);
       entries.push(entry);
     }
     if (offset + last.entries.length >= last.total) break;
   }
-  return { ...last, entries };
+  return { ...last, applied_sort: supported ? last?.applied_sort : void 0, entries };
 }
 function EntryList({ b, height, onOpenFile, dragOut }) {
   const [connectionId, profile] = useScope();
   const rootId = b.root?.id ?? "";
-  const folder = `${connectionId}|${profile}|${rootId}|${b.path}`;
+  const folder = `${connectionId}|${profile}|${rootId}|${b.path}|${b.sort}`;
   const [range, setRange] = useState({ folder, count: LIST_LIMIT });
   const count = range.folder === folder ? range.count : LIST_LIMIT;
   if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT });
-  const listingKey = ["hcfm", connectionId, profile, "list", rootId, b.path, count];
+  const listingKey = ["hcfm", connectionId, profile, "list", rootId, b.path, b.sort, count];
   const client = useQueryClient();
   const searching = Boolean(b.query);
   const listing = useQuery({
@@ -1181,15 +1218,18 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     queryFn: async () => {
       const readAt = Date.now();
       const save = captureFor([connectionId, profile]);
-      return { ...await listUpTo(
+      const data = await listUpTo(
         [connectionId, profile],
         rootId,
         b.path,
+        b.sort,
         count,
-        client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 6), count - LIST_LIMIT]) : void 0
-      ), save, readAt };
+        client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 7), count - LIST_LIMIT]) : void 0
+      );
+      remember(scopeKey(connectionId, profile), { date: data.applied_sort !== void 0 });
+      return { ...data, save, readAt };
     },
-    placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
+    placeholderData: (previous, previousQuery) => listingKey.slice(0, 7).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
     retry: 1
   });
@@ -1208,8 +1248,9 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   }, [listing.data, listing.error, listing.isFetching, b.search, rootId, b.path]);
   const entries = useMemo(() => {
     if (searching) return found.data?.results ?? [];
+    if (b.sort === "mtime") return listing.data?.entries ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
-  }, [searching, found.data, listing.data, b.roots.highlights, b.path]);
+  }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort]);
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
@@ -1225,6 +1266,12 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   const tabStop = (entries.find((e) => e.abs === lastFocused) ?? entries.find((e) => b.selected.has(e.abs)) ?? entries[0])?.abs;
   const total = listing.data?.total ?? entries.length;
   const loadingMore = listing.isFetching && client.getQueryData(listingKey) === void 0;
+  const [sortNotice, setSortNotice] = useState("");
+  const priorSort = useRef(b.sort);
+  useEffect(() => {
+    if (priorSort.current !== b.sort) setSortNotice(b.sort === "mtime" ? "Sorted by date modified" : "Sorted by name");
+    priorSort.current = b.sort;
+  }, [b.sort]);
   const announce = active.error ? S.folderFailed : !active.data ? "" : searching ? [S.results(entries.length), shownNote].filter(Boolean).join(". ") : count === LIST_LIMIT || entries.length >= total ? S.items(total) : loadingMore ? "" : S.showingOf(entries.length, total);
   const step = { ArrowDown: 1, ArrowUp: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity };
   const navKey = (entry, event) => {
@@ -1256,8 +1303,8 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     const picked = candidates.filter((e) => !dragWouldChange(e.abs) && formatRef(e.abs) !== null);
     const unrepresentable = candidates.filter((e) => formatRef(e.abs) === null).length;
     const ambiguous = candidates.length - picked.length - unrepresentable;
-    if (ambiguous) host2.notify({ kind: "warning", message: S.dragSkipped(ambiguous) });
-    if (unrepresentable) host2.notify({ kind: "warning", message: S.refSkipped(unrepresentable) });
+    if (ambiguous) host3.notify({ kind: "warning", message: S.dragSkipped(ambiguous) });
+    if (unrepresentable) host3.notify({ kind: "warning", message: S.refSkipped(unrepresentable) });
     if (!picked.length) {
       event.preventDefault();
       return;
@@ -1279,12 +1326,16 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       searching ? searchNote && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: searchNote }) : (listing.data?.total ?? 0) > entries.length ? /* @__PURE__ */ jsxs("div", { style: { ...muted, fontSize: 11, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }, children: [
         /* @__PURE__ */ jsx("span", { children: S.showingOf(entries.length, listing.data.total) }),
         /* @__PURE__ */ jsx(Button, { disabled: loadingMore, onClick: () => setRange({ folder, count: count + LIST_LIMIT }), size: "sm", variant: "text", children: S.loadMore })
-      ] }) : truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
+      ] }) : truncated && b.sort === "name" && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.firstOnly(entries.length) })
     ] });
   }
   return /* @__PURE__ */ jsxs("div", { ref: list, style: { overflowY: "auto", overflowX: "hidden", ...height ? { height } : { flex: 1, minHeight: 0 } }, tabIndex: -1, children: [
     body,
-    /* @__PURE__ */ jsx("div", { "aria-live": "polite", style: hidden, children: announce })
+    !searching && b.sort === "mtime" && truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.dateScanLimit }),
+    /* @__PURE__ */ jsxs("div", { "aria-live": "polite", style: hidden, children: [
+      announce,
+      sortNotice && `. ${sortNotice}`
+    ] })
   ] });
 }
 function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }) {
@@ -1355,7 +1406,7 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onD
           /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)" }, children: entry.name }),
           secondary && /* @__PURE__ */ jsx("span", { style: { ...ellipsis, ...muted, fontSize: 11 }, children: secondary })
         ] }),
-        /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: entry.is_dir ? "" : humanSize(entry.size) }),
+        /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: entry.is_dir ? "" : humanSize(entry.size ?? 0) }),
         /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: shortDate(entry.mtime) })
       ]
     }
@@ -1546,7 +1597,7 @@ import {
   DialogFooter as DialogFooter2,
   DialogHeader as DialogHeader2,
   DialogTitle as DialogTitle2,
-  host as host5,
+  host as host6,
   Skeleton as Skeleton3,
   Streamdown,
   Textarea,
@@ -1555,7 +1606,7 @@ import {
 import { useEffect as useEffect3, useLayoutEffect, useMemo as useMemo2, useRef as useRef4, useState as useState3 } from "react";
 
 // src/desktop/chat.tsx
-import { Button as Button4, host as host4 } from "@hermes/plugin-sdk";
+import { Button as Button4, host as host5 } from "@hermes/plugin-sdk";
 
 // src/desktop/picker.tsx
 import {
@@ -1567,7 +1618,7 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState as EmptyState3,
-  host as host3,
+  host as host4,
   useValue as useValue2
 } from "@hermes/plugin-sdk";
 import { useEffect as useEffect2, useRef as useRef3 } from "react";
@@ -1580,22 +1631,22 @@ var $pickerJob = atom4(null);
 var NO_OWNER = atom4(null);
 var $finished = atom4(null);
 var NO_SESSION = atom4(null);
-var focusedOwner = () => (host3.state.focusedSessionOwner ?? NO_OWNER).get();
-var pinReady = (pin) => host3.state.profile.get() === pin.profile && host3.state.connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
+var focusedOwner = () => (host4.state.focusedSessionOwner ?? NO_OWNER).get();
+var pinReady = (pin) => host4.state.profile.get() === pin.profile && host4.state.connectionId.get() === pin.connectionId && !ownerMismatch(focusedOwner(), pin.connectionId, pin.profile);
 var $touched = atom4(false);
 var openPin = null;
 var stopWatching = () => void 0;
 function pickerPinnedElsewhere() {
-  return $pickerOpen.get() && openPin !== null && (openPin.profile !== host3.state.profile.get() || openPin.connectionId !== host3.state.connectionId.get());
+  return $pickerOpen.get() && openPin !== null && (openPin.profile !== host4.state.profile.get() || openPin.connectionId !== host4.state.connectionId.get());
 }
 var pickerPinProfile = () => openPin?.profile;
 function watchOpen() {
   unwatch();
-  const { connectionId, profile } = host3.state;
+  const { connectionId, profile } = host4.state;
   openPin = { connectionId: connectionId.get(), profile: profile.get() };
   $touched.set(false);
   const touch = () => $touched.set(true);
-  const atoms = [profile, connectionId, host3.state.focusedSessionOwner ?? NO_OWNER, host3.state.activeSessionId ?? NO_SESSION];
+  const atoms = [profile, connectionId, host4.state.focusedSessionOwner ?? NO_OWNER, host4.state.activeSessionId ?? NO_SESSION];
   const stops = atoms.map((store) => store.listen(touch));
   stopWatching = () => stops.forEach((stop) => stop());
 }
@@ -1606,11 +1657,11 @@ function unwatch() {
 }
 var canInsert = (pin) => Boolean(pin) && !$touched.get() && pinReady(pin);
 function copyLocations(text) {
-  void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host3.notify(ok ? { kind: "success", message: S.locationsCopied } : { kind: "error", message: S.copyFailed }));
+  void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host4.notify(ok ? { kind: "success", message: S.locationsCopied } : { kind: "error", message: S.copyFailed }));
 }
 var ownerHold = (pin) => ({
   held: () => ownerMismatch(focusedOwner(), pin.connectionId, pin.profile),
-  subscribe: (wake) => (host3.state.focusedSessionOwner ?? NO_OWNER).subscribe(wake)
+  subscribe: (wake) => (host4.state.focusedSessionOwner ?? NO_OWNER).subscribe(wake)
 });
 function openPicker(insertText, source) {
   stopImport();
@@ -1670,9 +1721,9 @@ function closePicker() {
   $insertText.set(null);
 }
 function PickerDialog() {
-  const profile = useValue2(host3.state.profile);
-  const connectionId = useValue2(host3.state.connectionId);
-  const owner = useValue2(host3.state.focusedSessionOwner ?? NO_OWNER);
+  const profile = useValue2(host4.state.profile);
+  const connectionId = useValue2(host4.state.connectionId);
+  const owner = useValue2(host4.state.focusedSessionOwner ?? NO_OWNER);
   const mismatch = ownerMismatch(owner, connectionId, profile);
   const source = useValue2($pickerSource);
   const finished = useValue2($finished);
@@ -1726,9 +1777,10 @@ function PickerBrowser({ profile, roots }) {
     closePicker();
   };
   return /* @__PURE__ */ jsxs3("div", { style: { display: "grid", gap: 8, minWidth: 0 }, children: [
-    /* @__PURE__ */ jsxs3("div", { style: { display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ui-stroke-tertiary)", paddingBottom: 6 }, children: [
+    /* @__PURE__ */ jsxs3("div", { style: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, borderBottom: "1px solid var(--ui-stroke-tertiary)", paddingBottom: 6 }, children: [
       /* @__PURE__ */ jsx3(Breadcrumbs, { b }),
       /* @__PURE__ */ jsx3(BrowserSearch, { b }),
+      /* @__PURE__ */ jsx3(SortControl, { b }),
       /* @__PURE__ */ jsx3(RootSelect, { b })
     ] }),
     /* @__PURE__ */ jsx3(EntryList, { b, height: 360 }),
@@ -1747,7 +1799,7 @@ function DrivePicker({ roots }) {
   const start = () => {
     const insertText = $insertText.get();
     const pin = currentPin();
-    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host3.state, hold: ownerHold(pin) });
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host4.state, hold: ownerHold(pin) });
     $pickerJob.set(job);
     void job.start().then((done) => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return;
@@ -1777,14 +1829,14 @@ function DrivePicker({ roots }) {
 // src/desktop/chat.tsx
 import { jsx as jsx4 } from "react/jsx-runtime";
 function canReference([connectionId, profile], warning = S.addOtherAgent) {
-  const pin = { connectionId: host4.state.connectionId.get(), profile: host4.state.profile.get() };
-  const owner = host4.state.focusedSessionOwner?.get() ?? null;
+  const pin = { connectionId: host5.state.connectionId.get(), profile: host5.state.profile.get() };
+  const owner = host5.state.focusedSessionOwner?.get() ?? null;
   if ((pin.connectionId ?? "local") === connectionId && pin.profile === profile && !ownerMismatch(owner, pin.connectionId, pin.profile)) return true;
-  host4.notify({ kind: "warning", message: warning(owner?.profile ?? pin.profile, profile) });
+  host5.notify({ kind: "warning", message: warning(owner?.profile ?? pin.profile, profile) });
   return false;
 }
 function AddToChat({ entries, pin, disabled }) {
-  const composer = host4.composer;
+  const composer = host5.composer;
   if (typeof composer?.insertText !== "function") return null;
   const add = async () => {
     if (!canReference([pin.connectionId ?? "local", pin.profile])) return;
@@ -1797,10 +1849,10 @@ function AddToChat({ entries, pin, disabled }) {
       }
       return [`@${entry.is_dir ? "folder" : "file"}:${value}`];
     });
-    if (skipped) host4.notify({ kind: "warning", message: S.refSkipped(skipped) });
+    if (skipped) host5.notify({ kind: "warning", message: S.refSkipped(skipped) });
     if (!refs.length) return;
     const ok = await Promise.resolve().then(() => composer.insertText(null, refs.join(" "), { mode: "inline" })).catch(() => false);
-    host4.notify(ok ? { kind: "success", message: S.addedToChat(refs.length) } : { kind: "info", message: S.openChatFirst });
+    host5.notify(ok ? { kind: "success", message: S.addedToChat(refs.length) } : { kind: "info", message: S.openChatFirst });
   };
   return /* @__PURE__ */ jsx4(Button4, { disabled, onClick: () => void add(), size: "sm", variant: "ghost", children: S.addToChat });
 }
@@ -1915,7 +1967,7 @@ function decodeText(raw) {
 }
 var encodeText = (text, { bom, crlf }) => (bom ? BOM : "") + (crlf ? text.replaceAll("\n", "\r\n") : text);
 var isDirty = (doc) => Boolean(doc && doc.status === "ready" && doc.draft !== doc.base);
-var isCurrent = (pin) => pin.connectionId === host5.state.connectionId.get() && pin.profile === host5.state.profile.get();
+var isCurrent = (pin) => pin.connectionId === host6.state.connectionId.get() && pin.profile === host6.state.profile.get();
 var $drafts = atom5(/* @__PURE__ */ new Map());
 var draftKey = (doc) => [doc.pin.connectionId ?? "local", doc.pin.profile, doc.root, doc.path].join("|");
 function setDraft(doc, keep) {
@@ -1942,8 +1994,8 @@ function findParked(pin) {
   return [...$drafts.get().values()].find((d) => d.pin.connectionId === pin.connectionId && d.pin.profile === pin.profile) ?? null;
 }
 function useOpenDoc() {
-  const connectionId = useValue3(host5.state.connectionId);
-  const profile = useValue3(host5.state.profile);
+  const connectionId = useValue3(host6.state.connectionId);
+  const profile = useValue3(host6.state.profile);
   const [doc, setDoc] = useState3(() => findParked({ connectionId, profile }));
   const latest = useRef4(doc);
   latest.current = doc;
@@ -2019,11 +2071,11 @@ function useLeaveGuard(doc) {
   return { leave, dialog };
 }
 function copy(text, message) {
-  void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host5.notify(ok ? { kind: "success", message } : { kind: "error", message: S.copyFailed }));
+  void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host6.notify(ok ? { kind: "success", message } : { kind: "error", message: S.copyFailed }));
 }
 function Editor({ doc, setDoc, onClose, leave }) {
-  const connectionId = useValue3(host5.state.connectionId);
-  const profile = useValue3(host5.state.profile);
+  const connectionId = useValue3(host6.state.connectionId);
+  const profile = useValue3(host6.state.profile);
   const here = doc.pin.connectionId === connectionId && doc.pin.profile === profile;
   const [popup, setPopup] = useState3(null);
   const [changes, setChanges] = useState3(false);
@@ -2079,14 +2131,14 @@ function Editor({ doc, setDoc, onClose, leave }) {
       if (!live.current && !stillThere(doc)) return;
       if (error instanceof ApiError && error.code === "conflict") {
         setPopup({ conflict: { sha: error.body?.sha256, text: error.body?.text } });
-        if (!live.current) host5.notify({ kind: "error", message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) });
+        if (!live.current) host6.notify({ kind: "error", message: S.notSaved(doc.name, S.changedSince(doc.pin.profile)) });
       } else if (error instanceof ApiError && error.code === "gone") {
         setPopup("gone");
-        if (!live.current) host5.notify({ kind: "error", message: S.notSaved(doc.name, S.movedOrDeleted(doc.pin.profile)) });
+        if (!live.current) host6.notify({ kind: "error", message: S.notSaved(doc.name, S.movedOrDeleted(doc.pin.profile)) });
       } else {
         const message = error instanceof ApiError ? fileCodeText(error.code, error.body?.message, error.body?.max_bytes, true) : transportText(error);
         setSaveError(message);
-        if (!live.current || popupRef.current !== "review") host5.notify({ kind: "error", message: S.notSaved(doc.name, message) });
+        if (!live.current || popupRef.current !== "review") host6.notify({ kind: "error", message: S.notSaved(doc.name, message) });
       }
     } finally {
       setBusy(false);
@@ -2224,7 +2276,7 @@ function DiffView({ diff, style }) {
 }
 
 // src/desktop/preview.tsx
-import { Button as Button6, Codicon as Codicon4, host as host6, Skeleton as Skeleton4, useValue as useValue4 } from "@hermes/plugin-sdk";
+import { Button as Button6, Codicon as Codicon4, host as host7, Skeleton as Skeleton4, useValue as useValue4 } from "@hermes/plugin-sdk";
 import { useEffect as useEffect4, useMemo as useMemo3, useState as useState4 } from "react";
 import { jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
 var MAX_ROWS = 1e3;
@@ -2270,8 +2322,8 @@ function load2(doc, setDoc) {
 }
 var extension2 = (name) => name.slice(name.lastIndexOf(".") + 1).toLowerCase();
 function Preview({ doc, setDoc, onClose }) {
-  const connectionId = useValue4(host6.state.connectionId);
-  const profile = useValue4(host6.state.profile);
+  const connectionId = useValue4(host7.state.connectionId);
+  const profile = useValue4(host7.state.profile);
   const here = doc.pin.connectionId === connectionId && doc.pin.profile === profile;
   useEffect4(() => {
     if (doc.id !== 0) return;
@@ -2282,7 +2334,7 @@ function Preview({ doc, setDoc, onClose }) {
       load2(doc, setDoc);
     };
     attempt();
-    const stops = [host6.state.connectionId.listen(attempt), host6.state.profile.listen(attempt)];
+    const stops = [host7.state.connectionId.listen(attempt), host7.state.profile.listen(attempt)];
     return () => stops.forEach((stop) => stop());
   }, [doc.id, doc.pin.connectionId, doc.pin.profile, doc.root, doc.path]);
   const blob = doc.preview?.blob;
@@ -2395,8 +2447,9 @@ function filesFromInput(list) {
 import { Fragment as Fragment4, jsx as jsx7, jsxs as jsxs6 } from "react/jsx-runtime";
 var muted5 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
+var desktopVersion = true ? "0.4.7" : "unknown";
 var $batch = atom6(null);
-var currentPin = () => ({ connectionId: host7.state.connectionId.get(), profile: host7.state.profile.get() });
+var currentPin = () => ({ connectionId: host8.state.connectionId.get(), profile: host8.state.profile.get() });
 function dragFromPage(event, [connectionId, profile]) {
   if (canReference([connectionId, profile], S.dragOtherAgent)) return true;
   event.preventDefault();
@@ -2408,11 +2461,11 @@ function enqueueUpload(input, dest, limits, pin = currentPin()) {
   const snap = batch?.getSnapshot();
   const sameAgent = snap?.profile === pin.profile && snap?.connectionId === pin.connectionId;
   if (snap?.running && !snap.canceled && !sameAgent) {
-    host7.notify({ kind: "warning", message: S.busyElsewhere });
+    host8.notify({ kind: "warning", message: S.busyElsewhere });
     return;
   }
   if (!batch || !snap || snap.canceled || !sameAgent) {
-    batch = new UploadBatch(limits, { rest, state: host7.state }, pin);
+    batch = new UploadBatch(limits, { rest, state: host8.state }, pin);
     $batch.set(batch);
   }
   batch.add(input, dest, limits);
@@ -2420,8 +2473,8 @@ function enqueueUpload(input, dest, limits, pin = currentPin()) {
 }
 function CloudFilesPage() {
   const available = useValue5($available);
-  const profile = useValue5(host7.state.profile);
-  const connectionId = useValue5(host7.state.connectionId);
+  const profile = useValue5(host8.state.profile);
+  const connectionId = useValue5(host8.state.connectionId);
   const [doc, setDoc] = useOpenDoc();
   if (available === null) {
     return /* @__PURE__ */ jsx7(Frame, { profile, children: /* @__PURE__ */ jsx7("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx7(Skeleton5, { style: { height: 18 } }, i)) }) });
@@ -2448,6 +2501,18 @@ function PageBody({ profile, ...open }) {
   return /* @__PURE__ */ jsx7(Files, { profile, roots: roots.data, ...open });
 }
 function Frame({ children, profile, controls, onDropInput, dropLabel }) {
+  const info = useValue5($scopeInfo)[scopeKey(useValue5(host8.state.connectionId), profile)];
+  const copyDiagnostics = () => {
+    const text = [
+      `Cloud Files desktop ${desktopVersion}`,
+      `Agent side: ${info?.agent ?? "unknown"}`,
+      `Google Drive: ${info?.drive ?? "unknown"}`,
+      `Sort by date: ${info?.date === void 0 ? "unknown" : info.date ? "supported" : "not supported"}`,
+      `Folders configured: ${info?.folders ?? "unknown"}`,
+      `Last error: ${info?.error ?? "none"}`
+    ].join("\n");
+    void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host8.notify(ok ? { kind: "success", message: S.diagnosticsCopied } : { kind: "error", message: S.copyFailed }));
+  };
   const [over, setOver] = useState5(false);
   const depth = useRef5(0);
   const dragOver = (event) => {
@@ -2482,7 +2547,10 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
         /* @__PURE__ */ jsxs6("header", { style: { display: "flex", alignItems: "center", gap: 10, padding: "18px 20px 10px" }, children: [
           /* @__PURE__ */ jsx7("h1", { style: { margin: 0, fontSize: 15, fontWeight: 600 }, children: S.title }),
           /* @__PURE__ */ jsx7("span", { style: { ...muted5, fontSize: 12 }, children: profile }),
-          /* @__PURE__ */ jsx7("span", { style: { marginLeft: "auto" }, children: controls })
+          /* @__PURE__ */ jsxs6("span", { style: { marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 6 }, children: [
+            controls,
+            /* @__PURE__ */ jsx7(Button7, { onClick: copyDiagnostics, size: "sm", variant: "text", children: S.copyDiagnostics })
+          ] })
         ] }),
         children,
         over && /* @__PURE__ */ jsx7(
@@ -2511,7 +2579,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
 function Files({ profile, roots, doc, setDoc }) {
   const b = useBrowser(roots, "page");
   useLiveRefresh();
-  const pin = { connectionId: useValue5(host7.state.connectionId), profile };
+  const pin = { connectionId: useValue5(host8.state.connectionId), profile };
   const guard = useLeaveGuard(doc);
   const queryClient = useQueryClient2();
   const [newFolder, setNewFolder] = useState5(false);
@@ -2552,7 +2620,7 @@ function Files({ profile, roots, doc, setDoc }) {
   const showDestination = (dest2, pin2, want) => {
     const now = currentPin();
     if (now.connectionId !== pin2.connectionId || now.profile !== pin2.profile) {
-      host7.notify({ kind: "warning", message: S.showOtherAgent(pin2.profile) });
+      host8.notify({ kind: "warning", message: S.showOtherAgent(pin2.profile) });
       return;
     }
     guard.leave(() => {
@@ -2579,7 +2647,7 @@ function Files({ profile, roots, doc, setDoc }) {
   };
   const copyPaths = () => {
     const text = [...b.selected.keys()].join("\n");
-    void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host7.notify(ok ? { kind: "success", message: S.copied(b.selected.size) } : { kind: "error", message: S.copyFailed }));
+    void pluginCtx().os.writeClipboard(text).then((ok) => ok, () => false).then((ok) => host8.notify(ok ? { kind: "success", message: S.copied(b.selected.size) } : { kind: "error", message: S.copyFailed }));
   };
   return /* @__PURE__ */ jsxs6(
     Frame,
@@ -2590,7 +2658,7 @@ function Files({ profile, roots, doc, setDoc }) {
         // No uploads while a file is open: the folder tools are hidden, and the shown folder is the file's.
         inDrive || doc ? void 0 : (pending, pin2) => void pending.then(
           (input) => enqueueUpload(input, dest, limits, pin2),
-          (error) => host7.notify({ kind: "error", message: errorText(error) })
+          (error) => host8.notify({ kind: "error", message: errorText(error) })
         )
       ),
       profile,
@@ -2600,6 +2668,7 @@ function Files({ profile, roots, doc, setDoc }) {
             doc ? /* @__PURE__ */ jsx7(Breadcrumbs, { b, folder: parentPath(doc.path), leaf: doc.name, onNavigate: crumbTo, rootLabel: doc.rootLabel }) : /* @__PURE__ */ jsxs6(Fragment4, { children: [
               /* @__PURE__ */ jsx7(Breadcrumbs, { b }),
               /* @__PURE__ */ jsx7(BrowserSearch, { b }),
+              /* @__PURE__ */ jsx7(SortControl, { b }),
               /* @__PURE__ */ jsx7(ToolButton, { icon: "new-folder", label: S.newFolder, onClick: () => setNewFolder(true) }),
               /* @__PURE__ */ jsx7(ToolButton, { icon: "cloud-upload", label: S.uploadFiles, onClick: () => filesInput.current?.click() }),
               /* @__PURE__ */ jsx7(ToolButton, { icon: "file-directory-create", label: S.uploadFolder, onClick: () => folderInput.current?.click() }),
@@ -2645,7 +2714,7 @@ function DrivePane({ dest, label }) {
   const d = useDriveBrowser();
   const job = useImport(useValue5($driveJob));
   const start = () => {
-    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host7.state }, dest.folder);
+    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host8.state }, dest.folder);
     $driveJob.set(next);
     d.clear();
     void next.start();
@@ -2671,8 +2740,8 @@ function DrivePane({ dest, label }) {
 function ImportStatus({ onShow, onSettled }) {
   const job = useValue5($driveJob);
   const snap = useImport(job);
-  const profile = useValue5(host7.state.profile);
-  const connectionId = useValue5(host7.state.connectionId);
+  const profile = useValue5(host8.state.profile);
+  const connectionId = useValue5(host8.state.connectionId);
   const wasRunning = useRef5(false);
   useEffect5(() => {
     if (wasRunning.current && !snap?.running) onSettled();
@@ -2717,7 +2786,7 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
       await call("/mkdir", { method: "POST", body: { root: b.root?.id, path: joinPath(b.path, trimmed) } });
       onOpenChange(false);
       onCreated();
-      host7.notify({ kind: "success", message: S.folderCreated(trimmed) });
+      host8.notify({ kind: "success", message: S.folderCreated(trimmed) });
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : errorText(failure));
     } finally {
@@ -2768,8 +2837,8 @@ function Bar({ value, label, style }) {
 function UploadDrawer({ onSettled, onShow }) {
   const batch = useValue5($batch);
   const snap = useBatch(batch);
-  const profile = useValue5(host7.state.profile);
-  const connectionId = useValue5(host7.state.connectionId);
+  const profile = useValue5(host8.state.profile);
+  const connectionId = useValue5(host8.state.connectionId);
   const here = snap.profile === profile && snap.connectionId === connectionId;
   const [collapsed, setCollapsed] = useState5(false);
   const wasRunning = useRef5(false);
@@ -2863,11 +2932,13 @@ function registerAvailabilityGate(ctx, onChange) {
   let generation2 = 0;
   const probe = (byRetry = false) => {
     const mine = ++generation2;
+    const scope = scopeKey();
     const stored = $unreachable.get();
     if (stored?.retrying && !byRetry) $unreachable.set({ ...stored, retrying: false });
     const settle = (which, ok) => {
       if (mine !== generation2 || disposed) return;
       if (!ok) {
+        remember(scope, which === "cloud" ? { agent: "unreachable", error: "other" } : { drive: "unknown", error: "other" });
         const retry = () => {
           const now = $unreachable.get();
           if (now) $unreachable.set({ ...now, retrying: true });
@@ -2877,24 +2948,35 @@ function registerAvailabilityGate(ctx, onChange) {
       } else if ($unreachable.get()?.probe === which) $unreachable.set(null);
     };
     return ctx.rest("/available").then(
-      () => {
+      (res) => {
         if (mine !== generation2 || disposed) return;
+        const version = res?.version;
+        remember(scope, { agent: typeof version === "string" && /^\d[\w.+-]{0,63}$/.test(version) ? version : "unknown" });
         settle("cloud", true);
         set(true);
         return ctx.rest("/drive/available").then(
-          (res) => {
+          (res2) => {
             settle("drive", true);
-            if (mine === generation2) setDrive(res?.available === true);
+            if (mine === generation2 && !disposed) {
+              remember(scope, { drive: res2?.available === true ? "available" : "unavailable" });
+              setDrive(res2?.available === true);
+            }
           },
           (error) => {
             settle("drive", isNotFoundError(error));
-            if (mine === generation2 && isNotFoundError(error)) setDrive(false);
+            if (mine === generation2 && !disposed && isNotFoundError(error)) {
+              remember(scope, { drive: "unavailable" });
+              setDrive(false);
+            }
           }
         );
       },
       (error) => {
         settle("cloud", isNotFoundError(error));
-        if (mine === generation2 && isNotFoundError(error)) set(false);
+        if (mine === generation2 && !disposed && isNotFoundError(error)) {
+          remember(scope, { agent: "unavailable", drive: "unavailable" });
+          set(false);
+        }
       }
     );
   };
@@ -2911,8 +2993,8 @@ function registerAvailabilityGate(ctx, onChange) {
     void probe();
   };
   const unsubscribers = [
-    host8.state.profile.listen(onAgentChange),
-    host8.state.connectionId.listen(onAgentChange),
+    host9.state.profile.listen(onAgentChange),
+    host9.state.connectionId.listen(onAgentChange),
     $pickerOpen.listen((open) => {
       if (!open && known === false && !disposed) {
         pickerRemover?.();

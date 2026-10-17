@@ -22,7 +22,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, pluginCtx, query, type Root, type RootsResponse, type SearchResponse } from './api'
+import { $scopeInfo, ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, pluginCtx, query, remember, type Root, type RootsResponse, scopeKey, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
 import { baseName, dragWouldChange, entryIcon, formatRef, humanSize, isOpenable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
@@ -184,6 +184,9 @@ export const $pickState = atom<PickState | null>(null)
 /** Browser state: root, folder, search text and selection (keyed by absolute path). In page mode the
  *  selection belongs to the folder; in pick mode it persists across folders. */
 export function useBrowser(roots: RootsResponse, mode: Mode) {
+  const [connectionId, profile] = useScope()
+  const info = useValue($scopeInfo)[scopeKey(connectionId, profile)]
+  const sort = info?.date === false ? 'name' : info?.sort ?? 'name'
   const [localRootId, setLocalRootId] = useState(roots.roots[0]?.id ?? '')
   const [localPath, setLocalPath] = useState('')
   const [localSearch, setLocalSearch] = useState('')
@@ -223,6 +226,9 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   }
 
   return {
+    sort,
+    dateSupported: info?.date,
+    setSort: (sort: 'name' | 'mtime') => remember(scopeKey(connectionId, profile), { sort }),
     roots,
     root,
     path,
@@ -448,6 +454,16 @@ export function BrowserSearch({ b, label = S.search }: { b: { search: string; se
   )
 }
 
+export function SortControl({ b }: { b: Browser }) {
+  return <label style={{ fontSize: 12 }} title={b.dateSupported === false ? S.sortUpdate : undefined}>
+    Sort <select aria-label="Sort" disabled={Boolean(b.search)} value={b.sort} onChange={e => b.setSort(e.target.value === 'mtime' ? 'mtime' : 'name')}>
+      <option value="name">Name</option>
+      <option disabled={b.dateSupported === false} value="mtime">Date modified</option>
+    </select>
+    {b.dateSupported === false && <span style={muted}>{S.sortUpdate}</span>}
+  </label>
+}
+
 function sortEntries(entries: Entry[], highlights: string[], atRoot: boolean): Entry[] {
   const rank = (entry: Entry) => (atRoot && entry.is_dir && highlights.includes(entry.name) ? highlights.indexOf(entry.name) : highlights.length)
   return [...entries].sort((a, b) => rank(a) - rank(b) || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name))
@@ -459,15 +475,15 @@ function sortEntries(entries: Entry[], highlights: string[], atRoot: boolean): E
  *  unchanged. Any other read re-reads the whole range in capped chunks, deduplicated by abs if the folder changes
  *  between them. The plugin's REST client follows the selected agent, so each request is sent only while this
  *  listing's agent is still selected: after a switch the listing fails rather than mixing two agents' files. */
-async function listUpTo([connectionId, profile]: [string, string], root: string, path: string, count: number, shown?: ListResponse): Promise<ListResponse> {
-  const read = (offset: number, limit: number) => {
+async function listUpTo([connectionId, profile]: [string, string], root: string, path: string, sort: 'name' | 'mtime', count: number, shown?: ListResponse): Promise<ListResponse> {
+  const read = async (offset: number, limit: number) => {
     if ((host.state.connectionId.get() ?? 'local') !== connectionId || host.state.profile.get() !== profile) throw new Error(S.agentChanged)
-    return call<ListResponse>(query('/list', { root, path, offset, limit }))
+    return call<ListResponse>(query('/list', { root, path, offset, limit, ...(sort === 'mtime' ? { sort } : {}) }))
   }
   const have = shown?.entries.length ?? 0
-  if (shown && have && have < count && count - have < LIST_PAGE_MAX) {
+  if (sort === 'name' && shown && have && have < count && count - have < LIST_PAGE_MAX) {
     const next = await read(have - 1, count - have + 1)
-    if (next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
+    if (next.applied_sort === shown.applied_sort && next.total === shown.total && next.entries[0]?.abs === shown.entries[have - 1].abs) {
       const seen = new Set(shown.entries.map(entry => entry.abs))
       return { ...next, entries: [...shown.entries, ...next.entries.filter(entry => !seen.has(entry.abs))] }
     }
@@ -475,12 +491,17 @@ async function listUpTo([connectionId, profile]: [string, string], root: string,
   const seen = new Set<string>()
   const entries: Entry[] = []
   let last: ListResponse | undefined
+  let supported = true
+  // Mutable mtimes can reorder an unchanged boundary: Date always rereads the prefix. These capped reads
+  // are best-effort under concurrent writes, not an atomic snapshot of the folder.
   for (let offset = 0; offset < count; offset += LIST_PAGE_MAX) {
     last = await read(offset, Math.min(LIST_PAGE_MAX, count - offset))
+    supported = supported && last.applied_sort !== undefined
+    if (sort === 'mtime' && last.applied_sort !== 'mtime') return { ...last, applied_sort: undefined, entries: [] }
     for (const entry of last.entries) if (!seen.has(entry.abs)) { seen.add(entry.abs); entries.push(entry) }
     if (offset + last.entries.length >= last.total) break
   }
-  return { ...last!, entries }
+  return { ...last!, applied_sort: supported ? last?.applied_sort : undefined, entries }
 }
 
 /** The scrolling list: folder listing, or search results while a query is active. With `onOpenFile`, opening
@@ -494,11 +515,11 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
 }) {
   const [connectionId, profile] = useScope()
   const rootId = b.root?.id ?? ''
-  const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
+  const folder = `${connectionId}|${profile}|${rootId}|${b.path}|${b.sort}`
   const [range, setRange] = useState({ folder, count: LIST_LIMIT })
   const count = range.folder === folder ? range.count : LIST_LIMIT
   if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT })
-  const listingKey = ['hcfm', connectionId, profile, 'list', rootId, b.path, count]
+  const listingKey = ['hcfm', connectionId, profile, 'list', rootId, b.path, b.sort, count]
   const client = useQueryClient()
   const searching = Boolean(b.query)
   const listing = useQuery({
@@ -508,10 +529,12 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     queryFn: async () => {
       const readAt = Date.now()
       const save = captureFor([connectionId, profile])
-      return { ...await listUpTo([connectionId, profile], rootId, b.path, count,
-        client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 6), count - LIST_LIMIT]) : undefined), save, readAt }
+      const data = await listUpTo([connectionId, profile], rootId, b.path, b.sort, count,
+        client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 7), count - LIST_LIMIT]) : undefined)
+      remember(scopeKey(connectionId, profile), { date: data.applied_sort !== undefined })
+      return { ...data, save, readAt }
     },
-    placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
+    placeholderData: (previous, previousQuery) => listingKey.slice(0, 7).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
     retry: 1
   })
@@ -530,8 +553,9 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   }, [listing.data, listing.error, listing.isFetching, b.search, rootId, b.path])
   const entries = useMemo(() => {
     if (searching) return found.data?.results ?? []
+    if (b.sort === 'mtime') return listing.data?.entries ?? []
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
-  }, [searching, found.data, listing.data, b.roots.highlights, b.path])
+  }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort])
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
   const reason = searching ? found.data?.reason : undefined
   const stopped = reason === 'time' || reason === 'visits'
@@ -553,6 +577,12 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   // A Load more read is pending (its count has no data yet). A refresh of the count on screen is not: it keeps
   // the button enabled, so keyboard focus on it survives a live refresh, and the count isn't announced again.
   const loadingMore = listing.isFetching && client.getQueryData(listingKey) === undefined
+  const [sortNotice, setSortNotice] = useState('')
+  const priorSort = useRef(b.sort)
+  useEffect(() => {
+    if (priorSort.current !== b.sort) setSortNotice(b.sort === 'mtime' ? 'Sorted by date modified' : 'Sorted by name')
+    priorSort.current = b.sort
+  }, [b.sort])
   const announce = active.error ? S.folderFailed : !active.data ? '' : searching ? [S.results(entries.length), shownNote].filter(Boolean).join('. ')
     : count === LIST_LIMIT || entries.length >= total ? S.items(total) : loadingMore ? '' : S.showingOf(entries.length, total)
 
@@ -624,7 +654,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
               <span>{S.showingOf(entries.length, listing.data!.total)}</span>
               <Button disabled={loadingMore} onClick={() => setRange({ folder, count: count + LIST_LIMIT })} size="sm" variant="text">{S.loadMore}</Button>
             </div>
-          ) : truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.firstOnly(entries.length)}</div>}
+          ) : truncated && b.sort === 'name' && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.firstOnly(entries.length)}</div>}
       </>
     )
   }
@@ -634,7 +664,8 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   return (
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
-      <div aria-live="polite" style={hidden}>{announce}</div>
+      {!searching && b.sort === 'mtime' && truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.dateScanLimit}</div>}
+      <div aria-live="polite" style={hidden}>{announce}{sortNotice && `. ${sortNotice}`}</div>
     </div>
   )
 }
@@ -717,7 +748,7 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onD
         <span style={{ ...ellipsis, color: 'var(--ui-text-primary)' }}>{entry.name}</span>
         {secondary && <span style={{ ...ellipsis, ...muted, fontSize: 11 }}>{secondary}</span>}
       </span>
-      <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{entry.is_dir ? '' : humanSize(entry.size)}</span>
+      <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{entry.is_dir ? '' : humanSize(entry.size ?? 0)}</span>
       <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{shortDate(entry.mtime)}</span>
     </div>
   )

@@ -18,7 +18,7 @@ const flush = async (rounds = 10) => {
   for (let i = 0; i < rounds; i++) await act(() => new Promise(resolve => setTimeout(resolve, 0)))
 }
 
-const rows = () => screen.getAllByRole('option').map(row => row.getAttribute('data-entry'))
+const rows = () => within(screen.getByRole('listbox')).getAllByRole('option').map(row => row.getAttribute('data-entry'))
 
 beforeEach(() => {
   resetQueryCache()

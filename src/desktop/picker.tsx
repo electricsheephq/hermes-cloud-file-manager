@@ -16,7 +16,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { useEffect, useRef } from 'react'
 
-import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, NoRoots, RootSelect, useBrowser, useLiveRefresh, useRoots } from './browser'
+import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, NoRoots, RootSelect, SortControl, useBrowser, useLiveRefresh, useRoots } from './browser'
 import { DriveImport, type ImportHold } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { formatInsertText, hasLineBreak } from './format'
@@ -252,9 +252,10 @@ function PickerBrowser({ profile, roots }: { profile: string; roots: RootsRespon
   }
   return (
     <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--ui-stroke-tertiary)', paddingBottom: 6 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--ui-stroke-tertiary)', paddingBottom: 6 }}>
         <Breadcrumbs b={b} />
         <BrowserSearch b={b} />
+        <SortControl b={b} />
         <RootSelect b={b} />
       </div>
       <EntryList b={b} height={360} />

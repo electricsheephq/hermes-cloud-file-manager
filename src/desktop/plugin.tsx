@@ -9,7 +9,7 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
-import { $available, $driveAvailable, $unreachable, bindContext, isNotFoundError } from './api'
+import { $available, $driveAvailable, $unreachable, bindContext, isNotFoundError, remember, scopeKey } from './api'
 import { $driveJob } from './drive'
 import { $batch, CloudFilesPage } from './page'
 import { $pickerOpen, $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost, pickerPinnedElsewhere } from './picker'
@@ -81,6 +81,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
   let generation = 0
   const probe = (byRetry = false): Promise<void> => {
     const mine = ++generation
+    const scope = scopeKey()
     // Any other probe (the 60 s re-check) supersedes a Retry, so Retry is no longer busy; the error stays until it settles.
     const stored = $unreachable.get()
     if (stored?.retrying && !byRetry) $unreachable.set({ ...stored, retrying: false })
@@ -90,6 +91,7 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
     const settle = (which: 'cloud' | 'drive', ok: boolean) => {
       if (mine !== generation || disposed) return
       if (!ok) {
+        remember(scope, which === 'cloud' ? { agent: 'unreachable', error: 'other' } : { drive: 'unknown', error: 'other' })
         // Retry keeps the error on screen (Retry shows busy) until the new probe settles: clearing it first would
         // bring back the endless placeholder whenever that probe hangs (#51).
         const retry = () => {
@@ -101,25 +103,30 @@ export function registerAvailabilityGate(ctx: PluginContext, onChange?: (availab
       }
       else if ($unreachable.get()?.probe === which) $unreachable.set(null)
     }
-    return ctx.rest('/available').then(
-      () => {
+    return ctx.rest<{ version?: unknown }>('/available').then(
+      res => {
         if (mine !== generation || disposed) return
+        const version = res?.version
+        remember(scope, { agent: typeof version === 'string' && /^\d[\w.+-]{0,63}$/.test(version) ? version : 'unknown' })
         settle('cloud', true)
         set(true)
         return ctx.rest<{ available?: boolean }>('/drive/available').then(
           res => {
             settle('drive', true)
-            if (mine === generation) setDrive(res?.available === true)
+            if (mine === generation && !disposed) {
+              remember(scope, { drive: res?.available === true ? 'available' : 'unavailable' })
+              setDrive(res?.available === true)
+            }
           },
           error => {
             settle('drive', isNotFoundError(error))
-            if (mine === generation && isNotFoundError(error)) setDrive(false)
+            if (mine === generation && !disposed && isNotFoundError(error)) { remember(scope, { drive: 'unavailable' }); setDrive(false) }
           }
         )
       },
       error => {
         settle('cloud', isNotFoundError(error))
-        if (mine === generation && isNotFoundError(error)) set(false)
+        if (mine === generation && !disposed && isNotFoundError(error)) { remember(scope, { agent: 'unavailable', drive: 'unavailable' }); set(false) }
       }
     )
   }

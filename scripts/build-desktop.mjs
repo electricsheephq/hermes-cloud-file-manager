@@ -15,6 +15,7 @@ const result = await build({
   platform: 'browser',
   target: 'es2022',
   jsx: 'automatic',
+  define: { __HCFM_VERSION__: JSON.stringify(JSON.parse(readFileSync('package.json', 'utf8')).version) },
   minify: false,
   legalComments: 'none',
   external: ['@hermes/plugin-sdk', 'react', 'react/jsx-runtime', 'react/jsx-dev-runtime'],

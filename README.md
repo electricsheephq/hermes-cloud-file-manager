@@ -260,7 +260,7 @@ if it imports anything but the plugin SDK and React, or if either pinned Hermes 
 
 ## Troubleshooting and reporting a bug
 
-There is no agent-callable Cloud File Manager diagnostic yet; note the Cloud Files panel error and which file or folder was involved, with private names redacted.
+Choose **Copy diagnostics** in the Cloud Files header, even when the agent is unavailable or folders fail to load, and paste it into your bug report. It includes versions, capability states, folder count and a safe error code, without file names or paths.
 Desktop's internal `/available` probe reports the plugin ID and version only; do not call gateway or file APIs with credentials to diagnose a problem.
 For recent log excerpts, use `hermes logs gui -n 300 | grep -i hermes-cloud-file-manager` for the agent side (its file API runs in the dashboard server) and `hermes logs desktop -n 300 | grep -i cloud` for the Desktop side; these best-effort filters may return nothing.
 Include the plugin version/source from `hermes plugins list --json`, `hermes --version`, and your Desktop version; remove secrets and private paths.

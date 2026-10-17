@@ -1,13 +1,13 @@
-import { atom, type PluginContext, type PluginRestOptions } from '@hermes/plugin-sdk'
+import { atom, host, type PluginContext, type PluginRestOptions } from '@hermes/plugin-sdk'
 
-import { codeText } from './strings'
+import { codeText, knownCode } from './strings'
 
 export interface Entry {
   name: string
   rel: string
   abs: string
   is_dir: boolean
-  size: number
+  size: number | null
   mtime: number
   link_outside?: boolean
 }
@@ -33,6 +33,7 @@ export interface RootsResponse {
 
 export interface ListResponse {
   ok: boolean
+  applied_sort?: 'name' | 'mtime'
   entries: Entry[]
   total: number
   truncated: boolean
@@ -70,6 +71,22 @@ export const $driveAvailable = atom<boolean | null>(null)
  *  not with a 404. Only the open picker shows it, with `retry` (one immediate probe); the rest keep the last answer. */
 export const $unreachable = atom<null | { probe: 'cloud' | 'drive'; retry: () => void; retrying?: boolean }>(null)
 
+/** Session-only, allowlisted facts; never retain raw errors, paths or response bodies here. */
+export interface ScopeInfo {
+  sort?: 'name' | 'mtime'
+  date?: boolean
+  agent?: string
+  drive?: 'available' | 'unavailable' | 'unknown'
+  folders?: number
+  error?: string
+}
+export const $scopeInfo = atom<Record<string, ScopeInfo>>({})
+export const scopeKey = (c = host.state.connectionId.get(), p = host.state.profile.get()) => `${c?.trim() || 'local'}|${p.trim() || 'default'}`
+export function remember(scope: string, info: ScopeInfo) {
+  if (scope !== scopeKey()) return // A late response must never update another agent's diagnostics/capability.
+  $scopeInfo.set({ ...$scopeInfo.get(), [scope]: { ...$scopeInfo.get()[scope], ...info } })
+}
+
 export function bindContext(ctx: PluginContext) {
   bound = ctx
 }
@@ -86,10 +103,17 @@ export function rest<T>(path: string, opts?: PluginRestOptions): Promise<T> {
 /** GET/POST that turns an in-band failure into a thrown ApiError. Only /roots may answer
  *  `unsupported_backend` in-band: the page renders that as its own "can't browse" state. */
 export async function call<T extends { ok: boolean }>(path: string, opts?: PluginRestOptions): Promise<T> {
-  const res = await rest<T & { code?: string; message?: string }>(path, opts)
-  const rootsUnsupported = path.split('?')[0] === '/roots' && res?.code === 'unsupported_backend'
-  if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? 'error', codeText(res.code, res.message), res)
-  return res
+  const scope = scopeKey()
+  try {
+    const res = await rest<T & { code?: string; message?: string }>(path, opts)
+    const rootsUnsupported = path.split('?')[0] === '/roots' && res?.code === 'unsupported_backend'
+    if (res && res.ok === false && !rootsUnsupported) throw new ApiError(res.code ?? 'error', codeText(res.code, res.message), res)
+    if (path.split('?')[0] === '/roots') remember(scope, { folders: (res as unknown as RootsResponse).roots?.length, ...(res.code ? { error: knownCode(res.code) } : {}) })
+    return res
+  } catch (error) {
+    remember(scope, { error: error instanceof ApiError ? knownCode(error.code) : 'other' })
+    throw error
+  }
 }
 
 /** True when `error` is the backend saying "this plugin route is not mounted here" (a definite 404).

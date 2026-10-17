@@ -15,6 +15,10 @@ All notable changes to this plugin are recorded here. Versions follow semantic v
 
 Desktop half only; the agent's side is unchanged from 0.4.7 apart from the version.
 
+### Added
+- **Sort by date modified** in Cloud Files and the Cloud picker, newest first on agents that support it. Older agents keep Name order and show an update hint.
+- **Copy diagnostics** in the Cloud Files header, including when browsing fails; copies only safe versions, states, counts and error codes (#61).
+
 ### Fixed
 - **Retry a preview after a temporary read failure.** A file changing during a read or a temporary I/O error
   left no way to try again. Both now offer Retry; permanent refusals still do not (#67).

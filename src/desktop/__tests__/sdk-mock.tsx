@@ -183,6 +183,7 @@ export const SelectValue = passthrough('span')
 export interface TestContextOptions {
   rest?: (path: string, opts?: any) => Promise<any>
   onEvent?: boolean
+  writeClipboard?: (text: string) => Promise<boolean>
 }
 
 /** A PluginContext double that records live contributions and lets tests drive timers manually. */
@@ -206,7 +207,7 @@ export function createTestContext(options: TestContextOptions = {}) {
     setTimeout: (fn: () => void) => (fn(), () => undefined),
     setInterval: (fn: () => void) => (intervals.push(fn), () => undefined),
     rest: options.rest ?? (async () => ({ ok: true })),
-    os: { writeClipboard: async (_text: string) => true, openExternal: async () => true },
+    os: { writeClipboard: options.writeClipboard ?? (async (_text: string) => true), openExternal: async () => true },
     storage: { get: () => undefined, set: () => undefined, remove: () => undefined }
   }
   return {
