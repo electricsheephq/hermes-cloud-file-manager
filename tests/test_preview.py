@@ -73,6 +73,36 @@ def test_text_has_no_binary_size_cap(client, api, fs, monkeypatch):
     assert preview(client, "file.json")["text"] == "{}"
 
 
+@pytest.mark.parametrize("size", [4, 8, 12])
+def test_text_truncation_with_stale_stat_size(client, api, fs, monkeypatch, size):
+    from types import SimpleNamespace
+
+    cap = 8
+    monkeypatch.setattr(api, "TEXT_PREVIEW_MAX_BYTES", cap)
+    target = fs[0] / "file.log"
+    target.write_bytes(b"a" * size)
+    fstat, reads = api.os.fstat, []
+    read = api.os.read
+
+    def stale_info(fd):
+        info = fstat(fd)
+        return SimpleNamespace(st_dev=info.st_dev, st_ino=info.st_ino, st_mode=info.st_mode,
+                               st_size=1, st_mtime=info.st_mtime, st_mtime_ns=info.st_mtime_ns)
+
+    def counted_read(fd, limit):
+        raw = read(fd, limit)
+        reads.append(len(raw))
+        return raw
+
+    monkeypatch.setattr(api.os, "fstat", stale_info)
+    monkeypatch.setattr(api.os, "read", counted_read)
+    body = preview(client, target.name)
+    assert body["ok"] and body["size"] == 1
+    assert body["truncated"] is (size > cap)
+    assert body["text"] == "a" * min(size, cap)
+    assert sum(reads) == min(size, cap + 1)
+
+
 @pytest.mark.parametrize("ext", list(IMAGE_MIME) + ["PNG", "pdf", "PDF"])
 def test_binary_round_trip(client, fs, ext):
     raw = b"\x00\xff\x89binary\r\n"

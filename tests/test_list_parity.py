@@ -27,7 +27,8 @@ def reference(api, root_id, path, offset, limit):
                 entries.append(entry)
     entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower(), e["name"]))
     return {"ok": True, "root": root_id, "path": api._rel(selected, folder),
-            "entries": entries[offset:offset + limit], "total": len(entries), "truncated": truncated}
+            "entries": entries[offset:offset + limit], "total": len(entries), "truncated": truncated,
+            "applied_sort": "name"}
 
 
 @pytest.mark.parametrize("cache", [0, 5])

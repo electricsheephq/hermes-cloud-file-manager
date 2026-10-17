@@ -188,6 +188,7 @@ export const CODE_TEXT: Record<string, string> = {
   not_a_dir: 'That is not a folder',
   is_link: 'That item is a link outside the agent’s folders',
   bad_query: 'That search is not valid',
+  bad_sort: 'This agent can’t sort the folder that way',
   unavailable: "Google Drive isn't available for this agent right now.",
   bad_id: "That Google Drive item isn't valid.",
   is_folder: 'Choose files, not folders.',

@@ -566,7 +566,7 @@ def preview_file(root: str, path: str):
         if b"\0" in raw[:8192]:
             raise GuardError("not_text", "The file is not text.")
         result.update(text=raw[:TEXT_PREVIEW_MAX_BYTES].decode("utf-8", errors="replace"),
-                      truncated=info.st_size > TEXT_PREVIEW_MAX_BYTES)
+                      truncated=info.st_size > TEXT_PREVIEW_MAX_BYTES or len(raw) > TEXT_PREVIEW_MAX_BYTES)
     else:
         result.update(mime=mime, data=base64.b64encode(raw).decode("ascii"))
     return result
@@ -716,7 +716,10 @@ def roots():
 
 @router.get("/list")
 @_protocol
-def list_files(root: str, path: str = "", offset: int = Query(0, ge=0), limit: int = Query(500, ge=1, le=2000)):
+def list_files(root: str, path: str = "", offset: int = Query(0, ge=0), limit: int = Query(500, ge=1, le=2000),
+               sort: str = Query("name")):
+    if sort not in {"name", "mtime"}:
+        raise GuardError("bad_sort", "Sort by name or mtime.")
     selected, _ = _request_root(root)
     folder = _resolve(selected, path, for_write=False)
     if not folder.is_dir():
@@ -740,8 +743,11 @@ def list_files(root: str, path: str = "", offset: int = Query(0, ge=0), limit: i
                     _LIST_CACHE[key] = (time.monotonic(), entries, truncated)
                     while len(_LIST_CACHE) > 8:
                         del _LIST_CACHE[next(iter(_LIST_CACHE))]
+    if sort == "mtime":
+        entries = sorted(entries, key=lambda e: (-(e["mtime"] if e["mtime"] is not None else -math.inf),
+                                                 e["name"].lower(), e["name"], e["rel"]))
     return {"ok": True, "root": root, "path": rel_folder, "entries": entries[offset:offset + limit],
-            "total": len(entries), "truncated": truncated}
+            "total": len(entries), "truncated": truncated, "applied_sort": sort}
 
 
 def _clear_list_cache():
