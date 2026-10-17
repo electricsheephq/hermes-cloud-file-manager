@@ -17,8 +17,8 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
-import { $available, $driveAvailable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse } from './api'
-import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, useBrowser, useLiveRefresh, useRoots } from './browser'
+import { $available, $driveAvailable, $scopeInfo, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse, scopeKey } from './api'
+import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, SortControl, useBrowser, useLiveRefresh, useRoots } from './browser'
 import { $driveJob, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
@@ -31,6 +31,8 @@ import { collectDropEntries, filesFromInput, walkEntries } from './walk'
 
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 const pad = '0 20px'
+declare const __HCFM_VERSION__: string
+const desktopVersion = typeof __HCFM_VERSION__ === 'string' ? __HCFM_VERSION__ : 'unknown'
 
 /** The current upload batch outlives the page, so leaving and coming back keeps the drawer. */
 export const $batch = atom<null | UploadBatch>(null)
@@ -142,6 +144,14 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
   onDropInput?: (input: Promise<UploadInput>, pin: AgentPin) => void
   dropLabel?: string
 }) {
+  const info = useValue($scopeInfo)[scopeKey(useValue(host.state.connectionId), profile)]
+  const copyDiagnostics = () => {
+    const text = [`Cloud Files desktop ${desktopVersion}`, `Agent side: ${info?.agent ?? 'unknown'}`,
+      `Google Drive: ${info?.drive ?? 'unknown'}`, `Sort by date: ${info?.date === undefined ? 'unknown' : info.date ? 'supported' : 'not supported'}`,
+      `Folders available: ${info?.folders ?? 'unknown'}`, `Last error: ${info?.error ?? 'none'}`].join('\n')
+    void pluginCtx().os.writeClipboard(text).then(ok => ok, () => false)
+      .then(ok => host.notify(ok ? { kind: 'success', message: S.diagnosticsCopied } : { kind: 'error', message: S.copyFailed }))
+  }
   const [over, setOver] = useState(false)
   const depth = useRef(0)
   // preventDefault on dragover AND drop, always: otherwise Electron navigates the window to the file.
@@ -176,7 +186,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
       <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 20px 10px' }}>
         <h1 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{S.title}</h1>
         <span style={{ ...muted, fontSize: 12 }}>{profile}</span>
-        <span style={{ marginLeft: 'auto' }}>{controls}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6 }}>{controls}<Button onClick={copyDiagnostics} size="sm" variant="text">{S.copyDiagnostics}</Button></span>
       </header>
       {children}
       {over && (
@@ -317,6 +327,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
               <>
                 <Breadcrumbs b={b} />
                 <BrowserSearch b={b} />
+                <SortControl b={b} />
                 <ToolButton icon="new-folder" label={S.newFolder} onClick={() => setNewFolder(true)} />
                 <ToolButton icon="cloud-upload" label={S.uploadFiles} onClick={() => filesInput.current?.click()} />
                 <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />

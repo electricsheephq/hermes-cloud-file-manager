@@ -2,11 +2,16 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-17
+
+Both halves change: the agent's side and the Desktop.
 
 ### Added
-- **Sort by date on the agent's side.** The folder list can return newest entries first, with files and folders
-  interleaved, among the first 20,000 entries scanned. Desktop support follows.
+- **Sort by date modified.** Cloud Files and the + → Cloud picker get a Sort control (Name / Date modified). Date lists the
+  open folder newest first, files and folders together, among the first 20,000 entries scanned. It needs the agent's side
+  from this release; on an older agent Date is disabled with a hint and Name works as before.
+- **Copy diagnostics** in the Cloud Files header, also when browsing fails. It copies only versions, states, counts and
+  error codes: no folder names, paths or error text (#61).
 
 ### Fixed
 - **Text preview truncation.** A text preview now says it was cut short even when the file's reported size is stale (#57).

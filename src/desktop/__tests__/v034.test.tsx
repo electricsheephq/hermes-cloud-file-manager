@@ -62,7 +62,7 @@ it.each([false, true])('%s: L1/L6 keeps 500 rows during Load more, then shows al
   expect(rows()).toHaveLength(812)
   expect(screen.queryByText(/Showing/)).toBeNull()
   expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
-  if (picker) expect(within(dialog()).getAllByRole('option')).toHaveLength(812)
+  if (picker) expect(within(within(dialog()).getByRole('listbox')).getAllByRole('option')).toHaveLength(812)
 })
 it('L2: each Load more reads only the new slice; a refetch re-reads the whole range in capped chunks', async () => {
   const { calls } = setup({ '': files(2600) })

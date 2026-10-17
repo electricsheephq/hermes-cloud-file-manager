@@ -93,6 +93,10 @@ installing the desktop half is harmless for your other agents.
   and its subfolders. Search skips `.git`, `node_modules`, `__pycache__`, `.venv`, `venv`, `.tox`, `.mypy_cache` and
   `.cache` folders. On a very large folder, search stops after 5 seconds and says that some matches may be missing;
   open a subfolder to search inside it.
+- **Sort:** choose **Name** or **Date modified** in the toolbar of Cloud Files or the **+ → Cloud** picker. Date
+  modified lists the open folder's files and folders together, newest first; in a folder with more than 20,000
+  entries, the order covers the first 20,000 scanned. Search results keep their own order, so Sort is off while you
+  search. Date modified needs version 0.5.0 or later on the agent too; on an older agent it is disabled with a hint.
 - **Read and edit Markdown:** double-click a `.md`, `.markdown` or `.txt` file (or select it and choose
   **Open**). It opens read-only, rendered like chat. Choose **Edit** to change the source, **Changes** to see
   your edits line by line, and **Review & save** to check the diff before **Save**. Nothing is written until you
@@ -260,7 +264,7 @@ if it imports anything but the plugin SDK and React, or if either pinned Hermes 
 
 ## Troubleshooting and reporting a bug
 
-There is no agent-callable Cloud File Manager diagnostic yet; note the Cloud Files panel error and which file or folder was involved, with private names redacted.
+Choose **Copy diagnostics** in the Cloud Files header, even when the agent is unavailable or folders fail to load, and paste it into your bug report. It includes versions, capability states, folder count and a safe error code, without file names or paths.
 Desktop's internal `/available` probe reports the plugin ID and version only; do not call gateway or file APIs with credentials to diagnose a problem.
 For recent log excerpts, use `hermes logs gui -n 300 | grep -i hermes-cloud-file-manager` for the agent side (its file API runs in the dashboard server) and `hermes logs desktop -n 300 | grep -i cloud` for the Desktop side; these best-effort filters may return nothing.
 Include the plugin version/source from `hermes plugins list --json`, `hermes --version`, and your Desktop version; remove secrets and private paths.

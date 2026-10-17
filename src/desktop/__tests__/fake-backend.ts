@@ -76,7 +76,7 @@ export interface Recorded {
   profile: string
 }
 
-export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}, texts: Record<string, string> = TEXTS, before?: (path: string) => void) {
+export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {}, texts: Record<string, string> = TEXTS, before?: (path: string) => void, oldGateway = false) {
   const calls: Recorded[] = []
   const files = new Map(Object.entries(texts))
   const rest = async (full: string, opts?: any) => {
@@ -88,8 +88,9 @@ export function fakeBackend(overrides: Record<string, (opts?: any) => any> = {},
     if (path === '/available') return { ok: true, plugin: 'hermes-cloud-file-manager', version: '0.1.0' }
     if (path === '/roots') return ROOTS
     if (path === '/list') {
-      const entries = FOLDERS[params.path] ?? []
-      return { ok: true, root: params.root, path: params.path, entries: entries.slice(Number(params.offset ?? 0), Number(params.offset ?? 0) + Number(params.limit ?? 500)), total: entries.length, truncated: false }
+      const entries = [...(FOLDERS[params.path] ?? [])]
+      if (!oldGateway && params.sort === 'mtime') entries.sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name))
+      return { ok: true, ...(oldGateway ? {} : { applied_sort: params.sort ?? 'name' }), root: params.root, path: params.path, entries: entries.slice(Number(params.offset ?? 0), Number(params.offset ?? 0) + Number(params.limit ?? 500)), total: entries.length, truncated: false }
     }
     if (path === '/search') {
       const results = Object.values(FOLDERS)

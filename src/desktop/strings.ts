@@ -51,6 +51,10 @@ export const S = {
   loadMore: 'Load more',
   agentChanged: 'The selected agent changed while this folder was loading.',
   firstOnly: (n: number) => `Showing the first ${n.toLocaleString()} items. Search finds the rest.`,
+  dateScanLimit: 'Date order covers the first 20,000 entries scanned.',
+  sortUpdate: 'Update Cloud File Manager on the agent to sort by date.',
+  copyDiagnostics: 'Copy diagnostics',
+  diagnosticsCopied: 'Diagnostics copied',
   searchMore: (n: number) => `Showing the first ${n === 1 ? 'match' : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited: number) =>
     `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : 'early'}, so some matches may be missing. Open a folder to search inside it.`,
@@ -238,3 +242,9 @@ export const fileCodeText = (code: string, message?: string, maxBytes?: number, 
 
 export const codeText = (code: string | undefined, message?: string) =>
   (code && CODE_TEXT[code]) || message || code || 'Something went wrong'
+
+/** Gateway codes the Desktop answers with its own UI instead of a text; Copy diagnostics still reports them by name. */
+const HANDLED_CODES = new Set(['conflict'])
+
+export const knownCode = (code: string) =>
+  HANDLED_CODES.has(code) || [CODE_TEXT, FILE_CODE_TEXT, SAVE_CODE_TEXT].some(map => Object.hasOwn(map, code)) ? code : 'other'
