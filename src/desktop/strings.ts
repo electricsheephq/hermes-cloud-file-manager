@@ -243,4 +243,8 @@ export const fileCodeText = (code: string, message?: string, maxBytes?: number, 
 export const codeText = (code: string | undefined, message?: string) =>
   (code && CODE_TEXT[code]) || message || code || 'Something went wrong'
 
-export const knownCode = (code: string) => [CODE_TEXT, FILE_CODE_TEXT, SAVE_CODE_TEXT].some(map => Object.hasOwn(map, code)) ? code : 'other'
+/** Gateway codes the Desktop answers with its own UI instead of a text; Copy diagnostics still reports them by name. */
+const HANDLED_CODES = new Set(['conflict'])
+
+export const knownCode = (code: string) =>
+  HANDLED_CODES.has(code) || [CODE_TEXT, FILE_CODE_TEXT, SAVE_CODE_TEXT].some(map => Object.hasOwn(map, code)) ? code : 'other'

@@ -222,7 +222,8 @@ var SAVE_CODE_TEXT = {
 };
 var fileCodeText = (code, message, maxBytes, saving = false) => code === "too_large" ? `Too large to ${saving ? "save" : "open"} here (over ${mb(maxBytes ?? 1024 * 1024)}).` : saving && SAVE_CODE_TEXT[code] || FILE_CODE_TEXT[code] || codeText(code, message);
 var codeText = (code, message) => code && CODE_TEXT[code] || message || code || "Something went wrong";
-var knownCode = (code) => [CODE_TEXT, FILE_CODE_TEXT, SAVE_CODE_TEXT].some((map) => Object.hasOwn(map, code)) ? code : "other";
+var HANDLED_CODES = /* @__PURE__ */ new Set(["conflict"]);
+var knownCode = (code) => HANDLED_CODES.has(code) || [CODE_TEXT, FILE_CODE_TEXT, SAVE_CODE_TEXT].some((map) => Object.hasOwn(map, code)) ? code : "other";
 
 // src/desktop/api.ts
 var ApiError = class extends Error {

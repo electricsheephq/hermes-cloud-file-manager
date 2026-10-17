@@ -1,5 +1,5 @@
 // Wire contract: every error code the gateway can answer has plain text on the Desktop side.
-import { CODE_TEXT, FILE_CODE_TEXT } from '../strings'
+import { CODE_TEXT, FILE_CODE_TEXT, knownCode } from '../strings'
 
 /** Codes `_protocol` answers itself (OSError mapping) or that this release adds on the gateway; listed explicitly
  *  so the test holds even before the gateway half of the release lands in this tree. */
@@ -34,6 +34,12 @@ describe('gateway error codes', () => {
   it('every code has plain text, or is handled by its own UI', async () => {
     const missing = (await gatewayCodes()).filter(code => !CODE_TEXT[code] && !FILE_CODE_TEXT[code] && !HANDLED.has(code))
     expect(missing).toEqual([])
+  })
+
+  it('Copy diagnostics reports every gateway code by name, never as other', async () => {
+    const unnamed = (await gatewayCodes()).filter(code => knownCode(code) !== code)
+    expect(unnamed).toEqual([])
+    expect(knownCode('toString')).toBe('other')
   })
 
   it('the new codes read as plain sentences', () => {
