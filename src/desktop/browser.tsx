@@ -665,7 +665,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       {!searching && b.sort === 'mtime' && truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.dateScanLimit}</div>}
-      <div aria-live="polite" style={hidden}>{announce}{sortNotice && `. ${sortNotice}`}</div>
+      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}</div>
     </div>
   )
 }

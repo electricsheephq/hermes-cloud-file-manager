@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { $available, $driveAvailable, $scopeInfo, bindContext, type Entry, scopeKey } from '../api'
+import { $available, $driveAvailable, $scopeInfo, ApiError, bindContext, type Entry, rest, scopeKey } from '../api'
 import { CloudFilesPage } from '../page'
 import { cloudProvider, closePicker, PickerHost } from '../picker'
 import { registerAvailabilityGate } from '../plugin'
@@ -115,9 +115,11 @@ it('search disables Sort immediately through debounce and keeps walker order', a
   expect(sort().disabled).toBe(true)
   await act(() => new Promise(resolve => setTimeout(resolve, 320))); await flush()
   expect(rows()).toEqual(['docs/a.pdf', 'docs/b.pdf'])
+  expect(document.querySelector('[aria-live=polite]')?.textContent).not.toContain('Sorted by date modified')
   fireEvent.change(screen.getByLabelText('Search files'), { target: { value: '' } }); await flush()
   expect(sort().disabled).toBe(false); expect(sort().value).toBe('mtime')
   expect(rows()).toEqual(['f0002.txt', 'f0001.txt', 'f0000.txt'])
+  expect(document.querySelector('[aria-live=polite]')?.textContent).toContain('Sorted by date modified')
 })
 it('picker selection survives sorting and its toolbar wraps', async () => {
   setup([entry('docs', true), entry('a.txt')], true); await flush()
@@ -173,6 +175,32 @@ it.each(['normal', 'unavailable', 'roots-error', 'loading', 'unreachable', 'unkn
   ].join('\n'))
   for (const forbidden of [ROOTS.roots[0].label, ROOTS.roots[0].path, 'conn-1', 'default', '/private/label']) expect(copy.mock.calls[0][0]).not.toContain(forbidden)
   act(() => context.dispose())
+})
+it.each([
+  ['/uploads/chunk', 'no_space', false], ['/drive/import', 'protected', false],
+  ['/drive/import', '/private/label', false], ['/uploads/chunk', 'no_space', true],
+  ['/drive/import', null, true]
+] as const)('rest diagnostics preserve the contract (%s, %s, thrown=%s)', async (path, code, thrown) => {
+  const failure = thrown ? code ? new ApiError(code, '/private/message', { text: '/private/body' }) : new Error('/private/message')
+    : { ok: false, code, message: '/private/message', text: '/private/body' }
+  const backend = fakeBackend({ [path]: () => { if (thrown) throw failure; return failure } })
+  const copy = vi.fn(async (_text: string) => true)
+  bindContext(createTestContext({ rest: backend.rest, writeClipboard: copy }).ctx as any)
+  render(<CloudFilesPage />); await flush()
+  const request = rest(path, { method: 'POST' })
+  if (thrown) await expect(request).rejects.toBe(failure)
+  else await expect(request).resolves.toBe(failure)
+  fireEvent.click(screen.getByText('Copy diagnostics')); await flush()
+  expect(copy.mock.calls[0][0].split('\n').at(-1)).toBe(`Last error: ${code === 'no_space' || code === 'protected' ? code : 'other'}`)
+  for (const secret of ['/private/label', '/private/message', '/private/body']) expect(copy.mock.calls[0][0]).not.toContain(secret)
+})
+it.each([false, true])('rest ignores late failures for another scope (thrown=%s)', async thrown => {
+  let finish!: (value: unknown) => void
+  bindContext(createTestContext({ rest: (() => new Promise(resolve => { finish = resolve })) as any }).ctx as any)
+  const request = rest('/drive/import').catch(error => error)
+  act(() => host.state.profile.set('B'))
+  await act(async () => { finish(thrown ? Promise.reject(new Error('/private/message')) : { ok: false, code: 'no_space' }); await request })
+  expect($scopeInfo.get()).toEqual({})
 })
 it('diagnostics never borrow A facts while B probes or after B answers late', async () => {
   let release: (value: unknown) => void = () => {}

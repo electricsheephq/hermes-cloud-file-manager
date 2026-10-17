@@ -97,7 +97,15 @@ export function pluginCtx(): PluginContext {
 }
 
 export function rest<T>(path: string, opts?: PluginRestOptions): Promise<T> {
-  return pluginCtx().rest<T>(path, opts)
+  const scope = scopeKey()
+  return pluginCtx().rest<T>(path, opts).then(res => {
+    const failure = res as { ok?: boolean; code?: unknown } | null
+    if (failure?.ok === false) remember(scope, { error: knownCode(typeof failure.code === 'string' ? failure.code : '') })
+    return res // Observe in-band failures without changing upload retry/response handling.
+  }, error => {
+    remember(scope, { error: error instanceof ApiError ? knownCode(error.code) : 'other' })
+    throw error
+  })
 }
 
 /** GET/POST that turns an in-band failure into a thrown ApiError. Only /roots may answer

@@ -252,7 +252,15 @@ function pluginCtx() {
   return bound;
 }
 function rest(path, opts) {
-  return pluginCtx().rest(path, opts);
+  const scope = scopeKey();
+  return pluginCtx().rest(path, opts).then((res) => {
+    const failure = res;
+    if (failure?.ok === false) remember(scope, { error: knownCode(typeof failure.code === "string" ? failure.code : "") });
+    return res;
+  }, (error) => {
+    remember(scope, { error: error instanceof ApiError ? knownCode(error.code) : "other" });
+    throw error;
+  });
 }
 async function call(path, opts) {
   const scope = scopeKey();
@@ -1334,7 +1342,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     !searching && b.sort === "mtime" && truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.dateScanLimit }),
     /* @__PURE__ */ jsxs("div", { "aria-live": "polite", style: hidden, children: [
       announce,
-      sortNotice && `. ${sortNotice}`
+      !searching && sortNotice && `. ${sortNotice}`
     ] })
   ] });
 }
