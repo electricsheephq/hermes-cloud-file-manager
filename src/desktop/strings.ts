@@ -30,6 +30,7 @@ export const S = {
   addedToChat: (n: number) => (n === 1 ? 'Added to the chat' : `Added ${n} items to the chat`),
   openChatFirst: 'Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar → Open in split), then try again.',
   refSkipped: (n: number) => `Skipped ${n} ${n === 1 ? 'path' : 'paths'} with a line break or all three quote characters.`,
+  dragSkipped: (n: number) => `Left out ${n === 1 ? '1 item' : `${n} items`} whose name a drag would change. Use Add to chat for ${n === 1 ? 'it' : 'them'}.`,
   addOtherAgent: (owner: string, profile: string) =>
     `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   showOtherAgent: (profile: string) => `Switch back to ${agentName(profile)} to show this upload.`,
@@ -55,7 +56,8 @@ export const S = {
     `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : 'early'}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: 'No matches found so far',
   searchSkipped: (n: number) =>
-    `${n === 1 ? "1 folder couldn't" : `${n.toLocaleString()} folders couldn't`} be opened, so matches inside them may be missing.`,
+    n === 1 ? "1 folder couldn't be opened, so matches inside it may be missing."
+      : `${n.toLocaleString()} folders couldn't be opened, so matches inside them may be missing.`,
   dropTo: (folder: string) => `Drop to upload to ${folder}`,
   dragOtherAgent: (owner: string, profile: string) =>
     `The chat you'd drop into is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,

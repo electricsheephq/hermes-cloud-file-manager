@@ -24,7 +24,7 @@ import { type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, pluginCtx, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
-import { baseName, entryIcon, humanSize, isOpenable, parentPath, shortDate } from './format'
+import { baseName, dragWouldChange, entryIcon, formatRef, humanSize, isOpenable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
 import { transportText } from './upload'
 
@@ -94,42 +94,66 @@ export function toolMayChangeFiles(payload: unknown): boolean {
   return MUTATING_TOOL_RE.test(name)
 }
 
-/** Only the open agent's Cloud listings follow tool events; older hosts have no event subscription. */
-function useLiveRefresh() {
+export const LIST_CACHE_FOLLOWUP_MS = 5500
+const liveRefresh = new Map<string, { holders: number; dispose: () => void }>()
+function releaseRefresh(key: string) {
+  const held = liveRefresh.get(key)
+  if (held && --held.holders === 0) { held.dispose(); liveRefresh.delete(key) }
+}
+
+/** One subscription per agent, held by the page/picker even while another view replaces its list. */
+export function useLiveRefresh() {
   const [connectionId, profile] = useScope()
   const client = useQueryClient()
   useEffect(() => {
     const ctx = pluginCtx()
     if (typeof ctx.onEvent !== 'function') return
+    const key = `${connectionId.trim() || 'local'}|${profile.trim() || 'default'}`
+    const held = liveRefresh.get(key)
+    if (held) { held.holders++; return () => releaseRefresh(key) }
     let timer: number | undefined
-    let missed = false
+    let followup: number | undefined
+    let missedMain = false, missedFollowup = false
+    const refreshList = () => void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
     const refresh = () => {
-      // Folder mtime bypasses the gateway cache for new/deleted/renamed files; an edited size can lag 5 s.
-      void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
+      refreshList()
       void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'search'] })
+      // In-place edits leave folder mtime unchanged: read again after the gateway's 5 s cache expires.
+      if (followup !== undefined) window.clearTimeout(followup)
+      followup = window.setTimeout(() => {
+        followup = undefined
+        if (document.visibilityState === 'hidden') missedFollowup = true
+        else refreshList()
+      }, LIST_CACHE_FOLLOWUP_MS)
     }
-    const dispose = ctx.onEvent('tool.complete', event => {
+    const disposers = ['tool.complete', 'subagent.complete'].map(type => ctx.onEvent!(type, event => {
       // Absent or empty connection ids both mean the local agent, on either side.
       if (event.profile === undefined || ((event.connectionId ?? '').trim() || 'local') !== (connectionId.trim() || 'local') ||
-        ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || !toolMayChangeFiles(event.payload)) return
+        ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || (type === 'tool.complete' && !toolMayChangeFiles(event.payload))) return
+      if (followup !== undefined) window.clearTimeout(followup)
       if (timer !== undefined) return
       timer = window.setTimeout(() => {
         timer = undefined
-        if (document.visibilityState === 'hidden') missed = true
+        if (document.visibilityState === 'hidden') missedMain = true
         else refresh()
       }, 1000)
-    })
+    }))
     const visible = () => {
-      if (document.visibilityState !== 'visible' || !missed) return
-      missed = false
-      if (timer === undefined) refresh() // else the pending timer refreshes
+      if (document.visibilityState !== 'visible' || (!missedMain && !missedFollowup)) return
+      if (timer === undefined) {
+        if (missedMain) refresh()
+        else refreshList()
+      } // else the pending timer refreshes
+      missedMain = missedFollowup = false
     }
     document.addEventListener('visibilitychange', visible)
-    return () => {
-      dispose()
+    liveRefresh.set(key, { holders: 1, dispose: () => {
+      disposers.forEach(dispose => dispose())
       if (timer !== undefined) window.clearTimeout(timer)
+      if (followup !== undefined) window.clearTimeout(followup)
       document.removeEventListener('visibilitychange', visible)
-    }
+    } })
+    return () => releaseRefresh(key)
   }, [connectionId, profile])
 }
 
@@ -164,6 +188,8 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const [localPath, setLocalPath] = useState('')
   const [localSearch, setLocalSearch] = useState('')
   const [localSelected, setLocalSelected] = useState<ReadonlyMap<string, Entry>>(new Map())
+  const selectedAt = useRef(new Map<string, number>())
+  const mountedAt = useRef(Date.now())
   const scope = useScope().join('::')
   const picked = useValue($pickState)
   const fresh = (): PickState => ({ scope, rootId: roots.roots[0]?.id ?? '', path: '', search: '', selected: new Map() })
@@ -193,7 +219,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const navigate = (next: string) => {
     setPath(next)
     setSearch('')
-    if (mode === 'page') setSelected(new Map())
+    if (mode === 'page') { selectedAt.current.clear(); setSelected(new Map()) }
   }
 
   return {
@@ -210,15 +236,30 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
     switchRoot: (id: string) => {
       setRootId(id)
       navigate('')
-      setSelected(new Map())
+      selectedAt.current.clear(); setSelected(new Map())
     },
     toggle: (entry: Entry) =>
       setSelected(prev => {
         const next = new Map(prev)
-        if (!next.delete(entry.abs)) next.set(entry.abs, entry)
+        if (next.delete(entry.abs)) selectedAt.current.delete(entry.abs)
+        else { next.set(entry.abs, entry); selectedAt.current.set(entry.abs, Date.now()) }
         return next
       }),
-    selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]])),
+    selectOnly: (entry: Entry) => {
+      selectedAt.current = new Map([[entry.abs, Date.now()]])
+      setSelected(new Map([[entry.abs, entry]]))
+    },
+    prune: (data: ListResponse & { readAt: number }) => {
+      if (data.truncated || data.entries.length < data.total) return
+      const present = new Set(data.entries.map(entry => entry.abs))
+      const next = new Map(selected)
+      for (const entry of selected.values()) {
+        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? mountedAt.current) < data.readAt) {
+          next.delete(entry.abs); selectedAt.current.delete(entry.abs)
+        }
+      }
+      if (next.size !== selected.size) setSelected(next)
+    },
     setShown,
     picked: () => selectedEntries(shown?.entries ?? [], selected),
     /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
@@ -452,7 +493,6 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   dragOut?: (event: DragEvent, scope: [string, string]) => boolean
 }) {
   const [connectionId, profile] = useScope()
-  useLiveRefresh()
   const rootId = b.root?.id ?? ''
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
   const [range, setRange] = useState({ folder, count: LIST_LIMIT })
@@ -466,9 +506,10 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     // A first read of this count is a Load more: hand it the listing on screen (the previous count).
     // The save is captured with the read, never at click time: it belongs to the agent that answered.
     queryFn: async () => {
+      const readAt = Date.now()
       const save = captureFor([connectionId, profile])
       return { ...await listUpTo([connectionId, profile], rootId, b.path, count,
-        client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 6), count - LIST_LIMIT]) : undefined), save }
+        client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 6), count - LIST_LIMIT]) : undefined), save, readAt }
     },
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
@@ -484,6 +525,9 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     retry: 1
   })
   const active = searching ? found : listing
+  useEffect(() => {
+    if (!b.search.trim() && listing.data && !listing.error && !listing.isFetching) b.prune(listing.data)
+  }, [listing.data, listing.error, listing.isFetching, b.search, rootId, b.path])
   const entries = useMemo(() => {
     if (searching) return found.data?.results ?? []
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
@@ -540,7 +584,13 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
 
   const startDrag = (entry: Entry, event: DragEvent) => {
     if (!dragOut?.(event, [connectionId, profile])) return
-    const picked = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter(e => !e.link_outside)
+    const candidates = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter(e => !e.link_outside)
+    const picked = candidates.filter(e => !dragWouldChange(e.abs) && formatRef(e.abs) !== null)
+    const unrepresentable = candidates.filter(e => formatRef(e.abs) === null).length
+    const ambiguous = candidates.length - picked.length - unrepresentable
+    if (ambiguous) host.notify({ kind: 'warning', message: S.dragSkipped(ambiguous) })
+    if (unrepresentable) host.notify({ kind: 'warning', message: S.refSkipped(unrepresentable) })
+    if (!picked.length) { event.preventDefault(); return }
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('application/x-hermes-paths', JSON.stringify(picked.map(e => ({ isDirectory: e.is_dir, path: e.abs }))))
     // The host's HTML5Backend requires a native type to let dragstart proceed.

@@ -37,6 +37,7 @@ var S = {
   addedToChat: (n) => n === 1 ? "Added to the chat" : `Added ${n} items to the chat`,
   openChatFirst: "Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar \u2192 Open in split), then try again.",
   refSkipped: (n) => `Skipped ${n} ${n === 1 ? "path" : "paths"} with a line break or all three quote characters.`,
+  dragSkipped: (n) => `Left out ${n === 1 ? "1 item" : `${n} items`} whose name a drag would change. Use Add to chat for ${n === 1 ? "it" : "them"}.`,
   addOtherAgent: (owner, profile) => `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   showOtherAgent: (profile) => `Switch back to ${agentName(profile)} to show this upload.`,
   copyPath: "Copy path",
@@ -59,7 +60,7 @@ var S = {
   searchMore: (n) => `Showing the first ${n === 1 ? "match" : `${n} matches`}. Type more to narrow the search.`,
   searchStopped: (visited) => `Search stopped ${visited ? `after checking ${visited.toLocaleString()} items` : "early"}, so some matches may be missing. Open a folder to search inside it.`,
   noResultsYet: "No matches found so far",
-  searchSkipped: (n) => `${n === 1 ? "1 folder couldn't" : `${n.toLocaleString()} folders couldn't`} be opened, so matches inside them may be missing.`,
+  searchSkipped: (n) => n === 1 ? "1 folder couldn't be opened, so matches inside it may be missing." : `${n.toLocaleString()} folders couldn't be opened, so matches inside them may be missing.`,
   dropTo: (folder) => `Drop to upload to ${folder}`,
   dragOtherAgent: (owner, profile) => `The chat you'd drop into is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   copied: (n) => n === 1 ? "Path copied" : `${n} paths copied`,
@@ -284,10 +285,11 @@ function formatInsertText(profile, items) {
 ${S.insertHeader(profile)}
 ${items.map(formatLocation).join("\n")}`;
 }
+var dragWouldChange = (value) => /[,.;!?]$|:\d+(-\d+)?$/.test(value);
 function formatRef(value) {
   const quotes = [TICK, '"', "'"];
   if (hasLineBreak(value) || quotes.every((quote2) => value.includes(quote2))) return null;
-  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some((quote2) => value.includes(quote2)) && !/[,.;!?]$|:\d+(-\d+)?$/.test(value)) return value;
+  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some((quote2) => value.includes(quote2)) && !dragWouldChange(value)) return value;
   const quote = quotes.find((quote2) => !value.includes(quote2));
   return `${quote}${value}${quote}`;
 }
@@ -854,38 +856,67 @@ function toolMayChangeFiles(payload) {
   const name = String(tool.name ?? tool.tool ?? "");
   return MUTATING_TOOL_RE.test(name);
 }
+var LIST_CACHE_FOLLOWUP_MS = 5500;
+var liveRefresh = /* @__PURE__ */ new Map();
+function releaseRefresh(key) {
+  const held = liveRefresh.get(key);
+  if (held && --held.holders === 0) {
+    held.dispose();
+    liveRefresh.delete(key);
+  }
+}
 function useLiveRefresh() {
   const [connectionId, profile] = useScope();
   const client = useQueryClient();
   useEffect(() => {
     const ctx = pluginCtx();
     if (typeof ctx.onEvent !== "function") return;
+    const key = `${connectionId.trim() || "local"}|${profile.trim() || "default"}`;
+    const held = liveRefresh.get(key);
+    if (held) {
+      held.holders++;
+      return () => releaseRefresh(key);
+    }
     let timer;
-    let missed = false;
+    let followup;
+    let missedMain = false, missedFollowup = false;
+    const refreshList = () => void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "list"] });
     const refresh = () => {
-      void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "list"] });
+      refreshList();
       void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "search"] });
+      if (followup !== void 0) window.clearTimeout(followup);
+      followup = window.setTimeout(() => {
+        followup = void 0;
+        if (document.visibilityState === "hidden") missedFollowup = true;
+        else refreshList();
+      }, LIST_CACHE_FOLLOWUP_MS);
     };
-    const dispose = ctx.onEvent("tool.complete", (event) => {
-      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || !toolMayChangeFiles(event.payload)) return;
+    const disposers = ["tool.complete", "subagent.complete"].map((type) => ctx.onEvent(type, (event) => {
+      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || type === "tool.complete" && !toolMayChangeFiles(event.payload)) return;
+      if (followup !== void 0) window.clearTimeout(followup);
       if (timer !== void 0) return;
       timer = window.setTimeout(() => {
         timer = void 0;
-        if (document.visibilityState === "hidden") missed = true;
+        if (document.visibilityState === "hidden") missedMain = true;
         else refresh();
       }, 1e3);
-    });
+    }));
     const visible = () => {
-      if (document.visibilityState !== "visible" || !missed) return;
-      missed = false;
-      if (timer === void 0) refresh();
+      if (document.visibilityState !== "visible" || !missedMain && !missedFollowup) return;
+      if (timer === void 0) {
+        if (missedMain) refresh();
+        else refreshList();
+      }
+      missedMain = missedFollowup = false;
     };
     document.addEventListener("visibilitychange", visible);
-    return () => {
-      dispose();
+    liveRefresh.set(key, { holders: 1, dispose: () => {
+      disposers.forEach((dispose) => dispose());
       if (timer !== void 0) window.clearTimeout(timer);
+      if (followup !== void 0) window.clearTimeout(followup);
       document.removeEventListener("visibilitychange", visible);
-    };
+    } });
+    return () => releaseRefresh(key);
   }, [connectionId, profile]);
 }
 function useRoots() {
@@ -906,6 +937,8 @@ function useBrowser(roots, mode) {
   const [localPath, setLocalPath] = useState("");
   const [localSearch, setLocalSearch] = useState("");
   const [localSelected, setLocalSelected] = useState(/* @__PURE__ */ new Map());
+  const selectedAt = useRef(/* @__PURE__ */ new Map());
+  const mountedAt = useRef(Date.now());
   const scope = useScope().join("::");
   const picked = useValue($pickState);
   const fresh = () => ({ scope, rootId: roots.roots[0]?.id ?? "", path: "", search: "", selected: /* @__PURE__ */ new Map() });
@@ -933,7 +966,10 @@ function useBrowser(roots, mode) {
   const navigate = (next) => {
     setPath(next);
     setSearch("");
-    if (mode === "page") setSelected(/* @__PURE__ */ new Map());
+    if (mode === "page") {
+      selectedAt.current.clear();
+      setSelected(/* @__PURE__ */ new Map());
+    }
   };
   return {
     roots,
@@ -949,14 +985,34 @@ function useBrowser(roots, mode) {
     switchRoot: (id) => {
       setRootId(id);
       navigate("");
+      selectedAt.current.clear();
       setSelected(/* @__PURE__ */ new Map());
     },
     toggle: (entry) => setSelected((prev) => {
       const next = new Map(prev);
-      if (!next.delete(entry.abs)) next.set(entry.abs, entry);
+      if (next.delete(entry.abs)) selectedAt.current.delete(entry.abs);
+      else {
+        next.set(entry.abs, entry);
+        selectedAt.current.set(entry.abs, Date.now());
+      }
       return next;
     }),
-    selectOnly: (entry) => setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]])),
+    selectOnly: (entry) => {
+      selectedAt.current = /* @__PURE__ */ new Map([[entry.abs, Date.now()]]);
+      setSelected(/* @__PURE__ */ new Map([[entry.abs, entry]]));
+    },
+    prune: (data) => {
+      if (data.truncated || data.entries.length < data.total) return;
+      const present = new Set(data.entries.map((entry) => entry.abs));
+      const next = new Map(selected);
+      for (const entry of selected.values()) {
+        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? mountedAt.current) < data.readAt) {
+          next.delete(entry.abs);
+          selectedAt.current.delete(entry.abs);
+        }
+      }
+      if (next.size !== selected.size) setSelected(next);
+    },
     setShown,
     picked: () => selectedEntries(shown?.entries ?? [], selected),
     /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
@@ -1109,7 +1165,6 @@ async function listUpTo([connectionId, profile], root, path, count, shown) {
 }
 function EntryList({ b, height, onOpenFile, dragOut }) {
   const [connectionId, profile] = useScope();
-  useLiveRefresh();
   const rootId = b.root?.id ?? "";
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`;
   const [range, setRange] = useState({ folder, count: LIST_LIMIT });
@@ -1123,6 +1178,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     // A first read of this count is a Load more: hand it the listing on screen (the previous count).
     // The save is captured with the read, never at click time: it belongs to the agent that answered.
     queryFn: async () => {
+      const readAt = Date.now();
       const save = captureFor([connectionId, profile]);
       return { ...await listUpTo(
         [connectionId, profile],
@@ -1130,7 +1186,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
         b.path,
         count,
         client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 6), count - LIST_LIMIT]) : void 0
-      ), save };
+      ), save, readAt };
     },
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 6).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
@@ -1146,6 +1202,9 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     retry: 1
   });
   const active = searching ? found : listing;
+  useEffect(() => {
+    if (!b.search.trim() && listing.data && !listing.error && !listing.isFetching) b.prune(listing.data);
+  }, [listing.data, listing.error, listing.isFetching, b.search, rootId, b.path]);
   const entries = useMemo(() => {
     if (searching) return found.data?.results ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
@@ -1192,7 +1251,16 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   };
   const startDrag = (entry, event) => {
     if (!dragOut?.(event, [connectionId, profile])) return;
-    const picked = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter((e) => !e.link_outside);
+    const candidates = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter((e) => !e.link_outside);
+    const picked = candidates.filter((e) => !dragWouldChange(e.abs) && formatRef(e.abs) !== null);
+    const unrepresentable = candidates.filter((e) => formatRef(e.abs) === null).length;
+    const ambiguous = candidates.length - picked.length - unrepresentable;
+    if (ambiguous) host2.notify({ kind: "warning", message: S.dragSkipped(ambiguous) });
+    if (unrepresentable) host2.notify({ kind: "warning", message: S.refSkipped(unrepresentable) });
+    if (!picked.length) {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-hermes-paths", JSON.stringify(picked.map((e) => ({ isDirectory: e.is_dir, path: e.abs }))));
     event.dataTransfer.setData("text/plain", picked.map((e) => e.abs).join("\n"));
@@ -1646,6 +1714,7 @@ function PickerBody({ profile, source }) {
 }
 function PickerBrowser({ profile, roots }) {
   const b = useBrowser(roots, "pick");
+  useLiveRefresh();
   const touched = useValue2($touched);
   const insertable = [...b.selected.values()].filter((entry) => !hasLineBreak(entry.abs));
   const skipped = b.selected.size - insertable.length;
@@ -2160,6 +2229,7 @@ import { jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
 var MAX_ROWS = 1e3;
 var MAX_COLUMNS = 50;
 var BIG_TIMEOUT_MS = 6e4;
+var TRANSIENT_PREVIEW_CODES = /* @__PURE__ */ new Set(["changed", "io_error"]);
 var mono2 = "var(--font-mono, ui-monospace, monospace)";
 var muted4 = { color: "var(--ui-text-tertiary)" };
 var cell = { padding: "2px 8px", border: "1px solid var(--ui-stroke-tertiary)", textAlign: "left", verticalAlign: "top", whiteSpace: "pre-wrap" };
@@ -2188,7 +2258,13 @@ function load2(doc, setDoc) {
       const preview = res.kind === "text" ? { kind: res.kind, text: res.text ?? "", truncated: Boolean(res.truncated), size: res.size } : { kind: res.kind, blob: toBlob(res.data ?? "", res.mime ?? ""), size: res.size };
       setDoc((d) => d?.id === id ? { ...d, status: "ready", save, preview } : d);
     },
-    (error) => setDoc((d) => d?.id === id ? { ...d, status: "error", error: previewText(error, doc.pin.profile), retryPreview: !(error instanceof ApiError) && !isNotFoundError(error), save } : d)
+    (error) => setDoc((d) => d?.id === id ? {
+      ...d,
+      status: "error",
+      error: previewText(error, doc.pin.profile),
+      retryPreview: !isNotFoundError(error) && (!(error instanceof ApiError) || TRANSIENT_PREVIEW_CODES.has(error.code)),
+      save
+    } : d)
   );
 }
 var extension2 = (name) => name.slice(name.lastIndexOf(".") + 1).toLowerCase();
@@ -2433,6 +2509,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }) {
 }
 function Files({ profile, roots, doc, setDoc }) {
   const b = useBrowser(roots, "page");
+  useLiveRefresh();
   const pin = { connectionId: useValue5(host7.state.connectionId), profile };
   const guard = useLeaveGuard(doc);
   const queryClient = useQueryClient2();

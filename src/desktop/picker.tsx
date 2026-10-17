@@ -16,7 +16,7 @@ import {
 } from '@hermes/plugin-sdk'
 import { useEffect, useRef } from 'react'
 
-import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, NoRoots, RootSelect, useBrowser, useRoots } from './browser'
+import { $pickState, Breadcrumbs, BrowserSearch, EntryList, LoadError, NoRoots, RootSelect, useBrowser, useLiveRefresh, useRoots } from './browser'
 import { DriveImport, type ImportHold } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { formatInsertText, hasLineBreak } from './format'
@@ -240,6 +240,7 @@ function PickerBody({ profile, source }: { profile: string; source: 'cloud' | 'd
 
 function PickerBrowser({ profile, roots }: { profile: string; roots: RootsResponse }) {
   const b = useBrowser(roots, 'pick')
+  useLiveRefresh()
   const touched = useValue($touched)
   const insertable = [...b.selected.values()].filter(entry => !hasLineBreak(entry.abs))
   const skipped = b.selected.size - insertable.length

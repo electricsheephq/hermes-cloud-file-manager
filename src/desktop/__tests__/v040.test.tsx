@@ -137,14 +137,13 @@ describe('A. Download', () => {
     act(() => host.state.profile.set('other'))
     expect(captureFor(['conn-1', 'default'])).toBeNull()
     expect(capture).not.toHaveBeenCalled()
-    // End to end: the default agent's search refetched while "other" is selected keeps its results without a save.
+    // End to end: the agent changes after rendering the query key but before its active refetch captures a save.
     act(() => host.state.profile.set('default'))
     page()
     await screen.findByText('notes.txt'); await typeSearch('pdf')
-    act(() => host.state.profile.set('other')); await flush()
-    fireEvent.click(screen.getByText('Invalidate')); await flush()
-    act(() => host.state.profile.set('default')); await flush()
-    await typeSearch('pdf')
+    const liveProfile = vi.spyOn(host.state.profile, 'get').mockReturnValueOnce('other')
+    await act(async () => { await useQueryClient().invalidateQueries({ queryKey: ['hcfm', 'conn-1', 'default', 'search'] }) })
+    liveProfile.mockRestore()
     fireEvent.click(screen.getByText('a.pdf'))
     expect(download()).toBeNull()
   })

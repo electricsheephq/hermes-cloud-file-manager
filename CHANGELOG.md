@@ -2,7 +2,29 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## [0.4.7] - 2026-10-15
+## [0.4.8] - 2026-10-17
+
+Desktop half only; the agent's side is unchanged from 0.4.7 apart from the version.
+
+### Fixed
+- **Retry a preview after a temporary read failure.** A file changing during a read or a temporary I/O error
+  left no way to try again. Both now offer Retry; permanent refusals still do not (#67).
+- **The file list stays live behind other views.** Agent changes while a preview, editor or Google Drive view
+  was open left cached rows on return. The page now keeps listening and refreshes the list when it returns (#67).
+- **Page and picker share live refresh.** Opening both subscribed twice and repeated listing requests for each
+  event. One subscription now serves both until the last view closes (#60).
+- **Edited sizes catch up after the cache expires.** An in-place edit could leave the old size after a live
+  refresh. One more listing refresh after 5.5 seconds now picks up the change (#60).
+- **Missing files leave the selection.** Deleted or moved files kept selection actions enabled after their rows
+  disappeared. Complete folder listings now clear those selections, keeping selections in other folders (#60).
+- **Drag leaves ambiguous names out.** Names ending in punctuation or a line range could reach the chat as a
+  different path. Drag now skips those and unrepresentable paths with a notice to use Add to chat (#67).
+- **Delegated work refreshes the list too.** When the agent hands work to a subagent, the list now refreshes when that
+  subagent finishes, not only after the agent's own tool calls (#60).
+- **One unopened folder reads correctly.** The search note said "1 folder couldn't be opened, so matches inside
+  them may be missing". It now says "inside it" for one folder.
+
+## [0.4.7] - 2026-10-17
 
 Desktop half only; the agent's side is unchanged from 0.4.6 apart from the version.
 
