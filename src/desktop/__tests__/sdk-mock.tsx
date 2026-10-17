@@ -69,6 +69,7 @@ interface CacheEntry {
   data?: unknown
   error?: unknown
   enabled?: boolean
+  stale?: boolean
   pending?: Promise<void>
   fn?: () => Promise<unknown>
   listeners: Set<() => void>
@@ -84,6 +85,7 @@ function fetchEntry(entry: CacheEntry): Promise<void> {
     data => {
       entry.data = data
       entry.error = undefined
+      entry.stale = false
     },
     error => {
       entry.error = error
@@ -113,7 +115,7 @@ export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData
     const entry = entryFor(key)
     entry.listeners.add(force)
     entry.enabled = enabled
-    if (enabled && !('data' in entry) && !entry.error && !entry.pending) void fetchEntry(entry)
+    if (enabled && (entry.stale || (!('data' in entry) && !entry.error)) && !entry.pending) void fetchEntry(entry)
     return () => void entry.listeners.delete(force)
   }, [key, enabled])
   const entry = cache.get(key)
@@ -122,7 +124,7 @@ export function useQuery<T>({ queryKey, queryFn, enabled = true, placeholderData
   return {
     data: enabled ? data ?? placeholderData?.(last.current?.data, last.current && { queryKey: last.current.queryKey }) : undefined,
     error: enabled ? entry?.error : undefined,
-    isFetching: Boolean(entry?.pending),
+    isFetching: Boolean(entry?.pending || (enabled && entry?.stale)),
     refetch: () => fetchEntry(entryFor(key))
   }
 }
@@ -131,7 +133,10 @@ export function useQueryClient() {
     getQueryData: <T,>(queryKey: readonly unknown[]) => cache.get(JSON.stringify(queryKey))?.data as T | undefined,
     invalidateQueries: async ({ queryKey }: { queryKey: readonly unknown[] }) => {
       const prefix = JSON.stringify(queryKey).slice(0, -1)
-      await Promise.all([...cache].filter(([key, entry]) => key.startsWith(prefix) && entry.enabled).map(([, entry]) => fetchEntry(entry)))
+      await Promise.all([...cache].filter(([key]) => key.startsWith(prefix)).map(([, entry]) => {
+        entry.stale = true
+        return entry.enabled && entry.listeners.size ? fetchEntry(entry) : Promise.resolve()
+      }))
     }
   }
 }

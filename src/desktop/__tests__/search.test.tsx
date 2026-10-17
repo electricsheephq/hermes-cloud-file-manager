@@ -115,7 +115,7 @@ it('names the folder being searched below the root, keeping the field label', as
 })
 
 it.each([
-  [1, "1 folder couldn't be opened, so matches inside them may be missing."],
+  [1, "1 folder couldn't be opened, so matches inside it may be missing."],
   [12345, `${(12345).toLocaleString()} folders couldn't be opened, so matches inside them may be missing.`]
 ] as const)('says when a complete search passed %s folders it could not open', async (skipped, copy) => {
   setup({ ok: true, results: [], truncated: false, reason: null, visited: 7, skipped })

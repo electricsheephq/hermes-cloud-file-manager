@@ -18,7 +18,7 @@ import {
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
 import { $available, $driveAvailable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse } from './api'
-import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, useBrowser, useRoots } from './browser'
+import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, useBrowser, useLiveRefresh, useRoots } from './browser'
 import { $driveJob, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
@@ -204,6 +204,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
 
 function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsResponse } & DocProps) {
   const b = useBrowser(roots, 'page')
+  useLiveRefresh()
   const pin: AgentPin = { connectionId: useValue(host.state.connectionId), profile }
   const guard = useLeaveGuard(doc)
   const queryClient = useQueryClient()

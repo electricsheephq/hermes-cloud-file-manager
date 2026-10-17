@@ -36,13 +36,16 @@ export function formatInsertText(profile: string, items: Location[]): string {
   return `\n${S.insertHeader(profile)}\n${items.map(formatLocation).join('\n')}`
 }
 
+/** Endings the host composer changes when re-serialising raw dragged paths. */
+export const dragWouldChange = (value: string) => /[,.;!?]$|:\d+(-\d+)?$/.test(value)
+
 /** Composer reference quoting, including punctuation the host strips from unquoted refs and a `:12` or `:12-20`
  *  ending it reads as a line range. Null when no quoted ref can hold the path: it has a line break, or all three
  *  quote characters. */
 export function formatRef(value: string): string | null {
   const quotes = [TICK, '"', "'"]
   if (hasLineBreak(value) || quotes.every(quote => value.includes(quote))) return null
-  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some(quote => value.includes(quote)) && !/[,.;!?]$|:\d+(-\d+)?$/.test(value)) return value
+  if (!/[\s()[\]{}<>]/.test(value) && !quotes.some(quote => value.includes(quote)) && !dragWouldChange(value)) return value
   const quote = quotes.find(quote => !value.includes(quote))!
   return `${quote}${value}${quote}`
 }

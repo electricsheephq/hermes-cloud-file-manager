@@ -27,6 +27,7 @@ interface PreviewResponse {
 const MAX_ROWS = 1000
 const MAX_COLUMNS = 50
 const BIG_TIMEOUT_MS = 60_000
+export const TRANSIENT_PREVIEW_CODES = new Set(['changed', 'io_error'])
 const mono = 'var(--font-mono, ui-monospace, monospace)'
 const muted: CSSProperties = { color: 'var(--ui-text-tertiary)' }
 const cell: CSSProperties = { padding: '2px 8px', border: '1px solid var(--ui-stroke-tertiary)', textAlign: 'left', verticalAlign: 'top', whiteSpace: 'pre-wrap' }
@@ -66,7 +67,8 @@ function load(doc: Doc, setDoc: SetDoc) {
           : { kind: res.kind, blob: toBlob(res.data ?? '', res.mime ?? ''), size: res.size }
       setDoc(d => (d?.id === id ? { ...d, status: 'ready', save, preview } : d))
     },
-    error => setDoc(d => (d?.id === id ? { ...d, status: 'error', error: previewText(error, doc.pin.profile), retryPreview: !(error instanceof ApiError) && !isNotFoundError(error), save } : d))
+    error => setDoc(d => (d?.id === id ? { ...d, status: 'error', error: previewText(error, doc.pin.profile),
+      retryPreview: !isNotFoundError(error) && (!(error instanceof ApiError) || TRANSIENT_PREVIEW_CODES.has(error.code)), save } : d))
   )
 }
 
@@ -124,7 +126,7 @@ export function Preview({ doc, setDoc, onClose }: { doc: Doc; setDoc: SetDoc; on
     body = (
       <div style={{ ...muted, fontSize: 13, padding: '12px 20px', display: 'grid', gap: 8, justifyItems: 'start' }}>
         <p style={{ margin: 0 }}>{doc.error}</p>
-        {/* Only a transport failure may pass on a second try; a refusal or an older agent side answers the same. */}
+        {/* Transport and transient read failures can pass on a second try; permanent refusals cannot. */}
         {doc.retryPreview && (
           <Button disabled={!here} onClick={() => load(doc, setDoc)} size="sm" variant="secondary">
             {S.retry}

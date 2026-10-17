@@ -24,7 +24,7 @@ import { type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent
 
 import { ApiError, call, type Entry, errorText, isNotFoundError, type ListResponse, pluginCtx, query, type Root, type RootsResponse, type SearchResponse } from './api'
 import { captureFor, type SaveFile } from './download'
-import { baseName, entryIcon, humanSize, isOpenable, parentPath, shortDate } from './format'
+import { baseName, dragWouldChange, entryIcon, formatRef, humanSize, isOpenable, parentPath, shortDate } from './format'
 import { codeText, S } from './strings'
 import { transportText } from './upload'
 
@@ -94,18 +94,29 @@ export function toolMayChangeFiles(payload: unknown): boolean {
   return MUTATING_TOOL_RE.test(name)
 }
 
-/** Only the open agent's Cloud listings follow tool events; older hosts have no event subscription. */
-function useLiveRefresh() {
+export const LIST_CACHE_FOLLOWUP_MS = 5500
+const liveRefresh = new Map<string, { holders: number; dispose: () => void }>()
+function releaseRefresh(key: string) {
+  const held = liveRefresh.get(key)
+  if (held && --held.holders === 0) { held.dispose(); liveRefresh.delete(key) }
+}
+
+/** One subscription per agent, held by the page/picker even while another view replaces its list. */
+export function useLiveRefresh() {
   const [connectionId, profile] = useScope()
   const client = useQueryClient()
   useEffect(() => {
     const ctx = pluginCtx()
     if (typeof ctx.onEvent !== 'function') return
+    const key = `${connectionId.trim() || 'local'}|${profile.trim() || 'default'}`
+    const held = liveRefresh.get(key)
+    if (held) { held.holders++; return () => releaseRefresh(key) }
     let timer: number | undefined
+    let followup: number | undefined
     let missed = false
+    const refreshList = () => void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
     const refresh = () => {
-      // Folder mtime bypasses the gateway cache for new/deleted/renamed files; an edited size can lag 5 s.
-      void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
+      refreshList()
       void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'search'] })
     }
     const dispose = ctx.onEvent('tool.complete', event => {
@@ -116,7 +127,16 @@ function useLiveRefresh() {
       timer = window.setTimeout(() => {
         timer = undefined
         if (document.visibilityState === 'hidden') missed = true
-        else refresh()
+        else {
+          refresh()
+          // In-place edits leave folder mtime unchanged: read again after the gateway's 5 s cache expires.
+          if (followup !== undefined) window.clearTimeout(followup)
+          followup = window.setTimeout(() => {
+            followup = undefined
+            if (document.visibilityState === 'hidden') missed = true
+            else refreshList()
+          }, LIST_CACHE_FOLLOWUP_MS)
+        }
       }, 1000)
     })
     const visible = () => {
@@ -125,11 +145,13 @@ function useLiveRefresh() {
       if (timer === undefined) refresh() // else the pending timer refreshes
     }
     document.addEventListener('visibilitychange', visible)
-    return () => {
+    liveRefresh.set(key, { holders: 1, dispose: () => {
       dispose()
       if (timer !== undefined) window.clearTimeout(timer)
+      if (followup !== undefined) window.clearTimeout(followup)
       document.removeEventListener('visibilitychange', visible)
-    }
+    } })
+    return () => releaseRefresh(key)
   }, [connectionId, profile])
 }
 
@@ -219,6 +241,15 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
         return next
       }),
     selectOnly: (entry: Entry) => setSelected(new Map([[entry.abs, entry]])),
+    prune: (data: ListResponse) => {
+      if (data.truncated || data.entries.length < data.total) return
+      const present = new Set(data.entries.map(entry => entry.abs))
+      const next = new Map(selected)
+      for (const entry of selected.values()) {
+        if (parentPath(entry.rel) === path && !present.has(entry.abs)) next.delete(entry.abs)
+      }
+      if (next.size !== selected.size) setSelected(next)
+    },
     setShown,
     picked: () => selectedEntries(shown?.entries ?? [], selected),
     /** The save for `entry` only while the list's current data still shows it as a plain file (not a folder, not a
@@ -452,7 +483,6 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
   dragOut?: (event: DragEvent, scope: [string, string]) => boolean
 }) {
   const [connectionId, profile] = useScope()
-  useLiveRefresh()
   const rootId = b.root?.id ?? ''
   const folder = `${connectionId}|${profile}|${rootId}|${b.path}`
   const [range, setRange] = useState({ folder, count: LIST_LIMIT })
@@ -484,6 +514,9 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     retry: 1
   })
   const active = searching ? found : listing
+  useEffect(() => {
+    if (!b.search.trim() && listing.data && !listing.error) b.prune(listing.data)
+  }, [listing.data, listing.error, b.search, rootId, b.path])
   const entries = useMemo(() => {
     if (searching) return found.data?.results ?? []
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
@@ -540,7 +573,11 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
 
   const startDrag = (entry: Entry, event: DragEvent) => {
     if (!dragOut?.(event, [connectionId, profile])) return
-    const picked = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter(e => !e.link_outside)
+    const candidates = b.selected.has(entry.abs) ? selectedEntries(entries, b.selected) : [entry].filter(e => !e.link_outside)
+    const picked = candidates.filter(e => !dragWouldChange(e.abs) && formatRef(e.abs) !== null)
+    const skipped = candidates.length - picked.length
+    if (skipped) host.notify({ kind: 'warning', message: S.dragSkipped(skipped) })
+    if (!picked.length) { event.preventDefault(); return }
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('application/x-hermes-paths', JSON.stringify(picked.map(e => ({ isDirectory: e.is_dir, path: e.abs }))))
     // The host's HTML5Backend requires a native type to let dragstart proceed.

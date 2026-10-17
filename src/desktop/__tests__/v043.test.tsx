@@ -74,9 +74,9 @@ describe('finished uploads: Show', () => {
     fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'Home' }))
     await screen.findByText('notes.txt')
     fresh = true
-    void useQueryClient().invalidateQueries({ queryKey: ['hcfm'] })
-    await waitFor(() => expect(release).toBeDefined())
+    await act(async () => { await useQueryClient().invalidateQueries({ queryKey: ['hcfm'] }) })
     click('Show')
+    await waitFor(() => expect(release).toBeDefined()) // inactive folders refetch only when reopened
     await screen.findByText('old.txt')
     expect(document.activeElement).not.toBe(row('old.txt'))
     await act(async () => release!())
