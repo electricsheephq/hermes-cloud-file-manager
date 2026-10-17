@@ -879,7 +879,7 @@ function useLiveRefresh() {
     }
     let timer;
     let followup;
-    let missed = false;
+    let missedMain = false, missedFollowup = false;
     const refreshList = () => void client.invalidateQueries({ queryKey: ["hcfm", connectionId, profile, "list"] });
     const refresh = () => {
       refreshList();
@@ -887,7 +887,7 @@ function useLiveRefresh() {
       if (followup !== void 0) window.clearTimeout(followup);
       followup = window.setTimeout(() => {
         followup = void 0;
-        if (document.visibilityState === "hidden") missed = true;
+        if (document.visibilityState === "hidden") missedFollowup = true;
         else refreshList();
       }, LIST_CACHE_FOLLOWUP_MS);
     };
@@ -897,14 +897,17 @@ function useLiveRefresh() {
       if (timer !== void 0) return;
       timer = window.setTimeout(() => {
         timer = void 0;
-        if (document.visibilityState === "hidden") missed = true;
+        if (document.visibilityState === "hidden") missedMain = true;
         else refresh();
       }, 1e3);
     }));
     const visible = () => {
-      if (document.visibilityState !== "visible" || !missed) return;
-      missed = false;
-      if (timer === void 0) refresh();
+      if (document.visibilityState !== "visible" || !missedMain && !missedFollowup) return;
+      if (timer === void 0) {
+        if (missedMain) refresh();
+        else refreshList();
+      }
+      missedMain = missedFollowup = false;
     };
     document.addEventListener("visibilitychange", visible);
     liveRefresh.set(key, { holders: 1, dispose: () => {
@@ -935,6 +938,7 @@ function useBrowser(roots, mode) {
   const [localSearch, setLocalSearch] = useState("");
   const [localSelected, setLocalSelected] = useState(/* @__PURE__ */ new Map());
   const selectedAt = useRef(/* @__PURE__ */ new Map());
+  const mountedAt = useRef(Date.now());
   const scope = useScope().join("::");
   const picked = useValue($pickState);
   const fresh = () => ({ scope, rootId: roots.roots[0]?.id ?? "", path: "", search: "", selected: /* @__PURE__ */ new Map() });
@@ -1002,7 +1006,7 @@ function useBrowser(roots, mode) {
       const present = new Set(data.entries.map((entry) => entry.abs));
       const next = new Map(selected);
       for (const entry of selected.values()) {
-        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? Infinity) < data.readAt) {
+        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? mountedAt.current) < data.readAt) {
           next.delete(entry.abs);
           selectedAt.current.delete(entry.abs);
         }

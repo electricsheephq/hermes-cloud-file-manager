@@ -2,7 +2,9 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
-## [Unreleased]
+## [0.4.8] - 2026-10-17
+
+Desktop half only; the agent's side is unchanged from 0.4.7 apart from the version.
 
 ### Fixed
 - **Retry a preview after a temporary read failure.** A file changing during a read or a temporary I/O error

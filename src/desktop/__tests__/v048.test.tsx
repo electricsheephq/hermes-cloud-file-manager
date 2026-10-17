@@ -95,7 +95,7 @@ it.each([false, true])('follows up after 5.5 s, replacing pending follow-up on a
   expect(LIST_CACHE_FOLLOWUP_MS).toBe(5500)
 })
 
-it('follows up missed-event catch-up, keeps manual refresh single, and clears timers on dispose', async () => {
+it('catches up a missed follow-up without rearming, keeps manual refresh single, and clears timers on dispose', async () => {
   const backend = page(); await flush()
   const start = lists(backend)
   act(() => backend.emitEvent(event())); await advance(1000)
@@ -103,12 +103,25 @@ it('follows up missed-event catch-up, keeps manual refresh single, and clears ti
   await advance(5500); expect(lists(backend)).toBe(start + 1)
   visibility.mockReturnValue('visible'); fireEvent(document, new Event('visibilitychange')); await flush()
   expect(lists(backend)).toBe(start + 2)
-  await advance(5500); expect(lists(backend)).toBe(start + 3)
+  expect(vi.getTimerCount()).toBe(0)
+  await advance(5500); expect(lists(backend)).toBe(start + 2)
   await act(async () => { await useQueryClient().invalidateQueries({ queryKey: ['hcfm', 'conn-1', 'default', 'list'] }) })
-  await advance(5500); expect(lists(backend)).toBe(start + 4)
+  await advance(5500); expect(lists(backend)).toBe(start + 3)
   act(() => backend.emitEvent(event())); await advance(1000)
   backend.view.unmount(); await advance(5500)
-  expect(lists(backend)).toBe(start + 5)
+  expect(lists(backend)).toBe(start + 4)
+})
+
+it('bounds one event batch across repeated hidden follow-up/return cycles', async () => {
+  const backend = page(); await flush(); const start = lists(backend)
+  act(() => backend.emitEvent(event())); await advance(1000)
+  const visibility = vi.spyOn(document, 'visibilityState', 'get')
+  for (let cycle = 0; cycle < 3; cycle++) {
+    visibility.mockReturnValue('hidden'); await advance(5500)
+    visibility.mockReturnValue('visible'); fireEvent(document, new Event('visibilitychange')); await flush()
+    expect(lists(backend)).toBe(start + 2)
+    expect(vi.getTimerCount()).toBe(0)
+  }
 })
 
 it('follow-up invalidates list only, leaving active search alone', async () => {
@@ -149,6 +162,24 @@ it('keeps a picker selection from another folder while pruning the current folde
   fireEvent.click(screen.getByRole('button', { name: 'Insert locations' }))
   expect(screen.queryByRole('dialog')).toBeNull()
   picker.unmount()
+})
+
+it('keeps restored picker selections against old cache, then prunes on a fresh complete read', async () => {
+  const backend = page({ '/list': () => listing([]), '/search': () => ({ ok: true, results: [file('new.txt')] }) })
+  await flush(); backend.view.unmount(); render(<PickerHost />)
+  act(() => void cloudProvider.run({ insertText: vi.fn() })); await flush(); await advance(1)
+  fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'new' } }); await advance(300)
+  fireEvent.click(row('new.txt'))
+  fireEvent.change(screen.getByLabelText('Search files'), { target: { value: '' } }); await flush()
+  act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'other' })); await flush(); await advance(1)
+  expect(screen.queryByRole('status')).toBeNull()
+  const start = lists(backend)
+  act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })); await flush()
+  expect(lists(backend)).toBe(start)
+  expect(screen.getByRole('status').textContent).toBe('1 selected')
+  backend.ctx.rest = async () => listing([]) // the selected file has been deleted
+  act(() => backend.emitEvent(event())); await advance(1000)
+  expect(screen.getByRole('status').textContent).toBe('0 selected')
 })
 
 it.each([['ambiguous', true], ['unrepresentable', true], ['mixed', true], ['mixed', false]] as const)('filters %s drags; cancels when none remain: %s', async (group, all) => {

@@ -113,7 +113,7 @@ export function useLiveRefresh() {
     if (held) { held.holders++; return () => releaseRefresh(key) }
     let timer: number | undefined
     let followup: number | undefined
-    let missed = false
+    let missedMain = false, missedFollowup = false
     const refreshList = () => void client.invalidateQueries({ queryKey: ['hcfm', connectionId, profile, 'list'] })
     const refresh = () => {
       refreshList()
@@ -122,7 +122,7 @@ export function useLiveRefresh() {
       if (followup !== undefined) window.clearTimeout(followup)
       followup = window.setTimeout(() => {
         followup = undefined
-        if (document.visibilityState === 'hidden') missed = true
+        if (document.visibilityState === 'hidden') missedFollowup = true
         else refreshList()
       }, LIST_CACHE_FOLLOWUP_MS)
     }
@@ -134,14 +134,17 @@ export function useLiveRefresh() {
       if (timer !== undefined) return
       timer = window.setTimeout(() => {
         timer = undefined
-        if (document.visibilityState === 'hidden') missed = true
+        if (document.visibilityState === 'hidden') missedMain = true
         else refresh()
       }, 1000)
     }))
     const visible = () => {
-      if (document.visibilityState !== 'visible' || !missed) return
-      missed = false
-      if (timer === undefined) refresh() // else the pending timer refreshes
+      if (document.visibilityState !== 'visible' || (!missedMain && !missedFollowup)) return
+      if (timer === undefined) {
+        if (missedMain) refresh()
+        else refreshList()
+      } // else the pending timer refreshes
+      missedMain = missedFollowup = false
     }
     document.addEventListener('visibilitychange', visible)
     liveRefresh.set(key, { holders: 1, dispose: () => {
@@ -186,6 +189,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const [localSearch, setLocalSearch] = useState('')
   const [localSelected, setLocalSelected] = useState<ReadonlyMap<string, Entry>>(new Map())
   const selectedAt = useRef(new Map<string, number>())
+  const mountedAt = useRef(Date.now())
   const scope = useScope().join('::')
   const picked = useValue($pickState)
   const fresh = (): PickState => ({ scope, rootId: roots.roots[0]?.id ?? '', path: '', search: '', selected: new Map() })
@@ -250,7 +254,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
       const present = new Set(data.entries.map(entry => entry.abs))
       const next = new Map(selected)
       for (const entry of selected.values()) {
-        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? Infinity) < data.readAt) {
+        if (parentPath(entry.rel) === path && !present.has(entry.abs) && (selectedAt.current.get(entry.abs) ?? mountedAt.current) < data.readAt) {
           next.delete(entry.abs); selectedAt.current.delete(entry.abs)
         }
       }
