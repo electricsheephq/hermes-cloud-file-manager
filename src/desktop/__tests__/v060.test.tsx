@@ -16,14 +16,14 @@ function Refresh() {
   const client = useQueryClient()
   return <button onClick={() => void client.invalidateQueries({ queryKey: ['hcfm'] })}>Refresh</button>
 }
-function setup(all = [entry('old.txt'), entry('docs', true)], picker = false, truncated = false) {
+function setup(all = [entry('old.txt'), entry('docs', true)], picker = false, truncated = false, dateless = false) {
   let hold = false
   const releases: Array<() => void> = []
   const backend = fakeBackend({ '/list': () => {
     const { params } = backend.calls.at(-1)!
     const items = params.path ? [entry(`${params.path}/inside.txt`)] : all
     const ordered = params.sort === 'mtime' ? [...items].reverse() : items
-    const response = { ok: true, applied_sort: params.sort ?? 'name', entries: ordered.slice(Number(params.offset), Number(params.offset) + Number(params.limit)), total: items.length, truncated }
+    const response = { ok: true, applied_sort: dateless ? undefined : params.sort ?? 'name', entries: ordered.slice(Number(params.offset), Number(params.offset) + Number(params.limit)), total: items.length, truncated }
     return hold ? new Promise(resolve => releases.push(() => resolve(response))) : response
   }, '/search': () => ({ ok: true, results: all, truncated: false }) })
   const context = createTestContext({ rest: backend.rest })
@@ -49,7 +49,7 @@ it('marks a live-added file New and announces changed counts only', async () => 
   expect(within(row('new.txt')).getByText('New')).toBeTruthy()
   expect(screen.getByRole('option', { name: /new.txt, New/ })).toBeTruthy()
   expect(live()).toBe('3 items. 1 new')
-  await b.refresh(); expect(live()).toBe('3 items')
+  await b.refresh(); expect(live()).toBe('3 items. 1 new')
   b.all.push(entry('next.txt')); b.all[0] = entry('old.txt', false, 2); await b.refresh()
   expect(live()).toBe('4 items. 2 new, 1 updated')
 })
@@ -67,7 +67,7 @@ it('sort Name to Date keeps the baseline and marks', async () => {
   const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
   fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'mtime' } }); await flush()
   expect(within(row('new.txt')).getByText('New')).toBeTruthy()
-  expect(live()).toContain('Sorted by date modified'); expect(live()).not.toContain('1 new')
+  expect(live()).toContain('Sorted by date modified')
 })
 it('navigating away and back starts a fresh baseline', async () => {
   const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
@@ -82,6 +82,18 @@ it('a change made while away is not marked on return; later changes are', async 
   await b.refresh(); expect(row('new.txt')).toBeTruthy(); noMarks(); expect(live()).toBe('3 items')
   b.all.push(entry('next.txt')); await b.refresh()
   expect(within(row('next.txt')).getByText('New')).toBeTruthy(); expect(within(row('new.txt')).queryByText('New')).toBeNull()
+})
+it('opening a file and closing it keeps the marks', async () => {
+  const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
+  fireEvent.doubleClick(row('old.txt')); await flush()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' })); await flush()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy()
+})
+it('a Date read from an agent without date sort does not seed an empty snapshot', async () => {
+  $scopeInfo.set({ 'conn-1|default': { sort: 'mtime' } })
+  const b = setup(undefined, false, false, true); await flush(); expect(row('old.txt')).toBeTruthy()
+  b.all.push(entry('new.txt')); await b.refresh()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy()
 })
 it.each([false, true])('incomplete baseline never upgrades after Load more (truncated=%s)', async truncated => {
   const b = setup(Array.from({ length: LIST_LIMIT + 1 }, (_, i) => entry(`f${i}.txt`)), false, truncated); await flush()

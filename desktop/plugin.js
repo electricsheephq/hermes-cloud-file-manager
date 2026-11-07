@@ -997,6 +997,7 @@ function useBrowser(roots, mode) {
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
   const focusNext = useRef(null);
   const [shown, setShown] = useState(null);
+  const changeBase = useRef(null);
   const navigate = (next) => {
     setPath(next);
     setSearch("");
@@ -1006,6 +1007,7 @@ function useBrowser(roots, mode) {
     }
   };
   return {
+    changeBase,
     sort,
     dateSupported: info?.date,
     setSort: (sort2) => remember(scopeKey(connectionId, profile), { sort: sort2 }),
@@ -1264,18 +1266,18 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     if (b.sort === "mtime") return listing.data?.entries ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort]);
-  const baseline = useRef({ identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" });
-  if (baseline.current.identity !== identity) baseline.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" };
+  if (b.changeBase.current?.identity !== identity) b.changeBase.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" };
+  const base = b.changeBase.current;
   const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : void 0;
-  if (data && !baseline.current.mtimes && data.readAt >= baseline.current.openedAt) {
-    baseline.current.mtimes = new Map(data.entries.map((entry) => [entry.rel, entry.mtime]));
-    baseline.current.complete = !data.truncated && data.entries.length >= data.total;
+  if (data && !base.mtimes && data.readAt >= base.openedAt && !(b.sort === "mtime" && data.applied_sort === void 0)) {
+    base.mtimes = new Map(data.entries.map((entry) => [entry.rel, entry.mtime]));
+    base.complete = !data.truncated && data.entries.length >= data.total;
   }
   const marks = /* @__PURE__ */ new Map();
   let newCount = 0, updatedCount = 0;
-  if (data && baseline.current.mtimes) for (const entry of data.entries) {
-    const before = baseline.current.mtimes.get(entry.rel);
-    if (!baseline.current.mtimes.has(entry.rel) && baseline.current.complete) {
+  if (data && base.mtimes) for (const entry of data.entries) {
+    const before = base.mtimes.get(entry.rel);
+    if (!base.mtimes.has(entry.rel) && base.complete) {
       marks.set(entry.rel, S.markNew);
       newCount++;
     } else if (typeof before === "number" && typeof entry.mtime === "number" && entry.mtime > before) {
@@ -1287,8 +1289,9 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
   useEffect(() => {
     if (!data) return;
     const counts = `${newCount}|${updatedCount}`;
-    setChangeNotice({ identity, text: counts !== baseline.current.counts ? S.changedCounts(newCount, updatedCount) : "" });
-    baseline.current.counts = counts;
+    if (counts === base.counts) return;
+    base.counts = counts;
+    setChangeNotice({ identity, text: S.changedCounts(newCount, updatedCount) });
   }, [data, identity, newCount, updatedCount]);
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
   const reason = searching ? found.data?.reason : void 0;
