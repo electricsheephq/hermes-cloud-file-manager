@@ -183,6 +183,9 @@ export const $pickState = atom<PickState | null>(null)
 
 /** Browser state: root, folder, search text and selection (keyed by absolute path). In page mode the
  *  selection belongs to the folder; in pick mode it persists across folders. */
+/** A folder's first fresh listing (entry → modified time). The browser keeps it, so a preview or edit doesn't drop it. */
+type ChangeBase = { identity: string; openedAt: number; mtimes: Map<string, number | null> | null; complete: boolean; counts: string }
+
 export function useBrowser(roots: RootsResponse, mode: Mode) {
   const [connectionId, profile] = useScope()
   const info = useValue($scopeInfo)[scopeKey(connectionId, profile)]
@@ -218,6 +221,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const focusNext: FocusRequest = useRef(null)
   // What the list shows now: its entries and the save captured with the read that fetched them (null: none).
   const [shown, setShown] = useState<null | { entries: readonly Entry[]; save: SaveFile | null }>(null)
+  const changeBase = useRef<ChangeBase | null>(null)
 
   const navigate = (next: string) => {
     setPath(next)
@@ -226,6 +230,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   }
 
   return {
+    changeBase,
     sort,
     dateSupported: info?.date,
     setSort: (sort: 'name' | 'mtime') => remember(scopeKey(connectionId, profile), { sort }),
@@ -515,7 +520,8 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
 }) {
   const [connectionId, profile] = useScope()
   const rootId = b.root?.id ?? ''
-  const folder = `${connectionId}|${profile}|${rootId}|${b.path}|${b.sort}`
+  const identity = `${connectionId}|${profile}|${rootId}|${b.path}`
+  const folder = `${identity}|${b.sort}`
   const [range, setRange] = useState({ folder, count: LIST_LIMIT })
   const count = range.folder === folder ? range.count : LIST_LIMIT
   if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT })
@@ -532,7 +538,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
       const data = await listUpTo([connectionId, profile], rootId, b.path, b.sort, count,
         client.getQueryData(listingKey) === undefined ? client.getQueryData<ListResponse>([...listingKey.slice(0, 7), count - LIST_LIMIT]) : undefined)
       remember(scopeKey(connectionId, profile), { date: data.applied_sort !== undefined })
-      return { ...data, save, readAt }
+      return { ...data, save, readAt, identity }
     },
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 7).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : undefined,
     enabled: Boolean(rootId) && !searching,
@@ -556,6 +562,36 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     if (b.sort === 'mtime') return listing.data?.entries ?? []
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort])
+  // One snapshot per open folder, independent of sort or the Load more range, kept by the browser across a preview or
+  // edit. Only a read started after the folder opened can seed it: a listing cached from an earlier visit would mark
+  // what changed while the user was away. No extra read is asked for; the next refresh (live, manual or on return to
+  // the page) seeds it. Writes are idempotent per folder and read, so a replayed render seeds the same snapshot.
+  if (b.changeBase.current?.identity !== identity) b.changeBase.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: '0|0' }
+  const base = b.changeBase.current
+  // The identity travels with the query result, so another folder's placeholder cannot seed or mark it.
+  const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : undefined
+  // A Date read from an agent without date sort comes back empty: it is not a listing of the folder.
+  if (data && !base.mtimes && data.readAt >= base.openedAt && !(b.sort === 'mtime' && data.applied_sort === undefined)) {
+    base.mtimes = new Map(data.entries.map(entry => [entry.rel, entry.mtime]))
+    base.complete = !data.truncated && data.entries.length >= data.total
+  }
+  const marks = new Map<string, string>()
+  let newCount = 0, updatedCount = 0
+  if (data && base.mtimes) for (const entry of data.entries) {
+    const before = base.mtimes.get(entry.rel)
+    if (!base.mtimes.has(entry.rel) && base.complete) { marks.set(entry.rel, S.markNew); newCount++ }
+    else if (typeof before === 'number' && typeof entry.mtime === 'number' && entry.mtime > before) { marks.set(entry.rel, S.markUpdated); updatedCount++ }
+  }
+  // Tied to this folder visit's snapshot, so a notice never outlives it (leave and come back: nothing stale is read).
+  const [changeNotice, setChangeNotice] = useState<{ base: ChangeBase | null; text: string }>({ base: null, text: '' })
+  // Announced once per change of the counts; the text stays while they hold, so a refetch doesn't re-announce it.
+  useEffect(() => {
+    if (!data) return
+    const counts = `${newCount}|${updatedCount}`
+    if (counts === base.counts) return
+    base.counts = counts
+    setChangeNotice({ base, text: S.changedCounts(newCount, updatedCount) })
+  }, [data, identity, newCount, updatedCount])
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
   const reason = searching ? found.data?.reason : undefined
   const stopped = reason === 'time' || reason === 'visits'
@@ -645,7 +681,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
       <>
         <div aria-label={searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || '')} aria-multiselectable="true" role="listbox">
           {entries.map(entry => (
-            <EntryRow b={b} entry={entry} key={entry.abs} onDragStart={dragOut && !entry.link_outside ? event => startDrag(entry, event) : undefined} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
+            <EntryRow b={b} entry={entry} mark={marks.get(entry.rel)} key={entry.abs} onDragStart={dragOut && !entry.link_outside ? event => startDrag(entry, event) : undefined} onFocus={() => setLastFocused(entry.abs)} onNavKey={navKey} onOpen={open} searching={searching} tabStop={entry.abs === tabStop} />
           ))}
         </div>
         {searching ? searchNote && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{searchNote}</div> :
@@ -665,14 +701,15 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       {!searching && b.sort === 'mtime' && truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.dateScanLimit}</div>}
-      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}</div>
+      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{data && changeNotice.base === base && changeNotice.text && `. ${changeNotice.text}`}</div>
     </div>
   )
 }
 
-function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }: {
+function EntryRow({ b, entry, mark, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }: {
   b: Browser
   entry: Entry
+  mark?: string
   onOpen: (entry: Entry) => void
   searching: boolean
   tabStop: boolean
@@ -746,6 +783,7 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onD
       <Codicon name={entryIcon(entry)} size="0.875rem" style={{ color: entry.is_dir ? 'var(--ui-accent)' : 'var(--ui-text-secondary)' }} />
       <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
         <span style={{ ...ellipsis, color: 'var(--ui-text-primary)' }}>{entry.name}</span>
+        {mark && <><span style={hidden}>,</span>{' '}<span style={{ ...muted, flexShrink: 0, fontSize: 10, padding: '0 5px', borderRadius: 8, background: 'var(--ui-row-hover-background)', border: '1px solid var(--ui-accent)' }}>{mark}</span></>}
         {secondary && <span style={{ ...ellipsis, ...muted, fontSize: 11 }}>{secondary}</span>}
       </span>
       <span style={{ ...muted, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{entry.is_dir ? '' : humanSize(entry.size ?? 0)}</span>

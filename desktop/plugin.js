@@ -50,6 +50,9 @@ var S = {
   filesIn: (folder) => `Files in ${folder}`,
   searchResults: "Search results",
   items: (n) => n === 1 ? "1 item" : `${n.toLocaleString()} items`,
+  markNew: "New",
+  markUpdated: "Updated",
+  changedCounts: (newCount, updatedCount) => [newCount ? `${newCount} new` : "", updatedCount ? `${updatedCount} updated` : ""].filter(Boolean).join(", "),
   results: (n) => n === 1 ? "1 result" : `${n.toLocaleString()} results`,
   folderFailed: "Couldn't load this folder",
   truncated: (n) => n === 1 ? "Showing the first item" : `Showing the first ${n} items`,
@@ -994,6 +997,7 @@ function useBrowser(roots, mode) {
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
   const focusNext = useRef(null);
   const [shown, setShown] = useState(null);
+  const changeBase = useRef(null);
   const navigate = (next) => {
     setPath(next);
     setSearch("");
@@ -1003,6 +1007,7 @@ function useBrowser(roots, mode) {
     }
   };
   return {
+    changeBase,
     sort,
     dateSupported: info?.date,
     setSort: (sort2) => remember(scopeKey(connectionId, profile), { sort: sort2 }),
@@ -1213,7 +1218,8 @@ async function listUpTo([connectionId, profile], root, path, sort, count, shown)
 function EntryList({ b, height, onOpenFile, dragOut }) {
   const [connectionId, profile] = useScope();
   const rootId = b.root?.id ?? "";
-  const folder = `${connectionId}|${profile}|${rootId}|${b.path}|${b.sort}`;
+  const identity = `${connectionId}|${profile}|${rootId}|${b.path}`;
+  const folder = `${identity}|${b.sort}`;
   const [range, setRange] = useState({ folder, count: LIST_LIMIT });
   const count = range.folder === folder ? range.count : LIST_LIMIT;
   if (range.folder !== folder) setRange({ folder, count: LIST_LIMIT });
@@ -1227,7 +1233,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     queryFn: async () => {
       const readAt = Date.now();
       const save = captureFor([connectionId, profile]);
-      const data = await listUpTo(
+      const data2 = await listUpTo(
         [connectionId, profile],
         rootId,
         b.path,
@@ -1235,8 +1241,8 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
         count,
         client.getQueryData(listingKey) === void 0 ? client.getQueryData([...listingKey.slice(0, 7), count - LIST_LIMIT]) : void 0
       );
-      remember(scopeKey(connectionId, profile), { date: data.applied_sort !== void 0 });
-      return { ...data, save, readAt };
+      remember(scopeKey(connectionId, profile), { date: data2.applied_sort !== void 0 });
+      return { ...data2, save, readAt, identity };
     },
     placeholderData: (previous, previousQuery) => listingKey.slice(0, 7).every((value, i) => previousQuery?.queryKey[i] === value) ? previous : void 0,
     enabled: Boolean(rootId) && !searching,
@@ -1260,6 +1266,33 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     if (b.sort === "mtime") return listing.data?.entries ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort]);
+  if (b.changeBase.current?.identity !== identity) b.changeBase.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" };
+  const base = b.changeBase.current;
+  const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : void 0;
+  if (data && !base.mtimes && data.readAt >= base.openedAt && !(b.sort === "mtime" && data.applied_sort === void 0)) {
+    base.mtimes = new Map(data.entries.map((entry) => [entry.rel, entry.mtime]));
+    base.complete = !data.truncated && data.entries.length >= data.total;
+  }
+  const marks = /* @__PURE__ */ new Map();
+  let newCount = 0, updatedCount = 0;
+  if (data && base.mtimes) for (const entry of data.entries) {
+    const before = base.mtimes.get(entry.rel);
+    if (!base.mtimes.has(entry.rel) && base.complete) {
+      marks.set(entry.rel, S.markNew);
+      newCount++;
+    } else if (typeof before === "number" && typeof entry.mtime === "number" && entry.mtime > before) {
+      marks.set(entry.rel, S.markUpdated);
+      updatedCount++;
+    }
+  }
+  const [changeNotice, setChangeNotice] = useState({ base: null, text: "" });
+  useEffect(() => {
+    if (!data) return;
+    const counts = `${newCount}|${updatedCount}`;
+    if (counts === base.counts) return;
+    base.counts = counts;
+    setChangeNotice({ base, text: S.changedCounts(newCount, updatedCount) });
+  }, [data, identity, newCount, updatedCount]);
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
@@ -1331,7 +1364,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     body = /* @__PURE__ */ jsx(EmptyState, { description: shownNote ?? void 0, title: stopped ? S.noResultsYet : searching ? S.noResults : b.mode === "pick" ? S.emptyFolderPick : S.emptyFolder });
   } else {
     body = /* @__PURE__ */ jsxs(Fragment, { children: [
-      /* @__PURE__ */ jsx("div", { "aria-label": searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || ""), "aria-multiselectable": "true", role: "listbox", children: entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, onDragStart: dragOut && !entry.link_outside ? (event) => startDrag(entry, event) : void 0, onFocus: () => setLastFocused(entry.abs), onNavKey: navKey, onOpen: open, searching, tabStop: entry.abs === tabStop }, entry.abs)) }),
+      /* @__PURE__ */ jsx("div", { "aria-label": searching ? S.searchResults : S.filesIn(baseName(b.path) || b.root?.label || ""), "aria-multiselectable": "true", role: "listbox", children: entries.map((entry) => /* @__PURE__ */ jsx(EntryRow, { b, entry, mark: marks.get(entry.rel), onDragStart: dragOut && !entry.link_outside ? (event) => startDrag(entry, event) : void 0, onFocus: () => setLastFocused(entry.abs), onNavKey: navKey, onOpen: open, searching, tabStop: entry.abs === tabStop }, entry.abs)) }),
       searching ? searchNote && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: searchNote }) : (listing.data?.total ?? 0) > entries.length ? /* @__PURE__ */ jsxs("div", { style: { ...muted, fontSize: 11, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }, children: [
         /* @__PURE__ */ jsx("span", { children: S.showingOf(entries.length, listing.data.total) }),
         /* @__PURE__ */ jsx(Button, { disabled: loadingMore, onClick: () => setRange({ folder, count: count + LIST_LIMIT }), size: "sm", variant: "text", children: S.loadMore })
@@ -1343,11 +1376,12 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     !searching && b.sort === "mtime" && truncated && /* @__PURE__ */ jsx("div", { style: { ...muted, fontSize: 11, padding: "8px 12px" }, children: S.dateScanLimit }),
     /* @__PURE__ */ jsxs("div", { "aria-live": "polite", style: hidden, children: [
       announce,
-      !searching && sortNotice && `. ${sortNotice}`
+      !searching && sortNotice && `. ${sortNotice}`,
+      data && changeNotice.base === base && changeNotice.text && `. ${changeNotice.text}`
     ] })
   ] });
 }
-function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }) {
+function EntryRow({ b, entry, mark, onOpen, searching, tabStop, onFocus, onNavKey, onDragStart }) {
   const [hover, setHover] = useState(false);
   const focus = useRowFocus();
   const checked = b.selected.has(entry.abs);
@@ -1413,6 +1447,11 @@ function EntryRow({ b, entry, onOpen, searching, tabStop, onFocus, onNavKey, onD
         /* @__PURE__ */ jsx(Codicon, { name: entryIcon(entry), size: "0.875rem", style: { color: entry.is_dir ? "var(--ui-accent)" : "var(--ui-text-secondary)" } }),
         /* @__PURE__ */ jsxs("span", { style: { display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }, children: [
           /* @__PURE__ */ jsx("span", { style: { ...ellipsis, color: "var(--ui-text-primary)" }, children: entry.name }),
+          mark && /* @__PURE__ */ jsxs(Fragment, { children: [
+            /* @__PURE__ */ jsx("span", { style: hidden, children: "," }),
+            " ",
+            /* @__PURE__ */ jsx("span", { style: { ...muted, flexShrink: 0, fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--ui-row-hover-background)", border: "1px solid var(--ui-accent)" }, children: mark })
+          ] }),
           secondary && /* @__PURE__ */ jsx("span", { style: { ...ellipsis, ...muted, fontSize: 11 }, children: secondary })
         ] }),
         /* @__PURE__ */ jsx("span", { style: { ...muted, textAlign: "right", fontVariantNumeric: "tabular-nums" }, children: entry.is_dir ? "" : humanSize(entry.size ?? 0) }),
@@ -2456,7 +2495,7 @@ function filesFromInput(list) {
 import { Fragment as Fragment4, jsx as jsx7, jsxs as jsxs6 } from "react/jsx-runtime";
 var muted5 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
-var desktopVersion = true ? "0.5.0" : "unknown";
+var desktopVersion = true ? "0.6.0" : "unknown";
 var $batch = atom6(null);
 var currentPin = () => ({ connectionId: host8.state.connectionId.get(), profile: host8.state.profile.get() });
 function dragFromPage(event, [connectionId, profile]) {
