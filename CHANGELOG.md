@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.6.0] - 2026-11-08
+
+Desktop only: the agent's side is unchanged apart from its version number.
+
+### Added
+- New and Updated marks show what changed while a Cloud Files folder is open, in the page and Cloud picker.
+
 ## [0.5.0] - 2026-10-17
 
 Both halves change: the agent's side and the Desktop.
