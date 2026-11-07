@@ -1285,13 +1285,13 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       updatedCount++;
     }
   }
-  const [changeNotice, setChangeNotice] = useState({ identity, text: "" });
+  const [changeNotice, setChangeNotice] = useState({ base: null, text: "" });
   useEffect(() => {
     if (!data) return;
     const counts = `${newCount}|${updatedCount}`;
     if (counts === base.counts) return;
     base.counts = counts;
-    setChangeNotice({ identity, text: S.changedCounts(newCount, updatedCount) });
+    setChangeNotice({ base, text: S.changedCounts(newCount, updatedCount) });
   }, [data, identity, newCount, updatedCount]);
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
   const reason = searching ? found.data?.reason : void 0;
@@ -1377,7 +1377,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     /* @__PURE__ */ jsxs("div", { "aria-live": "polite", style: hidden, children: [
       announce,
       !searching && sortNotice && `. ${sortNotice}`,
-      data && changeNotice.identity === identity && changeNotice.text && `. ${changeNotice.text}`
+      data && changeNotice.base === base && changeNotice.text && `. ${changeNotice.text}`
     ] })
   ] });
 }

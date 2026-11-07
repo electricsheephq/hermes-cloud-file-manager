@@ -72,7 +72,7 @@ it('sort Name to Date keeps the baseline and marks', async () => {
 it('navigating away and back starts a fresh baseline', async () => {
   const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
   fireEvent.doubleClick(row('docs')); await flush(); noMarks()
-  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush(); noMarks()
+  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush(); noMarks(); expect(live()).toBe('3 items')
 })
 it('a change made while away is not marked on return; later changes are', async () => {
   const b = setup(); await flush()

@@ -582,14 +582,15 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     if (!base.mtimes.has(entry.rel) && base.complete) { marks.set(entry.rel, S.markNew); newCount++ }
     else if (typeof before === 'number' && typeof entry.mtime === 'number' && entry.mtime > before) { marks.set(entry.rel, S.markUpdated); updatedCount++ }
   }
-  const [changeNotice, setChangeNotice] = useState({ identity, text: '' })
+  // Tied to this folder visit's snapshot, so a notice never outlives it (leave and come back: nothing stale is read).
+  const [changeNotice, setChangeNotice] = useState<{ base: ChangeBase | null; text: string }>({ base: null, text: '' })
   // Announced once per change of the counts; the text stays while they hold, so a refetch doesn't re-announce it.
   useEffect(() => {
     if (!data) return
     const counts = `${newCount}|${updatedCount}`
     if (counts === base.counts) return
     base.counts = counts
-    setChangeNotice({ identity, text: S.changedCounts(newCount, updatedCount) })
+    setChangeNotice({ base, text: S.changedCounts(newCount, updatedCount) })
   }, [data, identity, newCount, updatedCount])
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
   const reason = searching ? found.data?.reason : undefined
@@ -700,7 +701,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       {!searching && b.sort === 'mtime' && truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.dateScanLimit}</div>}
-      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{data && changeNotice.identity === identity && changeNotice.text && `. ${changeNotice.text}`}</div>
+      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{data && changeNotice.base === base && changeNotice.text && `. ${changeNotice.text}`}</div>
     </div>
   )
 }
