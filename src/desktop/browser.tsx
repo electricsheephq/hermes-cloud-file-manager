@@ -557,12 +557,14 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     if (b.sort === 'mtime') return listing.data?.entries ?? []
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort])
-  // One snapshot per open folder, independent of sort or the Load more range.
-  const baseline = useRef<{ identity: string; mtimes: Map<string, number | null> | null; complete: boolean; counts: string }>({ identity, mtimes: null, complete: false, counts: '0|0' })
-  if (baseline.current.identity !== identity) baseline.current = { identity, mtimes: null, complete: false, counts: '0|0' }
+  // One snapshot per open folder, independent of sort or the Load more range. Only a read started after the folder
+  // opened can seed it: a listing cached from an earlier visit would mark what changed while the user was away. No
+  // extra read is asked for; the next refresh (live, manual or on return to the page) seeds it.
+  const baseline = useRef<{ identity: string; openedAt: number; mtimes: Map<string, number | null> | null; complete: boolean; counts: string }>({ identity, openedAt: Date.now(), mtimes: null, complete: false, counts: '0|0' })
+  if (baseline.current.identity !== identity) baseline.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: '0|0' }
   // The identity travels with the query result, so another folder's placeholder cannot seed or mark it.
   const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : undefined
-  if (data && !baseline.current.mtimes) {
+  if (data && !baseline.current.mtimes && data.readAt >= baseline.current.openedAt) {
     baseline.current.mtimes = new Map(data.entries.map(entry => [entry.rel, entry.mtime]))
     baseline.current.complete = !data.truncated && data.entries.length >= data.total
   }

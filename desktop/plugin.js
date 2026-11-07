@@ -1264,10 +1264,10 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     if (b.sort === "mtime") return listing.data?.entries ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort]);
-  const baseline = useRef({ identity, mtimes: null, complete: false, counts: "0|0" });
-  if (baseline.current.identity !== identity) baseline.current = { identity, mtimes: null, complete: false, counts: "0|0" };
+  const baseline = useRef({ identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" });
+  if (baseline.current.identity !== identity) baseline.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" };
   const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : void 0;
-  if (data && !baseline.current.mtimes) {
+  if (data && !baseline.current.mtimes && data.readAt >= baseline.current.openedAt) {
     baseline.current.mtimes = new Map(data.entries.map((entry) => [entry.rel, entry.mtime]));
     baseline.current.complete = !data.truncated && data.entries.length >= data.total;
   }

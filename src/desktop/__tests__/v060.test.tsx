@@ -74,6 +74,15 @@ it('navigating away and back starts a fresh baseline', async () => {
   fireEvent.doubleClick(row('docs')); await flush(); noMarks()
   fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush(); noMarks()
 })
+it('a change made while away is not marked on return; later changes are', async () => {
+  const b = setup(); await flush()
+  fireEvent.doubleClick(row('docs')); await flush()
+  b.all.push(entry('new.txt')); await advance(10)
+  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush(); noMarks()
+  await b.refresh(); expect(row('new.txt')).toBeTruthy(); noMarks(); expect(live()).toBe('3 items')
+  b.all.push(entry('next.txt')); await b.refresh()
+  expect(within(row('next.txt')).getByText('New')).toBeTruthy(); expect(within(row('new.txt')).queryByText('New')).toBeNull()
+})
 it.each([false, true])('incomplete baseline never upgrades after Load more (truncated=%s)', async truncated => {
   const b = setup(Array.from({ length: LIST_LIMIT + 1 }, (_, i) => entry(`f${i}.txt`)), false, truncated); await flush()
   fireEvent.click(screen.getByText('Load more')); await flush()
