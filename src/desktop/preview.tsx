@@ -7,7 +7,7 @@ import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 import { ApiError, call, isNotFoundError, query } from './api'
 import { AddToChat } from './chat'
 import { captureFor } from './download'
-import { copy, type Doc, isCurrent, nextId, type SetDoc } from './editor'
+import { ACTIONS, copy, type Doc, FileTitle, HEADER, isCurrent, nextId, type SetDoc } from './editor'
 import { humanSize, parseDelimited, type PreviewKind } from './format'
 import { fileCodeText, S } from './strings'
 import { transportText } from './upload'
@@ -178,17 +178,13 @@ export function Preview({ doc, setDoc, onClose }: { doc: Doc; setDoc: SetDoc; on
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', fontSize: 12 }}>
+      <div style={HEADER}>
         <Button onClick={onClose} size="sm" variant="ghost">
           <Codicon name="arrow-left" size="0.875rem" />
           {S.close}
         </Button>
-        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-          <span style={{ fontWeight: 600 }}>{doc.name}</span>
-          <span style={muted}>{doc.pin.profile}</span>
-          <span style={{ ...muted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.abs}</span>
-        </span>
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+        <FileTitle abs={doc.abs} name={doc.name} profile={doc.pin.profile} />
+        <span style={ACTIONS}>
           <AddToChat entries={() => [{ abs: doc.abs, is_dir: false }]} pin={doc.pin} />
           {doc.status === 'ready' && table?.rows.length ? (
             <Button onClick={() => setTextOf(asTable ? doc.id : -1)} size="sm" variant="ghost">
