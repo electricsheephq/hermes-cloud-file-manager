@@ -2232,7 +2232,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
     ) : /* @__PURE__ */ jsx5("pre", { style: { margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: mono, fontSize: 12 }, children: doc.base }) });
   }
   return /* @__PURE__ */ jsxs4("div", { onKeyDown: keyDown, style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsxs4("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", fontSize: 12 }, children: [
+    /* @__PURE__ */ jsxs4("div", { style: HEADER, children: [
       /* @__PURE__ */ jsxs4(Button5, { onClick: () => leave(onClose), size: "sm", variant: "ghost", children: [
         /* @__PURE__ */ jsx5(Codicon3, { name: "arrow-left", size: "0.875rem" }),
         S.close
@@ -2244,13 +2244,8 @@ function Editor({ doc, setDoc, onClose, leave }) {
           S.unsaved
         ] }),
         doc.mixed && /* @__PURE__ */ jsx5("span", { style: { fontWeight: 400, ...muted3 }, children: S.mixedEndings })
-      ] }) : /* @__PURE__ */ jsxs4("span", { style: { display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }, children: [
-        /* @__PURE__ */ jsx5("span", { style: { fontWeight: 600 }, children: doc.name }),
-        /* @__PURE__ */ jsx5("span", { style: muted3, children: doc.pin.profile }),
-        /* @__PURE__ */ jsx5("span", { style: { ...muted3, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: doc.abs }),
-        saved && /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { color: "var(--ui-green)" }, children: S.saved })
-      ] }),
-      /* @__PURE__ */ jsxs4("span", { style: { marginLeft: "auto", display: "inline-flex", gap: 6 }, children: [
+      ] }) : /* @__PURE__ */ jsx5(FileTitle, { abs: doc.abs, name: doc.name, profile: doc.pin.profile, children: saved && /* @__PURE__ */ jsx5("span", { "aria-live": "polite", role: "status", style: { color: "var(--ui-green)", whiteSpace: "nowrap", flexShrink: 0 }, children: S.saved }) }),
+      /* @__PURE__ */ jsxs4("span", { style: ACTIONS, children: [
         /* @__PURE__ */ jsx5(AddToChat, { entries: () => [{ abs: doc.abs, is_dir: false }], pin: doc.pin }),
         editing ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
           /* @__PURE__ */ jsx5(Button5, { "aria-pressed": changes, onClick: () => setChanges(!changes), size: "sm", variant: changes ? "secondary" : "ghost", children: S.changes }),
@@ -2301,6 +2296,17 @@ function Editor({ doc, setDoc, onClose, leave }) {
         )
       ] })
     ] }) })
+  ] });
+}
+var HEADER = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "8px 20px", fontSize: 12 };
+var ACTIONS = { marginLeft: "auto", display: "inline-flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6 };
+var ONE_LINE = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+function FileTitle({ name, profile, abs, children }) {
+  return /* @__PURE__ */ jsxs4("span", { style: { display: "inline-flex", alignItems: "baseline", gap: 8, flex: "1 1 0", minWidth: "8em", overflow: "hidden" }, children: [
+    /* @__PURE__ */ jsx5("span", { style: { ...ONE_LINE, fontWeight: 600 }, title: name, children: name }),
+    /* @__PURE__ */ jsx5("span", { style: { ...muted3, whiteSpace: "nowrap", flexShrink: 0 }, children: profile }),
+    /* @__PURE__ */ jsx5("span", { style: { ...muted3, ...ONE_LINE, fontSize: 11, flexShrink: 1e3 }, title: abs, children: abs }),
+    children
   ] });
 }
 var DIFF_COLORS = {
@@ -2428,17 +2434,13 @@ function Preview({ doc, setDoc, onClose }) {
     ] });
   }
   return /* @__PURE__ */ jsxs5("div", { style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
-    /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", fontSize: 12 }, children: [
+    /* @__PURE__ */ jsxs5("div", { style: HEADER, children: [
       /* @__PURE__ */ jsxs5(Button6, { onClick: onClose, size: "sm", variant: "ghost", children: [
         /* @__PURE__ */ jsx6(Codicon4, { name: "arrow-left", size: "0.875rem" }),
         S.close
       ] }),
-      /* @__PURE__ */ jsxs5("span", { style: { display: "inline-flex", alignItems: "baseline", gap: 8, minWidth: 0 }, children: [
-        /* @__PURE__ */ jsx6("span", { style: { fontWeight: 600 }, children: doc.name }),
-        /* @__PURE__ */ jsx6("span", { style: muted4, children: doc.pin.profile }),
-        /* @__PURE__ */ jsx6("span", { style: { ...muted4, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: doc.abs })
-      ] }),
-      /* @__PURE__ */ jsxs5("span", { style: { marginLeft: "auto", display: "inline-flex", gap: 6 }, children: [
+      /* @__PURE__ */ jsx6(FileTitle, { abs: doc.abs, name: doc.name, profile: doc.pin.profile }),
+      /* @__PURE__ */ jsxs5("span", { style: ACTIONS, children: [
         /* @__PURE__ */ jsx6(AddToChat, { entries: () => [{ abs: doc.abs, is_dir: false }], pin: doc.pin }),
         doc.status === "ready" && table?.rows.length ? /* @__PURE__ */ jsx6(Button6, { onClick: () => setTextOf(asTable ? doc.id : -1), size: "sm", variant: "ghost", children: asTable ? S.showAsText : S.showAsTable }) : null,
         /* @__PURE__ */ jsx6(Button6, { onClick: () => copy(doc.abs, S.copied(1)), size: "sm", variant: "ghost", children: S.copyPath }),
