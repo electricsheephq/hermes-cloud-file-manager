@@ -112,6 +112,25 @@ it.each([[19, true], [20, false]])('a folder keeps its snapshot while %i newer f
   await advance(10); fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush()
   expect(within(row('new.txt')).queryByText('New') !== null).toBe(kept)
 })
+it('opening a folder again makes it the most recent: the least recently opened snapshot goes first', async () => {
+  const all = [entry('old.txt'), entry('a', true), entry('b', true)]
+  const backend = fakeBackend({ '/list': () => {
+    const { params } = backend.calls.at(-1)!
+    const items = params.path ? [entry(`${params.path}/d`, true)] : all
+    return { ok: true, applied_sort: 'name', entries: items, total: items.length, truncated: false }
+  } })
+  const context = createTestContext({ rest: backend.rest }); bindContext(context.ctx as any)
+  render(<CloudFilesPage />); await flush()
+  all.push(entry('new.txt'))
+  act(() => context.emitEvent({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1', payload: { name: 'write_file' } })); await advance(1000)
+  const dir = (name: string) => [...document.querySelectorAll<HTMLElement>('[data-entry]')].find(el => within(el).queryByText(name))!
+  fireEvent.doubleClick(dir('a')); await flush()
+  for (let i = 0; i < 18; i++) { fireEvent.doubleClick(dir('d')); await flush() } // a and 18 folders under it: 20 in all
+  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush() // Home is the most recent again
+  fireEvent.doubleClick(dir('b')); await flush() // the 21st folder: a goes, not Home
+  await advance(10); fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy()
+})
 it('opening a file and closing it keeps the marks', async () => {
   const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
   fireEvent.doubleClick(row('old.txt')); await flush()
