@@ -183,9 +183,9 @@ export const $pickState = atom<PickState | null>(null)
 
 /** Browser state: root, folder, search text and selection (keyed by absolute path). In page mode the
  *  selection belongs to the folder; in pick mode it persists across folders. */
-/** A folder's first fresh listing (entry → modified time), with the change counts last announced for it. The browser
- *  keeps one per folder for as long as it is open, so a preview, an edit or a look into a subfolder doesn't drop it. */
-type ChangeBase = { openedAt: number; mtimes: Map<string, number | null> | null; complete: boolean; counts: string; notice: string }
+/** A folder's first fresh listing (entry → modified time). The browser keeps one per folder for as long as it is open,
+ *  so a preview, an edit or a look into a subfolder doesn't drop it. */
+type ChangeBase = { openedAt: number; mtimes: Map<string, number | null> | null; complete: boolean }
 /** Folders whose snapshots the browser keeps; the least recently opened goes first. */
 const CHANGE_BASES_MAX = 20
 
@@ -230,7 +230,7 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
     const bases = changeBases.current
     let base = bases.get(identity)
     if (base) bases.delete(identity)
-    else base = { openedAt: Date.now(), mtimes: null, complete: false, counts: '0|0', notice: '' }
+    else base = { openedAt: Date.now(), mtimes: null, complete: false }
     bases.set(identity, base)
     for (const key of bases.keys()) { if (bases.size <= CHANGE_BASES_MAX) break; bases.delete(key) }
     return base
@@ -600,17 +600,9 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     if (!base.mtimes.has(entry.rel) && base.complete) { marks.set(entry.rel, S.markNew); newCount++ }
     else if (typeof before === 'number' && typeof entry.mtime === 'number' && entry.mtime > before) { marks.set(entry.rel, S.markUpdated); updatedCount++ }
   }
-  // The notice belongs to the folder's snapshot, so coming back to a folder reads its counts again with its marks.
-  // Announced once per change of the counts; the text stays while they hold, so a refetch doesn't re-announce it.
-  const [, noticeChanged] = useState(0)
-  useEffect(() => {
-    if (!data) return
-    const counts = `${newCount}|${updatedCount}`
-    if (counts === base.counts) return
-    base.counts = counts
-    base.notice = S.changedCounts(newCount, updatedCount)
-    noticeChanged(n => n + 1)
-  }, [data, base, newCount, updatedCount])
+  // Read from the marks on screen, so it always matches them, also on coming back to a folder. The text only changes
+  // with the counts, so a refetch that changes nothing announces nothing new.
+  const changeNotice = data ? S.changedCounts(newCount, updatedCount) : ''
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
   const reason = searching ? found.data?.reason : undefined
   const stopped = reason === 'time' || reason === 'visits'
@@ -720,7 +712,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       {!searching && b.sort === 'mtime' && truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.dateScanLimit}</div>}
-      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{data && base.notice && `. ${base.notice}`}</div>
+      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{changeNotice && `. ${changeNotice}`}</div>
     </div>
   )
 }
