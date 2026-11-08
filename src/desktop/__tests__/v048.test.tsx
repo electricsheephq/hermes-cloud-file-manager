@@ -165,19 +165,32 @@ it('keeps a picker selection from another folder while pruning the current folde
 })
 
 it('keeps restored picker selections against old cache, then prunes on a fresh complete read', async () => {
-  const backend = page({ '/list': () => listing([]), '/search': () => ({ ok: true, results: [file('new.txt')] }) })
+  let files: ReturnType<typeof file>[] = []
+  let held: null | Array<() => void> = null
+  const backend = page({ '/list': () => {
+    const answer = listing(files)
+    return held ? new Promise(resolve => held!.push(() => resolve(answer))) : answer
+  }, '/search': () => ({ ok: true, results: [file('new.txt')] }) })
   await flush(); backend.view.unmount(); render(<PickerHost />)
   act(() => void cloudProvider.run({ insertText: vi.fn() })); await flush(); await advance(1)
+  files = [file('new.txt')] // written after the folder was cached
   fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'new' } }); await advance(300)
   fireEvent.click(row('new.txt'))
   fireEvent.change(screen.getByLabelText('Search files'), { target: { value: '' } }); await flush()
   act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'other' })); await flush(); await advance(1)
   expect(screen.queryByRole('status')).toBeNull()
   const start = lists(backend)
+  held = []
+  // Back on the agent its folder shows from the old cache, without the file, while it is read once more for the
+  // change marks' snapshot: the old listing never drops the selection, and the fresh one lists the file.
   act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })); await flush()
-  expect(lists(backend)).toBe(start)
+  expect(lists(backend)).toBe(start + 1)
   expect(screen.getByRole('status').textContent).toBe('1 selected')
-  backend.ctx.rest = async () => listing([]) // the selected file has been deleted
+  await advance(1)
+  const pending = held.splice(0); held = null
+  await act(async () => pending.forEach(release => release())); await flush()
+  expect(screen.getByRole('status').textContent).toBe('1 selected')
+  files = [] // the selected file has been deleted
   act(() => backend.emitEvent(event())); await advance(1000)
   expect(screen.getByRole('status').textContent).toBe('0 selected')
 })

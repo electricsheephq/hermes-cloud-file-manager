@@ -218,8 +218,11 @@ export const $pickState = atom<PickState | null>(null)
 
 /** Browser state: root, folder, search text and selection (keyed by absolute path). In page mode the
  *  selection belongs to the folder; in pick mode it persists across folders. */
-/** A folder's first fresh listing (entry → modified time). The browser keeps it, so a preview or edit doesn't drop it. */
-type ChangeBase = { identity: string; openedAt: number; mtimes: Map<string, number | null> | null; complete: boolean; counts: string }
+/** A folder's first fresh listing (entry → modified time). The browser keeps one per folder for as long as it is open,
+ *  so a preview, an edit or a look into a subfolder doesn't drop it. */
+type ChangeBase = { openedAt: number; mtimes: Map<string, number | null> | null; complete: boolean }
+/** Folders whose snapshots the browser keeps; the least recently opened goes first. */
+const CHANGE_BASES_MAX = 20
 
 export function useBrowser(roots: RootsResponse, mode: Mode) {
   const [connectionId, profile] = useScope()
@@ -256,7 +259,17 @@ export function useBrowser(roots: RootsResponse, mode: Mode) {
   const focusNext: FocusRequest = useRef(null)
   // What the list shows now: its entries and the save captured with the read that fetched them (null: none).
   const [shown, setShown] = useState<null | { entries: readonly Entry[]; save: SaveFile | null }>(null)
-  const changeBase = useRef<ChangeBase | null>(null)
+  const changeBases = useRef(new Map<string, ChangeBase>())
+  /** The snapshot for a folder (`connection|profile|root|path`), started on its first open. */
+  const changeBase = (identity: string): ChangeBase => {
+    const bases = changeBases.current
+    let base = bases.get(identity)
+    if (base) bases.delete(identity)
+    else base = { openedAt: Date.now(), mtimes: null, complete: false }
+    bases.set(identity, base)
+    for (const key of bases.keys()) { if (bases.size <= CHANGE_BASES_MAX) break; bases.delete(key) }
+    return base
+  }
 
   const navigate = (next: string) => {
     setPath(next)
@@ -597,19 +610,24 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     if (b.sort === 'mtime') return listing.data?.entries ?? []
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === '')
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort])
-  // One snapshot per open folder, independent of sort or the Load more range, kept by the browser across a preview or
-  // edit. Only a read started after the folder opened can seed it: a listing cached from an earlier visit would mark
-  // what changed while the user was away. No extra read is asked for; the next refresh (live, manual or on return to
-  // the page) seeds it. Writes are idempotent per folder and read, so a replayed render seeds the same snapshot.
-  if (b.changeBase.current?.identity !== identity) b.changeBase.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: '0|0' }
-  const base = b.changeBase.current
+  // One snapshot per folder, independent of sort or the Load more range, taken when the browser first opens it and kept
+  // while the browser is open: across a preview or edit, and when the user looks into a subfolder and comes back, so
+  // the marks show what changed since the folder was first opened. Only a read started after that can seed it: a
+  // listing cached from before would mark what changed while Cloud Files was closed. Writes are idempotent per folder
+  // and read, so a replayed render seeds the same snapshot.
+  const base = b.changeBase(identity)
   // The identity travels with the query result, so another folder's placeholder cannot seed or mark it.
   const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : undefined
   // A Date read from an agent without date sort comes back empty: it is not a listing of the folder.
-  if (data && !base.mtimes && data.readAt >= base.openedAt && !(b.sort === 'mtime' && data.applied_sort === undefined)) {
+  const dateless = b.sort === 'mtime' && data?.applied_sort === undefined
+  if (data && !base.mtimes && data.readAt >= base.openedAt && !dateless) {
     base.mtimes = new Map(data.entries.map(entry => [entry.rel, entry.mtime]))
     base.complete = !data.truncated && data.entries.length >= data.total
   }
+  // Only a listing cached from before the folder opened is on screen and none is on its way: read the folder once now,
+  // so the snapshot is the folder as opened and the agent's next file is marked rather than taken into the snapshot.
+  const unseeded = Boolean(data && !base.mtimes && data.readAt < base.openedAt && !listing.isFetching)
+  useEffect(() => { if (unseeded) void listing.refetch() }, [unseeded, identity])
   const marks = new Map<string, string>()
   let newCount = 0, updatedCount = 0
   if (data && base.mtimes) for (const entry of data.entries) {
@@ -617,16 +635,9 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     if (!base.mtimes.has(entry.rel) && base.complete) { marks.set(entry.rel, S.markNew); newCount++ }
     else if (typeof before === 'number' && typeof entry.mtime === 'number' && entry.mtime > before) { marks.set(entry.rel, S.markUpdated); updatedCount++ }
   }
-  // Tied to this folder visit's snapshot, so a notice never outlives it (leave and come back: nothing stale is read).
-  const [changeNotice, setChangeNotice] = useState<{ base: ChangeBase | null; text: string }>({ base: null, text: '' })
-  // Announced once per change of the counts; the text stays while they hold, so a refetch doesn't re-announce it.
-  useEffect(() => {
-    if (!data) return
-    const counts = `${newCount}|${updatedCount}`
-    if (counts === base.counts) return
-    base.counts = counts
-    setChangeNotice({ base, text: S.changedCounts(newCount, updatedCount) })
-  }, [data, identity, newCount, updatedCount])
+  // Read from the marks on screen, so it always matches them, also on coming back to a folder. The text only changes
+  // with the counts, so a refetch that changes nothing announces nothing new.
+  const changeNotice = data ? S.changedCounts(newCount, updatedCount) : ''
   const truncated = searching ? found.data?.truncated : listing.data?.truncated
   const reason = searching ? found.data?.reason : undefined
   const stopped = reason === 'time' || reason === 'visits'
@@ -736,7 +747,7 @@ export function EntryList({ b, height, onOpenFile, dragOut }: {
     <div ref={list} style={{ overflowY: 'auto', overflowX: 'hidden', ...(height ? { height } : { flex: 1, minHeight: 0 }) }} tabIndex={-1}>
       {body}
       {!searching && b.sort === 'mtime' && truncated && <div style={{ ...muted, fontSize: 11, padding: '8px 12px' }}>{S.dateScanLimit}</div>}
-      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{data && changeNotice.base === base && changeNotice.text && `. ${changeNotice.text}`}</div>
+      <div aria-live="polite" style={hidden}>{announce}{!searching && sortNotice && `. ${sortNotice}`}{changeNotice && `. ${changeNotice}`}</div>
     </div>
   )
 }

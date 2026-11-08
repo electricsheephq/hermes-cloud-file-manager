@@ -85,7 +85,7 @@ installing the desktop half is harmless for your other agents.
 
 ## Using it
 
-- **What changed:** New and Updated marks show changes since opening a folder in Cloud Files or the **+ → Cloud** picker; partly loaded folders only mark updates to files already listed.
+- **What changed:** New and Updated marks show changes since you first opened a folder in Cloud Files or the **+ → Cloud** picker, and stay when you open a file or a subfolder and come back; partly loaded folders only mark updates to files already listed.
 - **Upload:** drag files or folders anywhere onto the Cloud Files page, or use **Upload files** /
   **Upload folder**. Progress, retries and failures show in the drawer at the bottom; the batch keeps going if
   you leave the page. Switching to another agent mid-upload pauses the batch until you switch back — files never
