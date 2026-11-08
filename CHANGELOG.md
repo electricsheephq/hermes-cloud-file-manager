@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.6.2] - 2026-11-08
+
+Desktop only: the agent's side is unchanged apart from its version number.
+
+### Fixed
+- **Live refresh reaches Cloud Files in other Desktop windows.** Desktop sends a chat's events only to the window that shows it, so Cloud Files open in one window missed the agent's writes from a chat in another. Each window now passes the file-changing ones to the plugin in its other windows over an in-app channel. Only the event type and the agent travel, never a tool's arguments or output.
+
 ## [0.6.1] - 2026-11-08
 
 Desktop only: the agent's side is unchanged apart from its version number.
