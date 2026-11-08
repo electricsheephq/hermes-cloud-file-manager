@@ -10,7 +10,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
   never overwrite — a name clash keeps both files. **Show** on a finished upload opens its folder at the file.
   While the page is open, files the agent writes, moves or deletes show up within about a second, for that
-  agent only (a file edited in place can show its old size for a few seconds).
+  agent only, also when its chat is in another Desktop window (a file edited in place can show its old size for a
+  few seconds).
 - **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
   The file list also works from the keyboard: arrow keys, Home and End, Page Up and Page Down, Enter to open,
   Space to select, and Alt+Up for the parent folder.
