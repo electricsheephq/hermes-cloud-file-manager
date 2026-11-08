@@ -2302,10 +2302,10 @@ var HEADER = { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, 
 var ACTIONS = { marginLeft: "auto", display: "inline-flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6 };
 var ONE_LINE = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 function FileTitle({ name, profile, abs, children }) {
-  return /* @__PURE__ */ jsxs4("span", { style: { display: "inline-flex", alignItems: "baseline", gap: 8, flex: "1 1 0", minWidth: "8em", overflow: "hidden" }, children: [
-    /* @__PURE__ */ jsx5("span", { style: { ...ONE_LINE, fontWeight: 600 }, title: name, children: name }),
+  return /* @__PURE__ */ jsxs4("span", { style: { display: "inline-flex", alignItems: "baseline", gap: 8, flex: "1 1 0px", minWidth: "8em", overflow: "hidden" }, children: [
+    /* @__PURE__ */ jsx5("span", { style: { ...ONE_LINE, fontWeight: 600, flex: "0 1 auto" }, title: name, children: name }),
     /* @__PURE__ */ jsx5("span", { style: { ...muted3, whiteSpace: "nowrap", flexShrink: 0 }, children: profile }),
-    /* @__PURE__ */ jsx5("span", { style: { ...muted3, ...ONE_LINE, fontSize: 11, flexShrink: 1e3 }, title: abs, children: abs }),
+    /* @__PURE__ */ jsx5("span", { style: { ...muted3, ...ONE_LINE, fontSize: 11, flex: "1 1 0px" }, title: abs, children: abs }),
     children
   ] });
 }

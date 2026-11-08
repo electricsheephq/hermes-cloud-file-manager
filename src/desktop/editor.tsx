@@ -503,14 +503,15 @@ export const HEADER: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignI
 export const ACTIONS: CSSProperties = { marginLeft: 'auto', display: 'inline-flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }
 const ONE_LINE: CSSProperties = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
-/** A file view's title: name, agent and path on one line. The path gives way first, then the name is cut with an
- *  ellipsis (the full name and path on hover), so a long name never stacks the header one word per line. */
+/** A file view's title: name, agent and path on one line. The path only takes the width left after the name and agent,
+ *  so it gives way first; then the name is cut with an ellipsis (the full name and path on hover). A long name never
+ *  stacks the header one word per line. */
 export function FileTitle({ name, profile, abs, children }: { name: string; profile: string; abs: string; children?: ReactNode }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, flex: '1 1 0', minWidth: '8em', overflow: 'hidden' }}>
-      <span style={{ ...ONE_LINE, fontWeight: 600 }} title={name}>{name}</span>
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, flex: '1 1 0px', minWidth: '8em', overflow: 'hidden' }}>
+      <span style={{ ...ONE_LINE, fontWeight: 600, flex: '0 1 auto' }} title={name}>{name}</span>
       <span style={{ ...muted, whiteSpace: 'nowrap', flexShrink: 0 }}>{profile}</span>
-      <span style={{ ...muted, ...ONE_LINE, fontSize: 11, flexShrink: 1000 }} title={abs}>{abs}</span>
+      <span style={{ ...muted, ...ONE_LINE, fontSize: 11, flex: '1 1 0px' }} title={abs}>{abs}</span>
       {children}
     </span>
   )
