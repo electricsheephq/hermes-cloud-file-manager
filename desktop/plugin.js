@@ -290,8 +290,39 @@ function httpStatus(error) {
 var query = (path, params) => `${path}?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()}`;
 var errorText = (error) => error instanceof Error ? error.message : String(error);
 
-// src/desktop/drive.ts
-import { atom as atom2 } from "@hermes/plugin-sdk";
+// src/desktop/browser.tsx
+import {
+  atom as atom2,
+  Button,
+  Checkbox,
+  Codicon,
+  EmptyState,
+  ErrorState,
+  host as host3,
+  SearchField,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+  useQuery,
+  useQueryClient,
+  useValue
+} from "@hermes/plugin-sdk";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+// src/desktop/download.ts
+import * as sdk from "@hermes/plugin-sdk";
+import { host as host2 } from "@hermes/plugin-sdk";
+function captureDownload() {
+  const capture = sdk.captureGatewayFileDownload;
+  return typeof capture === "function" ? capture() : null;
+}
+function captureFor([connectionId, profile]) {
+  const here = (host2.state.connectionId.get() ?? "local") === connectionId && host2.state.profile.get() === profile;
+  return here ? captureDownload() : null;
+}
 
 // src/desktop/format.ts
 var TICK = "`";
@@ -698,148 +729,6 @@ function summarize(snapshot) {
   };
 }
 
-// src/desktop/drive.ts
-var DRIVE_DEST = "uploads/drive";
-var IMPORT_TIMEOUT_MS = 33e4;
-var GOOGLE = "application/vnd.google-apps.";
-function driveIcon({ mime, is_folder }) {
-  const has = (...parts) => parts.some((part) => mime.includes(part));
-  if (is_folder) return "folder";
-  if (mime === "application/pdf") return "file-pdf";
-  if (has("spreadsheet", "excel", "text/csv")) return "table";
-  if (has("presentation", "powerpoint")) return "preview";
-  if (mime.startsWith("image/") || mime === `${GOOGLE}drawing` || mime === `${GOOGLE}photo`) return "file-media";
-  if (mime === `${GOOGLE}document` || has("wordprocessing", "msword") || mime.startsWith("text/")) return "file-text";
-  return "file";
-}
-var DriveImport = class {
-  constructor(items, root, pin, deps, folder = DRIVE_DEST) {
-    this.items = items;
-    this.root = root;
-    this.deps = deps;
-    this.folder = folder;
-    this.snapshot = { pin: { ...pin }, dest: { root, folder }, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false };
-  }
-  items;
-  root;
-  deps;
-  folder;
-  snapshot;
-  listeners = /* @__PURE__ */ new Set();
-  wake = () => void 0;
-  run = null;
-  getSnapshot = () => this.snapshot;
-  subscribe = (listener) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-  /** Import every item once, in order. Resolves with the final snapshot (also after a cancel). */
-  start() {
-    this.run ??= this.drain();
-    return this.run;
-  }
-  /** No request starts after this; the one in flight (if any) still settles and its file stays. */
-  cancel() {
-    if (this.snapshot.canceled) return;
-    this.set({ canceled: true });
-    this.wake();
-  }
-  async drain() {
-    const { state, rest: rest2 } = this.deps;
-    const wake = () => this.wake();
-    const stops = [state.connectionId.subscribe(wake), state.profile.subscribe(wake), this.deps.hold?.subscribe(wake) ?? (() => void 0)];
-    this.set({ running: true });
-    try {
-      for (const item of this.items) {
-        while (!this.snapshot.canceled && !this.matches()) {
-          this.set({ paused: true });
-          await new Promise((resolve) => this.wake = resolve);
-        }
-        if (this.snapshot.canceled) break;
-        this.set({ paused: false });
-        let failure = null;
-        try {
-          const body = { id: item.id, root: this.root, dest: this.folder };
-          const res = await rest2("/drive/import", { method: "POST", body, timeoutMs: IMPORT_TIMEOUT_MS });
-          if (res?.ok && res.entry) this.set({ imported: [...this.snapshot.imported, res.entry] });
-          else failure = codeText(res?.code, res?.message);
-        } catch (error) {
-          failure = transportText(error);
-        }
-        const failures = failure ? [...this.snapshot.failures, { name: item.name, error: failure }] : this.snapshot.failures;
-        this.set({ settled: this.snapshot.settled + 1, failures });
-      }
-    } finally {
-      stops.forEach((stop) => stop());
-      this.set({ running: false, paused: false });
-    }
-    return this.snapshot;
-  }
-  matches() {
-    const { pin } = this.snapshot;
-    const { state, hold } = this.deps;
-    return state.profile.get() === pin.profile && state.connectionId.get() === pin.connectionId && !hold?.held();
-  }
-  set(patch) {
-    this.snapshot = { ...this.snapshot, ...patch };
-    this.listeners.forEach((listener) => listener());
-  }
-};
-var $driveJob = atom2(null);
-
-// src/desktop/page.tsx
-import {
-  atom as atom6,
-  Button as Button7,
-  Codicon as Codicon5,
-  Dialog as Dialog3,
-  DialogContent as DialogContent3,
-  DialogFooter as DialogFooter3,
-  DialogHeader as DialogHeader3,
-  DialogTitle as DialogTitle3,
-  EmptyState as EmptyState4,
-  host as host8,
-  Input,
-  Skeleton as Skeleton5,
-  useQueryClient as useQueryClient2,
-  useValue as useValue5
-} from "@hermes/plugin-sdk";
-import { useEffect as useEffect5, useId, useRef as useRef5, useState as useState5, useSyncExternalStore as useSyncExternalStore2 } from "react";
-
-// src/desktop/browser.tsx
-import {
-  atom as atom3,
-  Button,
-  Checkbox,
-  Codicon,
-  EmptyState,
-  ErrorState,
-  host as host3,
-  SearchField,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Skeleton,
-  useQuery,
-  useQueryClient,
-  useValue
-} from "@hermes/plugin-sdk";
-import { useEffect, useMemo, useRef, useState } from "react";
-
-// src/desktop/download.ts
-import * as sdk from "@hermes/plugin-sdk";
-import { host as host2 } from "@hermes/plugin-sdk";
-function captureDownload() {
-  const capture = sdk.captureGatewayFileDownload;
-  return typeof capture === "function" ? capture() : null;
-}
-function captureFor([connectionId, profile]) {
-  const here = (host2.state.connectionId.get() ?? "local") === connectionId && host2.state.profile.get() === profile;
-  return here ? captureDownload() : null;
-}
-
 // src/desktop/browser.tsx
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 var LIST_LIMIT = 500;
@@ -888,6 +777,35 @@ function toolMayChangeFiles(payload) {
   return MUTATING_TOOL_RE.test(name);
 }
 var LIST_CACHE_FOLLOWUP_MS = 5500;
+var FILE_EVENTS = ["tool.complete", "subagent.complete"];
+var mayChangeFiles = (type, event) => event.profile !== void 0 && (type !== "tool.complete" || toolMayChangeFiles(event.payload));
+var isFileEvent = (type) => FILE_EVENTS.includes(type);
+var RELAY_CHANNEL = "hermes-cloud-file-manager:file-events";
+var relayed = /* @__PURE__ */ new Set();
+function startEventRelay(ctx) {
+  if (typeof BroadcastChannel !== "function" || typeof ctx.onEvent !== "function") return () => void 0;
+  let channel;
+  try {
+    channel = new BroadcastChannel(RELAY_CHANNEL);
+  } catch {
+    return () => void 0;
+  }
+  channel.onmessage = ({ data }) => {
+    if (!data || !isFileEvent(data.type) || typeof data.profile !== "string") return;
+    if (data.connectionId !== void 0 && typeof data.connectionId !== "string") return;
+    for (const listener of relayed) listener(data.type, { type: data.type, connectionId: data.connectionId, profile: data.profile });
+  };
+  const disposers = FILE_EVENTS.map((type) => ctx.onEvent(type, (event) => {
+    if (!mayChangeFiles(type, event)) return;
+    const message = { type, profile: (event.profile ?? "").trim() || "default" };
+    if (typeof event.connectionId === "string") message.connectionId = event.connectionId;
+    channel.postMessage(message);
+  }));
+  return () => {
+    disposers.forEach((dispose) => dispose());
+    channel.close();
+  };
+}
 var liveRefresh = /* @__PURE__ */ new Map();
 function releaseRefresh(key) {
   const held = liveRefresh.get(key);
@@ -922,8 +840,8 @@ function useLiveRefresh() {
         else refreshList();
       }, LIST_CACHE_FOLLOWUP_MS);
     };
-    const disposers = ["tool.complete", "subagent.complete"].map((type) => ctx.onEvent(type, (event) => {
-      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || type === "tool.complete" && !toolMayChangeFiles(event.payload)) return;
+    const onFileEvent = (type, event, checked) => {
+      if (event.profile === void 0 || ((event.connectionId ?? "").trim() || "local") !== (connectionId.trim() || "local") || ((event.profile ?? "").trim() || "default") !== (profile.trim() || "default") || !checked && !mayChangeFiles(type, event)) return;
       if (followup !== void 0) window.clearTimeout(followup);
       if (timer !== void 0) return;
       timer = window.setTimeout(() => {
@@ -931,7 +849,11 @@ function useLiveRefresh() {
         if (document.visibilityState === "hidden") missedMain = true;
         else refresh();
       }, 1e3);
-    }));
+    };
+    const fromRelay = (type, event) => onFileEvent(type, event, true);
+    relayed.add(fromRelay);
+    const disposers = FILE_EVENTS.map((type) => ctx.onEvent(type, (event) => onFileEvent(type, event, false)));
+    disposers.push(() => void relayed.delete(fromRelay));
     const visible = () => {
       if (document.visibilityState !== "visible" || !missedMain && !missedFollowup) return;
       if (timer === void 0) {
@@ -962,7 +884,7 @@ function useDebounced(value, ms) {
   }, [value, ms]);
   return settled;
 }
-var $pickState = atom3(null);
+var $pickState = atom2(null);
 var CHANGE_BASES_MAX = 20;
 function useBrowser(roots, mode) {
   const [connectionId, profile] = useScope();
@@ -1470,6 +1392,115 @@ function EntryRow({ b, entry, mark, onOpen, searching, tabStop, onFocus, onNavKe
     }
   );
 }
+
+// src/desktop/drive.ts
+import { atom as atom3 } from "@hermes/plugin-sdk";
+var DRIVE_DEST = "uploads/drive";
+var IMPORT_TIMEOUT_MS = 33e4;
+var GOOGLE = "application/vnd.google-apps.";
+function driveIcon({ mime, is_folder }) {
+  const has = (...parts) => parts.some((part) => mime.includes(part));
+  if (is_folder) return "folder";
+  if (mime === "application/pdf") return "file-pdf";
+  if (has("spreadsheet", "excel", "text/csv")) return "table";
+  if (has("presentation", "powerpoint")) return "preview";
+  if (mime.startsWith("image/") || mime === `${GOOGLE}drawing` || mime === `${GOOGLE}photo`) return "file-media";
+  if (mime === `${GOOGLE}document` || has("wordprocessing", "msword") || mime.startsWith("text/")) return "file-text";
+  return "file";
+}
+var DriveImport = class {
+  constructor(items, root, pin, deps, folder = DRIVE_DEST) {
+    this.items = items;
+    this.root = root;
+    this.deps = deps;
+    this.folder = folder;
+    this.snapshot = { pin: { ...pin }, dest: { root, folder }, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false };
+  }
+  items;
+  root;
+  deps;
+  folder;
+  snapshot;
+  listeners = /* @__PURE__ */ new Set();
+  wake = () => void 0;
+  run = null;
+  getSnapshot = () => this.snapshot;
+  subscribe = (listener) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+  /** Import every item once, in order. Resolves with the final snapshot (also after a cancel). */
+  start() {
+    this.run ??= this.drain();
+    return this.run;
+  }
+  /** No request starts after this; the one in flight (if any) still settles and its file stays. */
+  cancel() {
+    if (this.snapshot.canceled) return;
+    this.set({ canceled: true });
+    this.wake();
+  }
+  async drain() {
+    const { state, rest: rest2 } = this.deps;
+    const wake = () => this.wake();
+    const stops = [state.connectionId.subscribe(wake), state.profile.subscribe(wake), this.deps.hold?.subscribe(wake) ?? (() => void 0)];
+    this.set({ running: true });
+    try {
+      for (const item of this.items) {
+        while (!this.snapshot.canceled && !this.matches()) {
+          this.set({ paused: true });
+          await new Promise((resolve) => this.wake = resolve);
+        }
+        if (this.snapshot.canceled) break;
+        this.set({ paused: false });
+        let failure = null;
+        try {
+          const body = { id: item.id, root: this.root, dest: this.folder };
+          const res = await rest2("/drive/import", { method: "POST", body, timeoutMs: IMPORT_TIMEOUT_MS });
+          if (res?.ok && res.entry) this.set({ imported: [...this.snapshot.imported, res.entry] });
+          else failure = codeText(res?.code, res?.message);
+        } catch (error) {
+          failure = transportText(error);
+        }
+        const failures = failure ? [...this.snapshot.failures, { name: item.name, error: failure }] : this.snapshot.failures;
+        this.set({ settled: this.snapshot.settled + 1, failures });
+      }
+    } finally {
+      stops.forEach((stop) => stop());
+      this.set({ running: false, paused: false });
+    }
+    return this.snapshot;
+  }
+  matches() {
+    const { pin } = this.snapshot;
+    const { state, hold } = this.deps;
+    return state.profile.get() === pin.profile && state.connectionId.get() === pin.connectionId && !hold?.held();
+  }
+  set(patch) {
+    this.snapshot = { ...this.snapshot, ...patch };
+    this.listeners.forEach((listener) => listener());
+  }
+};
+var $driveJob = atom3(null);
+
+// src/desktop/page.tsx
+import {
+  atom as atom6,
+  Button as Button7,
+  Codicon as Codicon5,
+  Dialog as Dialog3,
+  DialogContent as DialogContent3,
+  DialogFooter as DialogFooter3,
+  DialogHeader as DialogHeader3,
+  DialogTitle as DialogTitle3,
+  EmptyState as EmptyState4,
+  host as host8,
+  Input,
+  Skeleton as Skeleton5,
+  useQueryClient as useQueryClient2,
+  useValue as useValue5
+} from "@hermes/plugin-sdk";
+import { useEffect as useEffect5, useId, useRef as useRef5, useState as useState5, useSyncExternalStore as useSyncExternalStore2 } from "react";
 
 // src/desktop/drive-browser.tsx
 import { Button as Button2, Checkbox as Checkbox2, Codicon as Codicon2, EmptyState as EmptyState2, Skeleton as Skeleton2, useQuery as useQuery2 } from "@hermes/plugin-sdk";
@@ -3080,6 +3111,7 @@ var plugin = {
   description: "Browse, search, upload and edit files on the machine your agent runs on, and hand the agent file locations from the chat + menu.",
   register(ctx) {
     bindContext(ctx);
+    ctx.onDispose(startEventRelay(ctx));
     ctx.register({
       id: "page",
       area: ROUTES_AREA,

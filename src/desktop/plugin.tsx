@@ -10,6 +10,7 @@ import {
 } from '@hermes/plugin-sdk'
 
 import { $available, $driveAvailable, $unreachable, bindContext, isNotFoundError, remember, scopeKey } from './api'
+import { startEventRelay } from './browser'
 import { $driveJob } from './drive'
 import { $batch, CloudFilesPage } from './page'
 import { $pickerOpen, $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost, pickerPinnedElsewhere } from './picker'
@@ -176,6 +177,7 @@ const plugin: HermesPlugin = {
   description: 'Browse, search, upload and edit files on the machine your agent runs on, and hand the agent file locations from the chat + menu.',
   register(ctx) {
     bindContext(ctx)
+    ctx.onDispose(startEventRelay(ctx))
     ctx.register({
       id: 'page',
       area: ROUTES_AREA,
