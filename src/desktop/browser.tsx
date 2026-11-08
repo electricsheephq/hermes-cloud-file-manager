@@ -8,7 +8,9 @@ import {
   Codicon,
   EmptyState,
   ErrorState,
+  type GatewayEventLike,
   host,
+  type PluginContext,
   SearchField,
   Select,
   SelectContent,
@@ -95,6 +97,34 @@ export function toolMayChangeFiles(payload: unknown): boolean {
 }
 
 export const LIST_CACHE_FOLLOWUP_MS = 5500
+const FILE_EVENTS = ['tool.complete', 'subagent.complete'] as const
+/** A tool or subagent run that may have changed the agent's files (a subagent's tools are not visible). */
+const mayChangeFiles = (type: string, event: GatewayEventLike) =>
+  event.profile !== undefined && (type !== 'tool.complete' || toolMayChangeFiles(event.payload))
+
+// Desktop sends a chat's events only to the window showing it. Each window relays the ones that may change files to the
+// plugin in its other windows, so Cloud Files open in one window refreshes for a chat in another. Only the event type
+// and the agent travel, never a tool's arguments or output. A window never receives its own messages.
+export const RELAY_CHANNEL = 'hermes-cloud-file-manager:file-events'
+type Relayed = { type: string; connectionId?: string; profile: string }
+const relayed = new Set<(type: string, event: GatewayEventLike) => void>()
+/** Starts this window's relay for one plugin load and returns its stop; a no-op without BroadcastChannel or live events. */
+export function startEventRelay(ctx: PluginContext): () => void {
+  if (typeof BroadcastChannel !== 'function' || typeof ctx.onEvent !== 'function') return () => undefined
+  const channel = new BroadcastChannel(RELAY_CHANNEL)
+  channel.onmessage = ({ data }: MessageEvent<Relayed>) => {
+    if (!data || typeof data.type !== 'string' || typeof data.profile !== 'string') return
+    if (data.connectionId !== undefined && typeof data.connectionId !== 'string') return
+    for (const listener of relayed) listener(data.type, { type: data.type, connectionId: data.connectionId, profile: data.profile })
+  }
+  const disposers = FILE_EVENTS.map(type => ctx.onEvent!(type, event => {
+    if (!mayChangeFiles(type, event)) return
+    const message: Relayed = { type, profile: event.profile! }
+    if (typeof event.connectionId === 'string') message.connectionId = event.connectionId
+    channel.postMessage(message)
+  }))
+  return () => { disposers.forEach(dispose => dispose()); channel.close() }
+}
 const liveRefresh = new Map<string, { holders: number; dispose: () => void }>()
 function releaseRefresh(key: string) {
   const held = liveRefresh.get(key)
@@ -126,10 +156,11 @@ export function useLiveRefresh() {
         else refreshList()
       }, LIST_CACHE_FOLLOWUP_MS)
     }
-    const disposers = ['tool.complete', 'subagent.complete'].map(type => ctx.onEvent!(type, event => {
+    // This window's events, and the ones another window relays (already checked there).
+    const onFileEvent = (type: string, event: GatewayEventLike, checked: boolean) => {
       // Absent or empty connection ids both mean the local agent, on either side.
       if (event.profile === undefined || ((event.connectionId ?? '').trim() || 'local') !== (connectionId.trim() || 'local') ||
-        ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || (type === 'tool.complete' && !toolMayChangeFiles(event.payload))) return
+        ((event.profile ?? '').trim() || 'default') !== (profile.trim() || 'default') || (!checked && !mayChangeFiles(type, event))) return
       if (followup !== undefined) window.clearTimeout(followup)
       if (timer !== undefined) return
       timer = window.setTimeout(() => {
@@ -137,7 +168,11 @@ export function useLiveRefresh() {
         if (document.visibilityState === 'hidden') missedMain = true
         else refresh()
       }, 1000)
-    }))
+    }
+    const fromRelay = (type: string, event: GatewayEventLike) => onFileEvent(type, event, true)
+    relayed.add(fromRelay)
+    const disposers = FILE_EVENTS.map(type => ctx.onEvent!(type, event => onFileEvent(type, event, false)))
+    disposers.push(() => void relayed.delete(fromRelay))
     const visible = () => {
       if (document.visibilityState !== 'visible' || (!missedMain && !missedFollowup)) return
       if (timer === undefined) {
