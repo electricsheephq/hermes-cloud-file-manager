@@ -16,7 +16,7 @@ import {
   Textarea,
   useValue
 } from '@hermes/plugin-sdk'
-import { type CSSProperties, type Dispatch, type KeyboardEvent, type SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, call, type Entry, isNotFoundError, pluginCtx, query, type Root } from './api'
 import { AddToChat } from './chat'
@@ -365,7 +365,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
 
   return (
     <div onKeyDown={keyDown} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', fontSize: 12 }}>
+      <div style={HEADER}>
         <Button onClick={() => leave(onClose)} size="sm" variant="ghost">
           <Codicon name="arrow-left" size="0.875rem" />
           {S.close}
@@ -382,18 +382,15 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
             {doc.mixed && <span style={{ fontWeight: 400, ...muted }}>{S.mixedEndings}</span>}
           </span>
         ) : (
-          <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-            <span style={{ fontWeight: 600 }}>{doc.name}</span>
-            <span style={muted}>{doc.pin.profile}</span>
-            <span style={{ ...muted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.abs}</span>
+          <FileTitle abs={doc.abs} name={doc.name} profile={doc.pin.profile}>
             {saved && (
-              <span aria-live="polite" role="status" style={{ color: 'var(--ui-green)' }}>
+              <span aria-live="polite" role="status" style={{ color: 'var(--ui-green)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {S.saved}
               </span>
             )}
-          </span>
+          </FileTitle>
         )}
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
+        <span style={ACTIONS}>
           <AddToChat entries={() => [{ abs: doc.abs, is_dir: false }]} pin={doc.pin} />
           {editing ? (
             <>
@@ -498,6 +495,25 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/** A file view's header row. It wraps only when the name would get less than its minimum, moving the buttons down. */
+export const HEADER: CSSProperties = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '8px 20px', fontSize: 12 }
+export const ACTIONS: CSSProperties = { marginLeft: 'auto', display: 'inline-flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }
+const ONE_LINE: CSSProperties = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+
+/** A file view's title: name, agent and path on one line. The path only takes the width left after the name and agent,
+ *  so it gives way first; then the name is cut with an ellipsis (the full name and path on hover). A long name never
+ *  stacks the header one word per line. */
+export function FileTitle({ name, profile, abs, children }: { name: string; profile: string; abs: string; children?: ReactNode }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, flex: '1 1 0px', minWidth: '8em', overflow: 'hidden' }}>
+      <span style={{ ...ONE_LINE, fontWeight: 600, flex: '0 1 auto' }} title={name}>{name}</span>
+      <span style={{ ...muted, whiteSpace: 'nowrap', flexShrink: 0 }}>{profile}</span>
+      <span style={{ ...muted, ...ONE_LINE, fontSize: 11, flex: '1 1 0px' }} title={abs}>{abs}</span>
+      {children}
+    </span>
   )
 }
 

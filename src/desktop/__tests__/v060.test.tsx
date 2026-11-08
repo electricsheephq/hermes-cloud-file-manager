@@ -31,7 +31,7 @@ function setup(all = [entry('old.txt'), entry('docs', true)], picker = false, tr
   const insert = vi.fn()
   render(picker ? <PickerHost /> : <><CloudFilesPage /><Refresh /></>)
   if (picker) act(() => void cloudProvider.run({ insertText: insert }))
-  return { all, insert, hold: () => { hold = true }, release: () => { hold = false; releases.splice(0).forEach(fn => fn()) },
+  return { all, insert, calls: backend.calls, hold: () => { hold = true }, release: () => { hold = false; releases.splice(0).forEach(fn => fn()) },
     refresh: async () => { act(() => context.emitEvent({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1', payload: { name: 'write_file' } })); await advance(1000) } }
 }
 beforeEach(() => {
@@ -69,19 +69,67 @@ it('sort Name to Date keeps the baseline and marks', async () => {
   expect(within(row('new.txt')).getByText('New')).toBeTruthy()
   expect(live()).toContain('Sorted by date modified')
 })
-it('navigating away and back starts a fresh baseline', async () => {
+it('a look into a subfolder and back keeps the folder\'s marks and notice', async () => {
   const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
-  fireEvent.doubleClick(row('docs')); await flush(); noMarks()
-  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush(); noMarks(); expect(live()).toBe('3 items')
+  fireEvent.doubleClick(row('docs')); await flush(); noMarks(); expect(live()).toBe('1 item')
+  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy(); expect(live()).toBe('3 items. 1 new')
 })
-it('a change made while away is not marked on return; later changes are', async () => {
+it('a change made while in a subfolder is marked on return, and so are later ones', async () => {
   const b = setup(); await flush()
   fireEvent.doubleClick(row('docs')); await flush()
-  b.all.push(entry('new.txt')); await advance(10)
-  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush(); noMarks()
-  await b.refresh(); expect(row('new.txt')).toBeTruthy(); noMarks(); expect(live()).toBe('3 items')
+  b.all.push(entry('new.txt')); b.all[0] = entry('old.txt', false, 2); await b.refresh(); noMarks()
+  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy(); expect(within(row('old.txt')).getByText('Updated')).toBeTruthy()
+  expect(live()).toBe('3 items. 1 new, 1 updated')
   b.all.push(entry('next.txt')); await b.refresh()
-  expect(within(row('next.txt')).getByText('New')).toBeTruthy(); expect(within(row('new.txt')).queryByText('New')).toBeNull()
+  expect(within(row('next.txt')).getByText('New')).toBeTruthy(); expect(within(row('new.txt')).getByText('New')).toBeTruthy()
+  expect(live()).toBe('4 items. 2 new, 1 updated')
+})
+it('a folder shown from a listing cached before Cloud Files opened is read again, so the next file is marked', async () => {
+  const b = setup(); await flush(); cleanup(); await advance(10)
+  const reads = () => b.calls.filter(call => call.path === '/list').length
+  const before = reads()
+  render(<><CloudFilesPage /><Refresh /></>); await flush()
+  expect(reads()).toBe(before + 1); noMarks(); expect(live()).toBe('2 items')
+  b.all.push(entry('new.txt')); await b.refresh()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy(); expect(live()).toBe('3 items. 1 new')
+})
+it.each([[19, true], [20, false]])('a folder keeps its snapshot while %i newer folders are opened: %s', async (depth, kept) => {
+  const all = [entry('old.txt'), entry('d', true)]
+  const backend = fakeBackend({ '/list': () => {
+    const { params } = backend.calls.at(-1)!
+    const items = params.path ? [entry(`${params.path}/d`, true)] : all
+    return { ok: true, applied_sort: 'name', entries: items, total: items.length, truncated: false }
+  } })
+  const context = createTestContext({ rest: backend.rest }); bindContext(context.ctx as any)
+  render(<CloudFilesPage />); await flush()
+  all.push(entry('new.txt'))
+  act(() => context.emitEvent({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1', payload: { name: 'write_file' } })); await advance(1000)
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy()
+  const dir = () => [...document.querySelectorAll<HTMLElement>('[data-entry]')].find(el => within(el).queryByText('d'))!
+  for (let i = 0; i < depth; i++) { fireEvent.doubleClick(dir()); await flush() }
+  await advance(10); fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush()
+  expect(within(row('new.txt')).queryByText('New') !== null).toBe(kept)
+})
+it('opening a folder again makes it the most recent: the least recently opened snapshot goes first', async () => {
+  const all = [entry('old.txt'), entry('a', true), entry('b', true)]
+  const backend = fakeBackend({ '/list': () => {
+    const { params } = backend.calls.at(-1)!
+    const items = params.path ? [entry(`${params.path}/d`, true)] : all
+    return { ok: true, applied_sort: 'name', entries: items, total: items.length, truncated: false }
+  } })
+  const context = createTestContext({ rest: backend.rest }); bindContext(context.ctx as any)
+  render(<CloudFilesPage />); await flush()
+  all.push(entry('new.txt'))
+  act(() => context.emitEvent({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1', payload: { name: 'write_file' } })); await advance(1000)
+  const dir = (name: string) => [...document.querySelectorAll<HTMLElement>('[data-entry]')].find(el => within(el).queryByText(name))!
+  fireEvent.doubleClick(dir('a')); await flush()
+  for (let i = 0; i < 18; i++) { fireEvent.doubleClick(dir('d')); await flush() } // a and 18 folders under it: 20 in all
+  fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush() // Home is the most recent again
+  fireEvent.doubleClick(dir('b')); await flush() // the 21st folder: a goes, not Home
+  await advance(10); fireEvent.click(screen.getByRole('button', { name: 'Home' })); await flush()
+  expect(within(row('new.txt')).getByText('New')).toBeTruthy()
 })
 it('opening a file and closing it keeps the marks', async () => {
   const b = setup(); await flush(); b.all.push(entry('new.txt')); await b.refresh()
