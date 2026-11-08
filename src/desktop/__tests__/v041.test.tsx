@@ -364,3 +364,22 @@ describe('the pinned agent and the open file', () => {
     await waitFor(() => expect(pdf.getAttribute('aria-selected')).toBe('true'))
   })
 })
+
+describe('file view headers', () => {
+  // jsdom has no layout: check the styles that keep a long name on one line, cut with an ellipsis, path first.
+  const oneLine = (el: HTMLElement) => {
+    expect(el.style.whiteSpace).toBe('nowrap'); expect(el.style.textOverflow).toBe('ellipsis')
+    expect(el.style.overflow).toBe('hidden'); expect(el.style.minWidth).toBe('0px')
+  }
+  it.each(['data.json', 'readme.md'])('%s: the name and path stay on one line, the path gives way before the name, and hover shows both in full', async name => {
+    page(); await open(name)
+    const header = screen.getByRole('button', { name: S.close }).parentElement!
+    const title = header.querySelector<HTMLElement>(`[title="${name}"]`)!
+    oneLine(title)
+    const path = header.querySelector<HTMLElement>(`[title="/home/agent/${name}"]`)!
+    // The path only takes the width left after the name: it shows when there is room and gives way before the name.
+    oneLine(path); expect(path.style.flex).toBe('1 1 0px'); expect(title.style.flex).toBe('0 1 auto')
+    expect(title.parentElement!.style.minWidth).toBe('8em'); expect(title.parentElement!.style.flex).toBe('1 1 0px')
+    expect(title.parentElement!.parentElement).toBe(header); expect(header.style.flexWrap).toBe('wrap')
+  })
+})
