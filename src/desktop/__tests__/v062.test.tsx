@@ -6,6 +6,7 @@ import { $pickState, RELAY_CHANNEL, startEventRelay } from '../browser'
 import { CloudFilesPage } from '../page'
 import { fakeBackend } from './fake-backend'
 import { createTestContext, resetHost, resetQueryCache } from './sdk-mock'
+import plugin from '../plugin'
 
 const entry = (rel: string): Entry => ({ name: rel, rel, abs: `/home/agent/${rel}`, is_dir: false, size: 1, mtime: 0 })
 const wait = (ms: number) => act(() => new Promise<void>(resolve => setTimeout(resolve, ms)))
@@ -57,4 +58,31 @@ it('a chat in another window refreshes the open folder of the same agent, and on
   other.postMessage({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1' })
   await waitFor(() => expect(reads()).toBe(2), { timeout: 2500 })
   stop()
+})
+
+it('a chat open in this window and another refreshes once per burst', async () => {
+  const backend = fakeBackend({ '/list': () => ({ ok: true, applied_sort: 'name', entries: [entry('old.txt')], total: 1, truncated: false }) })
+  const context = createTestContext({ rest: backend.rest })
+  bindContext(context.ctx as any)
+  const stop = startEventRelay(context.ctx as any)
+  render(<CloudFilesPage />)
+  const reads = () => backend.calls.filter(call => call.path === '/list').length
+  await waitFor(() => expect(reads()).toBe(1))
+  act(() => context.emitEvent({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1', payload: { name: 'write_file' } }))
+  otherWindow().postMessage({ type: 'tool.complete', profile: 'default', connectionId: 'conn-1' }) // the same chat, seen there
+  await waitFor(() => expect(reads()).toBe(2), { timeout: 2500 })
+  await wait(1300); expect(reads()).toBe(2)
+  stop()
+})
+
+it('the plugin starts the relay when it loads and stops it when it is disposed', async () => {
+  const context = createTestContext()
+  plugin.register(context.ctx as any)
+  const got: unknown[] = []
+  otherWindow().onmessage = event => got.push(event.data)
+  const write = () => act(() => context.emitEvent({ type: 'tool.complete', profile: '', connectionId: 'conn-1', payload: { name: 'write_file' } }))
+  write()
+  await waitFor(() => expect(got).toEqual([{ type: 'tool.complete', profile: 'default', connectionId: 'conn-1' }]))
+  context.dispose(); write()
+  await wait(50); expect(got).toHaveLength(1)
 })

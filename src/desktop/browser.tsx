@@ -101,6 +101,7 @@ const FILE_EVENTS = ['tool.complete', 'subagent.complete'] as const
 /** A tool or subagent run that may have changed the agent's files (a subagent's tools are not visible). */
 const mayChangeFiles = (type: string, event: GatewayEventLike) =>
   event.profile !== undefined && (type !== 'tool.complete' || toolMayChangeFiles(event.payload))
+const isFileEvent = (type: unknown): type is (typeof FILE_EVENTS)[number] => FILE_EVENTS.includes(type as never)
 
 // Desktop sends a chat's events only to the window showing it. Each window relays the ones that may change files to the
 // plugin in its other windows, so Cloud Files open in one window refreshes for a chat in another. Only the event type
@@ -108,18 +109,21 @@ const mayChangeFiles = (type: string, event: GatewayEventLike) =>
 export const RELAY_CHANNEL = 'hermes-cloud-file-manager:file-events'
 type Relayed = { type: string; connectionId?: string; profile: string }
 const relayed = new Set<(type: string, event: GatewayEventLike) => void>()
-/** Starts this window's relay for one plugin load and returns its stop; a no-op without BroadcastChannel or live events. */
+/** Starts this window's relay for one plugin load and returns its stop. Without BroadcastChannel or live events, or if
+ *  the channel can't open, it does nothing: the plugin works as before in each window on its own. */
 export function startEventRelay(ctx: PluginContext): () => void {
   if (typeof BroadcastChannel !== 'function' || typeof ctx.onEvent !== 'function') return () => undefined
-  const channel = new BroadcastChannel(RELAY_CHANNEL)
+  let channel: BroadcastChannel
+  try { channel = new BroadcastChannel(RELAY_CHANNEL) } catch { return () => undefined }
   channel.onmessage = ({ data }: MessageEvent<Relayed>) => {
-    if (!data || typeof data.type !== 'string' || typeof data.profile !== 'string') return
+    if (!data || !isFileEvent(data.type) || typeof data.profile !== 'string') return
     if (data.connectionId !== undefined && typeof data.connectionId !== 'string') return
     for (const listener of relayed) listener(data.type, { type: data.type, connectionId: data.connectionId, profile: data.profile })
   }
   const disposers = FILE_EVENTS.map(type => ctx.onEvent!(type, event => {
     if (!mayChangeFiles(type, event)) return
-    const message: Relayed = { type, profile: event.profile! }
+    // The direct path reads an absent or empty profile as the default agent; a relayed one travels as that.
+    const message: Relayed = { type, profile: (event.profile ?? '').trim() || 'default' }
     if (typeof event.connectionId === 'string') message.connectionId = event.connectionId
     channel.postMessage(message)
   }))

@@ -779,19 +779,25 @@ function toolMayChangeFiles(payload) {
 var LIST_CACHE_FOLLOWUP_MS = 5500;
 var FILE_EVENTS = ["tool.complete", "subagent.complete"];
 var mayChangeFiles = (type, event) => event.profile !== void 0 && (type !== "tool.complete" || toolMayChangeFiles(event.payload));
+var isFileEvent = (type) => FILE_EVENTS.includes(type);
 var RELAY_CHANNEL = "hermes-cloud-file-manager:file-events";
 var relayed = /* @__PURE__ */ new Set();
 function startEventRelay(ctx) {
   if (typeof BroadcastChannel !== "function" || typeof ctx.onEvent !== "function") return () => void 0;
-  const channel = new BroadcastChannel(RELAY_CHANNEL);
+  let channel;
+  try {
+    channel = new BroadcastChannel(RELAY_CHANNEL);
+  } catch {
+    return () => void 0;
+  }
   channel.onmessage = ({ data }) => {
-    if (!data || typeof data.type !== "string" || typeof data.profile !== "string") return;
+    if (!data || !isFileEvent(data.type) || typeof data.profile !== "string") return;
     if (data.connectionId !== void 0 && typeof data.connectionId !== "string") return;
     for (const listener of relayed) listener(data.type, { type: data.type, connectionId: data.connectionId, profile: data.profile });
   };
   const disposers = FILE_EVENTS.map((type) => ctx.onEvent(type, (event) => {
     if (!mayChangeFiles(type, event)) return;
-    const message = { type, profile: event.profile };
+    const message = { type, profile: (event.profile ?? "").trim() || "default" };
     if (typeof event.connectionId === "string") message.connectionId = event.connectionId;
     channel.postMessage(message);
   }));
