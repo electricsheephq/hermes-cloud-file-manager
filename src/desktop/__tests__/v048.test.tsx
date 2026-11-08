@@ -174,8 +174,9 @@ it('keeps restored picker selections against old cache, then prunes on a fresh c
   act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'other' })); await flush(); await advance(1)
   expect(screen.queryByRole('status')).toBeNull()
   const start = lists(backend)
+  // Back on the agent its folder shows from the old cache, and is read once more for the change marks' snapshot.
   act(() => host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })); await flush()
-  expect(lists(backend)).toBe(start)
+  expect(lists(backend)).toBe(start + 1)
   expect(screen.getByRole('status').textContent).toBe('1 selected')
   backend.ctx.rest = async () => listing([]) // the selected file has been deleted
   act(() => backend.emitEvent(event())); await advance(1000)

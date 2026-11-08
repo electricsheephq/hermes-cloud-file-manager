@@ -963,6 +963,7 @@ function useDebounced(value, ms) {
   return settled;
 }
 var $pickState = atom3(null);
+var CHANGE_BASES_MAX = 20;
 function useBrowser(roots, mode) {
   const [connectionId, profile] = useScope();
   const info = useValue($scopeInfo)[scopeKey(connectionId, profile)];
@@ -997,7 +998,19 @@ function useBrowser(roots, mode) {
   const debounced = useDebounced(search.trim(), DEBOUNCE_MS);
   const focusNext = useRef(null);
   const [shown, setShown] = useState(null);
-  const changeBase = useRef(null);
+  const changeBases = useRef(/* @__PURE__ */ new Map());
+  const changeBase = (identity) => {
+    const bases = changeBases.current;
+    let base = bases.get(identity);
+    if (base) bases.delete(identity);
+    else base = { openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0", notice: "" };
+    bases.set(identity, base);
+    for (const key of bases.keys()) {
+      if (bases.size <= CHANGE_BASES_MAX) break;
+      bases.delete(key);
+    }
+    return base;
+  };
   const navigate = (next) => {
     setPath(next);
     setSearch("");
@@ -1266,13 +1279,17 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     if (b.sort === "mtime") return listing.data?.entries ?? [];
     return sortEntries(listing.data?.entries ?? [], b.roots.highlights ?? [], b.path === "");
   }, [searching, found.data, listing.data, b.roots.highlights, b.path, b.sort]);
-  if (b.changeBase.current?.identity !== identity) b.changeBase.current = { identity, openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0" };
-  const base = b.changeBase.current;
+  const base = b.changeBase(identity);
   const data = !searching && !listing.error && listing.data?.identity === identity ? listing.data : void 0;
-  if (data && !base.mtimes && data.readAt >= base.openedAt && !(b.sort === "mtime" && data.applied_sort === void 0)) {
+  const dateless = b.sort === "mtime" && data?.applied_sort === void 0;
+  if (data && !base.mtimes && data.readAt >= base.openedAt && !dateless) {
     base.mtimes = new Map(data.entries.map((entry) => [entry.rel, entry.mtime]));
     base.complete = !data.truncated && data.entries.length >= data.total;
   }
+  const unseeded = Boolean(data && !base.mtimes && data.readAt < base.openedAt && !listing.isFetching);
+  useEffect(() => {
+    if (unseeded) void listing.refetch();
+  }, [unseeded, identity]);
   const marks = /* @__PURE__ */ new Map();
   let newCount = 0, updatedCount = 0;
   if (data && base.mtimes) for (const entry of data.entries) {
@@ -1285,14 +1302,15 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       updatedCount++;
     }
   }
-  const [changeNotice, setChangeNotice] = useState({ base: null, text: "" });
+  const [, noticeChanged] = useState(0);
   useEffect(() => {
     if (!data) return;
     const counts = `${newCount}|${updatedCount}`;
     if (counts === base.counts) return;
     base.counts = counts;
-    setChangeNotice({ base, text: S.changedCounts(newCount, updatedCount) });
-  }, [data, identity, newCount, updatedCount]);
+    base.notice = S.changedCounts(newCount, updatedCount);
+    noticeChanged((n) => n + 1);
+  }, [data, base, newCount, updatedCount]);
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
@@ -1377,7 +1395,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     /* @__PURE__ */ jsxs("div", { "aria-live": "polite", style: hidden, children: [
       announce,
       !searching && sortNotice && `. ${sortNotice}`,
-      data && changeNotice.base === base && changeNotice.text && `. ${changeNotice.text}`
+      data && base.notice && `. ${base.notice}`
     ] })
   ] });
 }
