@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.6.1] - 2026-11-08
+
+Desktop only: the agent's side is unchanged apart from its version number.
+
+### Fixed
+- **New and Updated marks stay with the folder.** Opening a subfolder or a file and coming back keeps the folder's marks, and changes made while you were away are marked too. Each folder's snapshot is kept from its first open while Cloud Files or the + → Cloud picker stays open (the 20 most recent folders).
+- **The agent's first new file is marked.** A folder shown from a listing cached a moment earlier (reopening Cloud Files or switching agents within a minute) is read once more on open, so the next file the agent writes is marked New instead of going into the snapshot.
+- **Long file names in the preview and editor.** The header keeps the name, agent and path on one line: the path gives way first, then the name is cut with an ellipsis (hover for the full name). Before, a narrow or zoomed pane stacked the name one word per line.
+
 ## [0.6.0] - 2026-11-08
 
 Desktop only: the agent's side is unchanged apart from its version number.
