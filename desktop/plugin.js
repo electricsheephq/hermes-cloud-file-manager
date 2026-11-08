@@ -1003,7 +1003,7 @@ function useBrowser(roots, mode) {
     const bases = changeBases.current;
     let base = bases.get(identity);
     if (base) bases.delete(identity);
-    else base = { openedAt: Date.now(), mtimes: null, complete: false, counts: "0|0", notice: "" };
+    else base = { openedAt: Date.now(), mtimes: null, complete: false };
     bases.set(identity, base);
     for (const key of bases.keys()) {
       if (bases.size <= CHANGE_BASES_MAX) break;
@@ -1302,15 +1302,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
       updatedCount++;
     }
   }
-  const [, noticeChanged] = useState(0);
-  useEffect(() => {
-    if (!data) return;
-    const counts = `${newCount}|${updatedCount}`;
-    if (counts === base.counts) return;
-    base.counts = counts;
-    base.notice = S.changedCounts(newCount, updatedCount);
-    noticeChanged((n) => n + 1);
-  }, [data, base, newCount, updatedCount]);
+  const changeNotice = data ? S.changedCounts(newCount, updatedCount) : "";
   const truncated = searching ? found.data?.truncated : listing.data?.truncated;
   const reason = searching ? found.data?.reason : void 0;
   const stopped = reason === "time" || reason === "visits";
@@ -1395,7 +1387,7 @@ function EntryList({ b, height, onOpenFile, dragOut }) {
     /* @__PURE__ */ jsxs("div", { "aria-live": "polite", style: hidden, children: [
       announce,
       !searching && sortNotice && `. ${sortNotice}`,
-      data && base.notice && `. ${base.notice}`
+      changeNotice && `. ${changeNotice}`
     ] })
   ] });
 }
