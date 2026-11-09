@@ -16,16 +16,17 @@ hermes plugins install electricsheephq/hermes-cloud-file-manager --enable
 Run it on the machine your agent's gateway runs on. It needs no API keys; if it asks to install Node dependencies,
 answer **No**. Then add the desktop half in Hermes Desktop on each computer that uses it: in **Capabilities →
 Plugins**, choose **+ Add to this Agent** on the Cloud File Manager catalog entry, and switch on **Desktop** on the
-plugin's card. Other ways to install are under [Install](#install).
+plugin's card. On Hermes 0.21.5 and evaOS, restart the agent's gateway once. Other ways to install are under
+[Install](#install).
 
 **Try it**
 
 1. Install it as above. **Cloud Files** appears in Hermes Desktop's sidebar.
-2. Drag a folder from your computer onto the Cloud Files page, or ask the agent in a Desktop chat: "Summarise
-   notes.txt into a short note and hand it to me."
+2. Drag a folder with a text file in it from your computer onto the Cloud Files page. Then ask the agent in a Desktop
+   chat: "Summarise notes.txt into a short note and hand it to me."
 3. Files the agent writes are marked **New** or **Updated** as it works, and its reply ends with a card for the file:
-   **Open**, **Preview**, **Download** or **Add to chat**. Edit a Markdown file and you review your changes before
-   **Save**.
+   **Open**, **Preview**, **Download** or **Add to chat** (cards need Hermes 0.21.6 or newer; on 0.21.5, open the
+   note in Cloud Files). Edit a Markdown file and you review your changes before **Save**.
 
 ![Cloud Files beside the chat: the agent has just sorted the folder and written a summary, marked New and Updated, sorted by date](docs/media/screenshot-live-marks.png)
 
@@ -182,7 +183,8 @@ installing the desktop half is harmless for your other agents.
 
   Known issue: in a split layout with two agents' chats side by side, a drag started while one agent's chat has focus
   can be dropped into the other agent's chat. The reference then names a path on the wrong machine (no file moves
-  between agents). Use **Add to chat**, or click into the target chat before you drag
+  between agents). Check that the chat and Cloud Files show the same agent, then use **Add to chat**, or click into
+  the target chat before you drag
   ([#55](https://github.com/electricsheephq/hermes-cloud-file-manager/issues/55)).
 
 ![The agent's summary open beside the chat, rendered as Markdown](docs/media/screenshot-preview.png)
