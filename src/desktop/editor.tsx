@@ -173,7 +173,7 @@ function load(doc: Doc, setDoc: SetDoc) {
   const id = nextId()
   setDoc({ ...doc, id, status: 'loading', error: undefined, mode: 'view', save: null })
   const save = captureFor([doc.pin.connectionId ?? 'local', doc.pin.profile])
-  call<FileResponse>(query('/file', { root: doc.root, path: doc.path })).then(
+  call<FileResponse>(query('/file', { root: doc.root, path: doc.path, ...(doc.rootPath ? { root_path: doc.rootPath } : {}) })).then(
     res => {
       const { text, ...flags } = decodeText(res.text)
       setDoc(d => (d?.id === id ? { ...d, ...flags, status: 'ready', base: text, draft: text, sha: res.sha256, save } : d))

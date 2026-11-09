@@ -600,15 +600,17 @@ function UploadDrawer({ roots, onSettled, onShow }: { roots: RootsResponse; onSe
   if (!batch || !snap.items.length) return null
   const sum = summarize(snap)
   const completed = snap.items.filter(item => item.status === 'done')
-  const knownRoots = completed.every(item => roots.roots.find(root => root.id === item.root)?.path?.startsWith('/'))
+  // The folder each item was uploaded to, as captured when the batch started (settings may have changed since).
+  const rootPathOf = (item: UploadItem) => item.rootPath ?? roots.roots.find(root => root.id === item.root)?.path
+  const knownRoots = completed.every(item => rootPathOf(item)?.startsWith('/'))
   const references = () => {
     const entries = new Map<string, Pick<Entry, 'abs' | 'is_dir'>>()
     for (const item of completed) {
-      const root = roots.roots.find(root => root.id === item.root)!
+      const rootPath = rootPathOf(item)!
       const top = item.topLevel ?? item.path
       const is_dir = Boolean(item.isDir || top !== item.path)
       const rel = is_dir ? top : joinPath(parentPath(item.path), item.savedAs ?? baseName(item.path))
-      const abs = `/${joinPath(root.path, rel)}`
+      const abs = `/${joinPath(rootPath, rel)}`
       entries.set(abs, { abs, is_dir })
     }
     return [...entries.values()]

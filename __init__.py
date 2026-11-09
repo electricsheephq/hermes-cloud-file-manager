@@ -13,6 +13,7 @@ Skills and prompt sections are not declared capabilities, so the loader and the 
 an empty capability set.
 """
 
+import os
 from pathlib import Path
 
 _REPORT_SKILL = "cloud-file-manager-report-problem"
@@ -20,6 +21,7 @@ _REPORT_DESC = "Cloud File Manager: report a bug or problem"
 _SECTION_ID = "cloud-file-manager"
 _MAX_ROOTS = 10
 _MAX_ROOT_CHARS = 300
+_MAX_LIST_CHARS = 2400  # the whole section stays under the host's 4,000-character cap
 
 
 def _roots(ctx):
@@ -36,7 +38,7 @@ def _roots(ctx):
             continue
         posix = value.startswith("/")
         drive = len(value) > 2 and value[0].isalpha() and value[1] == ":" and value[2] in "\\/"
-        if posix or drive:
+        if (posix or drive) and os.path.isdir(value):
             roots.append(value)
         if len(roots) == _MAX_ROOTS:
             break
@@ -47,8 +49,14 @@ def prompt_section(ctx, info):
     """Desktop chats only: other surfaces can't draw the card, and their users don't see Cloud Files."""
     if str(info.get("platform") or "") != "desktop":
         return ""
-    roots = _roots(ctx)
-    where = ("these folders on this machine: " + ", ".join(roots)) if roots else "the agent's working folder"
+    roots, shown = _roots(ctx), []
+    for value in roots:
+        if len(", ".join(shown + [value])) > _MAX_LIST_CHARS:
+            break
+        shown.append(value)
+    rest = len(roots) - len(shown)
+    listed = ", ".join(shown) + (f" and {rest} more" if rest else "")
+    where = ("these folders on this machine: " + listed) if roots else "the agent's working folder"
     return (
         "Cloud Files: the user has a Cloud Files panel in Hermes Desktop that shows " + where + ". "
         "Files you create or change there appear in it marked New or Updated. Files the user uploads land in "
@@ -70,7 +78,7 @@ def register(ctx):
     # Hosts without plugin prompt sections (before 0.23) keep working without the card instructions.
     if hasattr(ctx, "register_system_prompt_section"):
         try:
-            ctx.register_system_prompt_section(_SECTION_ID, lambda info: prompt_section(ctx, info), max_chars=1500)
+            ctx.register_system_prompt_section(_SECTION_ID, lambda info: prompt_section(ctx, info), max_chars=4000)
         except (TypeError, ValueError):
             pass
     return None

@@ -39,6 +39,7 @@ export const S = {
   cardIn: (folder: string) => `in ${folder}`,
   cardOtherAgent: (profile: string) => `Switch to ${agentName(profile)} to open this file.`,
   cardOutside: 'Not in a folder Cloud Files shows',
+  cardFocusChat: 'Select this chat to open the file',
   cardGone: 'No longer there',
   cardUpdate: 'Update Cloud File Manager on the agent’s machine to open this here',
   cardUnavailable: 'Cloud Files can’t reach this agent right now',

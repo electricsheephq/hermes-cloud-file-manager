@@ -116,7 +116,7 @@ describe('the read-only viewer', () => {
     await open('data.json')
     expect(document.querySelector('pre')?.textContent).toBe('{"a": 1}\n')
     expect(previews()).toHaveLength(1)
-    expect(previews()[0].params).toEqual({ root: 'home', path: 'data.json' })
+    expect(previews()[0].params).toEqual({ root: 'home', path: 'data.json', root_path: '/home/agent' })
     expect(previews()[0].opts).toBeUndefined() // text: the default timeout
     expect(screen.getByText('/home/agent/data.json')).toBeTruthy()
     for (const name of ['Edit', 'Save', 'Review & save']) expect(button(name)).toBeNull()

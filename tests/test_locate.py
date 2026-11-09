@@ -52,3 +52,17 @@ def test_symlink_leaving_the_root_is_not_followed(client, fs, tmp_path):
     (root / "link").symlink_to(outside, target_is_directory=True)
     body = get(client, "locate", path=str(root / "link" / "x.md"))
     assert body["ok"] is False and body["code"] == "outside_root"
+
+
+def test_nul_byte_is_refused_not_a_server_error(client, fs, tmp_path):
+    error(get(client, "locate", path=str(tmp_path / "a\x00b")), "bad_path")
+
+
+def test_nested_root_shows_what_the_outer_root_hides(client, fs, tmp_path):
+    root, cfg = fs
+    inner = root / ".notes"
+    inner.mkdir()
+    (inner / "x.md").write_text("x")
+    cfg["plugins"]["entries"]["hermes-cloud-file-manager"]["settings"]["roots"] = [str(root), str(inner)]
+    body = get(client, "locate", path=str(inner / "x.md"))
+    assert body["ok"] is True and body["root"] in {"r0", "r1"} and body["entry"]["name"] == "x.md"

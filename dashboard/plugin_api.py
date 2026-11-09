@@ -530,24 +530,29 @@ def locate(path: str):
     cfg = _dict(_load_config())
     if not _supported(cfg):
         raise GuardError("unsupported_backend", "Files are available only with the local terminal backend.")
-    target = Path(path) if isinstance(path, str) and _encodable(path) and len(path) <= 4096 else None
+    target = Path(path) if isinstance(path, str) and _encodable(path) and len(path) <= 4096 and "\0" not in path else None
     if target is None or not target.is_absolute():
         raise GuardError("bad_path", "The path must be an absolute path on the agent's machine.")
-    for root in _roots(cfg):
+    refused = GuardError("outside_root", "The file isn't in a folder Cloud Files shows.")
+    for root in _roots(cfg):  # nested roots: a root that refuses the path leaves it to the next one
         rel = _lexical_rel(target, root.path)
         if rel is None:
             rel = _lexical_rel(Path(os.path.realpath(target)), Path(os.path.realpath(root.path)))
         if rel is None:
             continue
-        resolved = _resolve(root, rel, for_write=False)
-        if not os.path.lexists(resolved):
-            raise GuardError("not_found", "The file no longer exists.")
-        entry = _entry(root, resolved) if rel else {"name": root.label, "rel": "", "abs": str(root.path),
-                                                     "is_dir": True, "size": None, "mtime": None, "link_outside": False}
-        if entry is None:
-            raise GuardError("not_found", "The file isn't shown in Cloud Files.")
+        try:
+            resolved = _resolve(root, rel, for_write=False)
+            if not os.path.lexists(resolved):
+                raise GuardError("not_found", "The file no longer exists.")
+            entry = _entry(root, resolved) if rel else {"name": root.label, "rel": "", "abs": str(root.path),
+                                                         "is_dir": True, "size": None, "mtime": None, "link_outside": False}
+            if entry is None:
+                raise GuardError("not_found", "The file isn't shown in Cloud Files.")
+        except GuardError as error:
+            refused = error
+            continue
         return {"ok": True, "root": root.id, "root_label": root.label, "root_path": str(root.path), "entry": entry}
-    raise GuardError("outside_root", "The file isn't in a folder Cloud Files shows.")
+    raise refused
 
 
 def _lexical_rel(target, base):
@@ -560,8 +565,8 @@ def _lexical_rel(target, base):
 
 @router.get("/file")
 @_protocol
-def read_file(root: str, path: str):
-    selected, _ = _request_root(root)
+def read_file(root: str, path: str, root_path: str | None = None):
+    selected, _ = _request_root(root, root_path)
     target = _resolve(selected, path, for_write=False)
     _edit_suffix(target)
     try:
@@ -584,8 +589,8 @@ def _preview_size(size):
 
 @router.get("/file/preview")
 @_protocol
-def preview_file(root: str, path: str):
-    selected, _ = _request_root(root)
+def preview_file(root: str, path: str, root_path: str | None = None):
+    selected, _ = _request_root(root, root_path)
     target = _resolve(selected, path, for_write=False)
     ext = target.suffix.lower().lstrip(".")
     if ext in PREVIEW_TEXT_EXTS:

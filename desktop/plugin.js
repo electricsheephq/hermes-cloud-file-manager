@@ -45,6 +45,7 @@ var S = {
   cardIn: (folder) => `in ${folder}`,
   cardOtherAgent: (profile) => `Switch to ${agentName(profile)} to open this file.`,
   cardOutside: "Not in a folder Cloud Files shows",
+  cardFocusChat: "Select this chat to open the file",
   cardGone: "No longer there",
   cardUpdate: "Update Cloud File Manager on the agent\u2019s machine to open this here",
   cardUnavailable: "Cloud Files can\u2019t reach this agent right now",
@@ -1906,7 +1907,7 @@ function load(doc, setDoc) {
   const id = nextId();
   setDoc({ ...doc, id, status: "loading", error: void 0, mode: "view", save: null });
   const save = captureFor([doc.pin.connectionId ?? "local", doc.pin.profile]);
-  call(query("/file", { root: doc.root, path: doc.path })).then(
+  call(query("/file", { root: doc.root, path: doc.path, ...doc.rootPath ? { root_path: doc.rootPath } : {} })).then(
     (res) => {
       const { text, ...flags } = decodeText(res.text);
       setDoc((d) => d?.id === id ? { ...d, ...flags, status: "ready", base: text, draft: text, sha: res.sha256, save } : d);
@@ -2185,7 +2186,7 @@ function load2(doc, setDoc) {
   setDoc({ ...doc, id, status: "loading", error: void 0, save: null });
   const save = captureFor([doc.pin.connectionId ?? "local", doc.pin.profile]);
   const big = doc.preview?.kind !== "text";
-  call(query("/file/preview", { root: doc.root, path: doc.path }), big ? { timeoutMs: BIG_TIMEOUT_MS } : void 0).then(
+  call(query("/file/preview", { root: doc.root, path: doc.path, ...doc.rootPath ? { root_path: doc.rootPath } : {} }), big ? { timeoutMs: BIG_TIMEOUT_MS } : void 0).then(
     (res) => {
       const preview = res.kind === "text" ? { kind: res.kind, text: res.text ?? "", truncated: Boolean(res.truncated), size: res.size } : { kind: res.kind, blob: toBlob(res.data ?? "", res.mime ?? ""), size: res.size };
       setDoc((d) => d?.id === id ? { ...d, status: "ready", save, preview } : d);
@@ -2755,15 +2756,16 @@ function UploadDrawer({ roots, onSettled, onShow }) {
   if (!batch || !snap.items.length) return null;
   const sum = summarize(snap);
   const completed = snap.items.filter((item) => item.status === "done");
-  const knownRoots = completed.every((item) => roots.roots.find((root) => root.id === item.root)?.path?.startsWith("/"));
+  const rootPathOf = (item) => item.rootPath ?? roots.roots.find((root) => root.id === item.root)?.path;
+  const knownRoots = completed.every((item) => rootPathOf(item)?.startsWith("/"));
   const references = () => {
     const entries = /* @__PURE__ */ new Map();
     for (const item of completed) {
-      const root = roots.roots.find((root2) => root2.id === item.root);
+      const rootPath = rootPathOf(item);
       const top = item.topLevel ?? item.path;
       const is_dir = Boolean(item.isDir || top !== item.path);
       const rel = is_dir ? top : joinPath(parentPath(item.path), item.savedAs ?? baseName(item.path));
-      const abs = `/${joinPath(root.path, rel)}`;
+      const abs = `/${joinPath(rootPath, rel)}`;
       entries.set(abs, { abs, is_dir });
     }
     return [...entries.values()];
@@ -3043,6 +3045,7 @@ var MAX_PATH = 4096;
 var REVEAL_TTL_MS = 3e4;
 var $reveal = atom7(null);
 var NO_OWNER2 = atom7(null);
+var NO_SESSION2 = atom7(null);
 function validPath(value) {
   return typeof value === "string" && value.length > 0 && value.length <= MAX_PATH && !/[\r\n\0]/.test(value) && (value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value));
 }
@@ -3080,10 +3083,12 @@ function FileCard({ attrs, source, streaming, sessionId }) {
   const owner = useValue6(host9.state.focusedSessionOwner ?? NO_OWNER2);
   const pin = { connectionId: connectionId === "local" ? null : connectionId, profile };
   const otherAgent = Boolean(owner && ownerMismatch(owner, host9.state.connectionId.get(), host9.state.profile.get()));
+  const activeSession = useValue6(host9.state.activeSessionId ?? NO_SESSION2);
+  const elsewhere = sessionId !== void 0 && sessionId !== null && activeSession !== null && sessionId !== activeSession;
   const query2 = useQuery3({
     queryKey: ["hcfm", connectionId, profile, "locate", path],
     queryFn: () => call(`/locate?path=${encodeURIComponent(path)}`),
-    enabled: valid && !streaming && !otherAgent,
+    enabled: valid && !streaming && !otherAgent && !elsewhere,
     retry: false
   });
   if (!valid) return /* @__PURE__ */ jsx8("code", { style: muted6, children: source });
@@ -3092,6 +3097,12 @@ function FileCard({ attrs, source, streaming, sessionId }) {
     return /* @__PURE__ */ jsxs7("div", { style: box, children: [
       /* @__PURE__ */ jsx8(Head, { icon: "file", name, title: path }),
       /* @__PURE__ */ jsx8("span", { style: muted6, children: S.cardOtherAgent(owner.profile) })
+    ] });
+  }
+  if (elsewhere) {
+    return /* @__PURE__ */ jsxs7("div", { style: box, children: [
+      /* @__PURE__ */ jsx8(Head, { icon: "file", name, title: path }),
+      /* @__PURE__ */ jsx8("span", { style: muted6, children: S.cardFocusChat })
     ] });
   }
   if (streaming || !query2.data && !query2.error) {

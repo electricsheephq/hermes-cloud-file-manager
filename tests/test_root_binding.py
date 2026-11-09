@@ -72,3 +72,14 @@ def test_upload_mkdir_and_drive_import_refuse_a_stale_root(client, two_roots):
     error(post(client, "mkdir", root="r0", root_path=stale, path="made"), "root_changed")
     error(post(client, "drive/import", id="1AbCdEfGhIjKlMnOpQrStUvWxYz0", root="r0", root_path=stale), "root_changed")
     assert not (second / "made").exists() and not (second / "new.txt").exists()
+
+
+def test_reads_refuse_a_stale_root_and_older_desktops_still_read(client, two_roots):
+    first, second, cfg = two_roots
+    (first / "pic.json").write_text("{}")
+    reorder(cfg, second, first)
+    stale = str(first)
+    error(get(client, "file", root="r0", root_path=stale, path="report.md"), "root_changed")
+    error(get(client, "file/preview", root="r0", root_path=stale, path="report.md"), "root_changed")
+    assert get(client, "file", root="r1", root_path=stale, path="report.md")["ok"] is True
+    assert get(client, "file", root="r0", path="report.md")["ok"] is True

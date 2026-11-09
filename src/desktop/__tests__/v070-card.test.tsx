@@ -17,7 +17,7 @@ function setup(locate: (opts?: any) => any = () => located()) {
   return { backend, insertText, locates: () => backend.calls.filter(c => c.path === '/locate') }
 }
 const card = (path: string, extra: Partial<{ streaming: boolean; sessionId: null | string }> = {}) =>
-  <FileCard attrs={{ path }} source={`::cloud-file{path="${path}"}`} streaming={false} sessionId="sess-9" {...extra} />
+  <FileCard attrs={{ path }} source={`::cloud-file{path="${path}"}`} streaming={false} sessionId="session-1" {...extra} />
 
 beforeEach(() => {
   resetHost()
@@ -57,7 +57,7 @@ it('shows the file with Open, Preview, Download and Add to chat; Add to chat lan
   fireEvent.click(screen.getByRole('button', { name: S.download }))
   expect(save).toHaveBeenCalledWith('/home/agent/readme.md', 'readme.md')
   fireEvent.click(screen.getByRole('button', { name: S.addToChat }))
-  await waitFor(() => expect(h.insertText).toHaveBeenCalledWith('sess-9', '@file:/home/agent/readme.md', { mode: 'inline' }))
+  await waitFor(() => expect(h.insertText).toHaveBeenCalledWith('session-1', '@file:/home/agent/readme.md', { mode: 'inline' }))
 })
 
 it('a folder card offers Open and Add to chat only', async () => {
@@ -122,4 +122,14 @@ it('the page ignores a stale reveal, and warns about one for another agent or a 
   act(() => $reveal.set({ pin: { connectionId: 'conn-1', profile: 'default' }, root: 'home', rootPath: '/elsewhere', entry: README, preview: true, at: Date.now() }))
   await waitFor(() => expect(notify).toHaveBeenCalledWith({ kind: 'warning', message: S.cardFolderChanged }))
   expect(screen.queryByText('Hello from the agent.')).toBeNull()
+})
+
+it('a card in a chat that is not the focused one does not look the file up', async () => {
+  const h = setup()
+  host.state.activeSessionId.set('another-session')
+  render(card('/home/agent/readme.md'))
+  expect(screen.getByText(S.cardFocusChat)).toBeTruthy()
+  expect(h.locates()).toHaveLength(0)
+  act(() => host.state.activeSessionId.set('session-1'))
+  expect(await screen.findByRole('button', { name: S.open })).toBeTruthy()
 })

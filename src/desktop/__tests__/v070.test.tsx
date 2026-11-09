@@ -110,3 +110,16 @@ it('counts a folder-only failure without adding it to the file totals', async ()
   expect(await screen.findByText('1 failed')).toBeTruthy()
   expect(drawer().queryByRole('button', { name: S.addToChat })).toBeNull()
 })
+
+it('Add to chat after an upload uses the folder the batch went to, even after settings change', async () => {
+  const h = uploads({ ...ROOTS, roots: [{ id: 'home', label: 'Home', path: '/elsewhere', notes: {} }] } as any)
+  await screen.findByText('notes.txt')
+  for (const item of h.batch.getSnapshot().items) (item as any).rootPath = '/home/agent'
+  let running!: Promise<void>
+  act(() => { running = h.batch.start() })
+  await act(async () => { h.release(); await running })
+  fireEvent.click(drawer().getByRole('button', { name: S.addToChat }))
+  await waitFor(() => expect(h.insertText).toHaveBeenCalledTimes(1))
+  expect(h.insertText.mock.calls[0][1]).toContain('@file:/home/agent/docs/two.txt')
+  expect(h.insertText.mock.calls[0][1]).not.toContain('/elsewhere')
+})

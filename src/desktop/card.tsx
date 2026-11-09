@@ -46,6 +46,7 @@ export interface DirectiveProps {
 }
 
 const NO_OWNER = atom<null | { connectionId: null | string; profile: string }>(null)
+const NO_SESSION = atom<null | string>(null)
 
 export function validPath(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= MAX_PATH && !/[\r\n\0]/.test(value)
@@ -92,10 +93,14 @@ export function FileCard({ attrs, source, streaming, sessionId }: DirectiveProps
   const owner = useValue((host.state as unknown as { focusedSessionOwner?: typeof NO_OWNER }).focusedSessionOwner ?? NO_OWNER)
   const pin: AgentPin = { connectionId: connectionId === 'local' ? null : connectionId, profile }
   const otherAgent = Boolean(owner && ownerMismatch(owner, host.state.connectionId.get(), host.state.profile.get()))
+  // A card in a chat that isn't the focused one may belong to another agent (tiles): Desktop doesn't say which, so it
+  // only looks the file up for the focused chat. Hosts that don't pass sessionId have one chat at a time.
+  const activeSession = useValue((host.state as unknown as { activeSessionId?: typeof NO_SESSION }).activeSessionId ?? NO_SESSION)
+  const elsewhere = sessionId !== undefined && sessionId !== null && activeSession !== null && sessionId !== activeSession
   const query = useQuery({
     queryKey: ['hcfm', connectionId, profile, 'locate', path],
     queryFn: () => call<Located>(`/locate?path=${encodeURIComponent(path)}`),
-    enabled: valid && !streaming && !otherAgent,
+    enabled: valid && !streaming && !otherAgent && !elsewhere,
     retry: false
   })
 
@@ -106,6 +111,14 @@ export function FileCard({ attrs, source, streaming, sessionId }: DirectiveProps
       <div style={box}>
         <Head icon="file" name={name} title={path} />
         <span style={muted}>{S.cardOtherAgent(owner.profile)}</span>
+      </div>
+    )
+  }
+  if (elsewhere) {
+    return (
+      <div style={box}>
+        <Head icon="file" name={name} title={path} />
+        <span style={muted}>{S.cardFocusChat}</span>
       </div>
     )
   }
