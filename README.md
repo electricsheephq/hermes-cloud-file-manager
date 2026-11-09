@@ -28,7 +28,7 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 - **Google Drive** (optional): if the agent is signed in to Google through its `google-workspace` skill, browse
   and search its Drive and import files onto the agent's machine, from the page or from **+ → Google Drive**.
 
-![The Cloud Files page](docs/media/screenshot-page.png)
+![Cloud Files beside the chat: the agent has just sorted the folder and written a summary, marked New and Updated, sorted by date](docs/media/screenshot-live-marks.png)
 
 ![Uploading a folder](docs/media/screenshot-upload.png)
 
@@ -141,6 +141,8 @@ installing the desktop half is harmless for your other agents.
   that it is outside the working folder. Cloud Files refuses the drag when the chat in focus belongs to a
   different agent than the files. **Add to chat** in the toolbar (or while viewing a file) does the same without
   dragging, into the chat beside Cloud Files. The **+ → Cloud** picker still inserts locations only, exactly as before.
+
+![The agent's summary open beside the chat, rendered as Markdown](docs/media/screenshot-preview.png)
 
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
 
