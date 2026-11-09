@@ -34,16 +34,17 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 
 ## How it differs from Hermes Desktop's Files tree
 
-Hermes Desktop's own Files tree shows the current chat's working folder, refreshes when the agent runs a tool, and
-previews files. Cloud File Manager adds what that tree does not do:
+Hermes Desktop's own Files tree shows the current chat's working folder, refreshes when the agent runs a tool,
+previews files (PDFs too, also on a remote agent) and edits text files. Cloud File Manager adds what that tree does
+not do:
 
 - **Puts your files on the agent's machine.** Open a folder in Cloud Files and drop files or whole folders into it,
   even when the agent runs on another server. A name clash keeps both files.
 - **Marks what changed in any folder.** New and Updated marks track changes since you opened the folder, inside or
   outside a git repository (a folder too big to load at once gets Updated marks only). The Files tree colours git
   changes only.
-- **Edits with a review.** Open a Markdown or text file, change it, check a line-by-line diff, then Save. Save
-  refuses if the file changed on the agent's machine in the meantime.
+- **Reviews your edits before Save.** After you edit a Markdown or text file, a line-by-line diff of your changes
+  comes before Save, so you approve exactly what gets written.
 - **Shows the folders you choose** in Settings (by default the agent's working folder), whichever chat is open, and
   imports files from the agent's Google Drive.
 
