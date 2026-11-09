@@ -4,7 +4,7 @@ Guidance for AI coding agents, and for people, working in this repository.
 
 ## What this is
 
-Cloud File Manager is a Hermes Agent plugin that puts the gateway machine's files in Hermes Desktop. Its Python backend confines file access to configured folders; its Desktop UI browses, searches, uploads, downloads and edits files, and optionally imports from Google Drive. It registers no agent tools or hooks and has no web-dashboard UI.
+Cloud File Manager is a Hermes Agent plugin that puts the gateway machine's files in Hermes Desktop. Its Python backend confines file access to configured folders; its Desktop UI browses, searches, uploads, downloads and edits files, and optionally imports from Google Drive. It registers no agent tools or hooks and has no web-dashboard UI. Its Python `__init__.py` adds a report-a-problem skill and, for Desktop chats only, a short instructions section naming the shown folders and the `::cloud-file{path=...}` card that the Desktop half draws.
 
 ## Layout
 
