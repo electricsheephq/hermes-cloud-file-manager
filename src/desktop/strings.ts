@@ -86,7 +86,7 @@ export const S = {
   // Upload drawer
   uploading: (n: number, total: number, sent: string, size: string) => `Uploading ${n} of ${total} · ${sent} of ${size}`,
   uploaded: (done: number, total: number, failed: number) =>
-    `Uploaded ${done} of ${total}${failed ? ` · ${failed} failed` : ''}`,
+    !total && failed ? `${failed} failed` : `Uploaded ${done} of ${total}${failed ? ` · ${failed} failed` : ''}`,
   canceled: 'Upload canceled',
   paused: (profile: string) => `Switch back to ${profile} to continue uploading`,
   busyElsewhere: 'Finish or cancel the current uploads first',

@@ -19,6 +19,8 @@ export interface UploadItem {
   rootPath?: string
   /** Target path relative to the root. */
   path: string
+  /** Top-level dropped entry, relative to the root (including the destination folder). */
+  topLevel?: string
   size: number
   /** Bytes the server has acknowledged. */
   sent: number
@@ -159,7 +161,7 @@ export class UploadBatch {
     if (limits) this.limits = limits
     const items: UploadItem[] = []
     for (const rel of input.dirs ?? []) {
-      items.push({ id: this.nextId++, root: dest.root, rootPath: dest.rootPath, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: 'queued', isDir: true })
+      items.push({ id: this.nextId++, root: dest.root, rootPath: dest.rootPath, path: joinPath(dest.folder, rel), topLevel: joinPath(dest.folder, rel.split('/')[0]), size: 0, sent: 0, status: 'queued', isDir: true })
     }
     for (const { file, rel } of input.files) {
       const id = this.nextId++
@@ -171,6 +173,7 @@ export class UploadBatch {
         root: dest.root,
         rootPath: dest.rootPath,
         path: joinPath(dest.folder, rel),
+        topLevel: joinPath(dest.folder, rel.split('/')[0]),
         size: file.size,
         sent: 0,
         status: tooBig ? 'failed' : 'queued',
@@ -394,14 +397,14 @@ export interface BatchSummary {
   size: number
 }
 
-/** Counts for the drawer header (files only; empty-dir rows are bookkeeping). */
+/** Counts for the drawer header (file progress, but failures include empty-dir rows). */
 export function summarize(snapshot: BatchSnapshot): BatchSummary {
   const files = snapshot.items.filter(item => !item.isDir)
   return {
     total: files.length,
     settled: files.filter(item => item.status !== 'queued' && item.status !== 'uploading').length,
     done: files.filter(item => item.status === 'done').length,
-    failed: files.filter(item => item.status === 'failed').length,
+    failed: snapshot.items.filter(item => item.status === 'failed').length,
     sent: files.reduce((sum, item) => sum + item.sent, 0),
     size: files.reduce((sum, item) => sum + item.size, 0)
   }

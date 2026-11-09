@@ -87,7 +87,7 @@ var S = {
   folderCreated: (name) => `Created ${name}`,
   // Upload drawer
   uploading: (n, total, sent, size) => `Uploading ${n} of ${total} \xB7 ${sent} of ${size}`,
-  uploaded: (done, total, failed) => `Uploaded ${done} of ${total}${failed ? ` \xB7 ${failed} failed` : ""}`,
+  uploaded: (done, total, failed) => !total && failed ? `${failed} failed` : `Uploaded ${done} of ${total}${failed ? ` \xB7 ${failed} failed` : ""}`,
   canceled: "Upload canceled",
   paused: (profile) => `Switch back to ${profile} to continue uploading`,
   busyElsewhere: "Finish or cancel the current uploads first",
@@ -520,7 +520,7 @@ var UploadBatch = class {
     if (limits) this.limits = limits;
     const items = [];
     for (const rel of input.dirs ?? []) {
-      items.push({ id: this.nextId++, root: dest.root, rootPath: dest.rootPath, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: "queued", isDir: true });
+      items.push({ id: this.nextId++, root: dest.root, rootPath: dest.rootPath, path: joinPath(dest.folder, rel), topLevel: joinPath(dest.folder, rel.split("/")[0]), size: 0, sent: 0, status: "queued", isDir: true });
     }
     for (const { file, rel } of input.files) {
       const id = this.nextId++;
@@ -531,6 +531,7 @@ var UploadBatch = class {
         root: dest.root,
         rootPath: dest.rootPath,
         path: joinPath(dest.folder, rel),
+        topLevel: joinPath(dest.folder, rel.split("/")[0]),
         size: file.size,
         sent: 0,
         status: tooBig ? "failed" : "queued",
@@ -725,7 +726,7 @@ function summarize(snapshot) {
     total: files.length,
     settled: files.filter((item) => item.status !== "queued" && item.status !== "uploading").length,
     done: files.filter((item) => item.status === "done").length,
-    failed: files.filter((item) => item.status === "failed").length,
+    failed: snapshot.items.filter((item) => item.status === "failed").length,
     sent: files.reduce((sum, item) => sum + item.sent, 0),
     size: files.reduce((sum, item) => sum + item.size, 0)
   };
@@ -2568,11 +2569,15 @@ function enqueueUpload(input, dest, limits, pin = currentPin()) {
 }
 function CloudFilesPage() {
   const available = useValue5($available);
+  const unreachable = useValue5($unreachable);
   const profile = useValue5(host8.state.profile);
   const connectionId = useValue5(host8.state.connectionId);
   const [doc, setDoc] = useOpenDoc();
   if (available === null) {
-    return /* @__PURE__ */ jsx7(Frame, { profile, children: /* @__PURE__ */ jsx7("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx7(Skeleton5, { style: { height: 18 } }, i)) }) });
+    return /* @__PURE__ */ jsx7(Frame, { profile, children: unreachable?.probe === "cloud" ? /* @__PURE__ */ jsxs6("div", { style: { display: "grid", gap: 8, justifyItems: "center", padding: 32 }, children: [
+      /* @__PURE__ */ jsx7("p", { style: { margin: 0, fontSize: 13, color: "var(--ui-text-secondary)" }, children: S.unreachable(profile, false) }),
+      /* @__PURE__ */ jsx7(Button7, { disabled: unreachable.retrying, loading: unreachable.retrying, onClick: unreachable.retry, size: "sm", variant: "secondary", children: S.retry })
+    ] }) : /* @__PURE__ */ jsx7("div", { "aria-busy": "true", style: { display: "grid", gap: 6, padding: pad }, children: [0, 1, 2].map((i) => /* @__PURE__ */ jsx7(Skeleton5, { style: { height: 18 } }, i)) }) });
   }
   if (available === false) {
     return /* @__PURE__ */ jsx7(Frame, { profile, children: /* @__PURE__ */ jsx7("p", { style: { ...muted5, fontSize: 13, padding: pad, maxWidth: 560, lineHeight: 1.5 }, children: S.notSetUp(profile) }) });
@@ -2790,7 +2795,7 @@ function Files({ profile, roots, doc, setDoc }) {
         ] }),
         /* @__PURE__ */ jsx7(ImportStatus, { onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }), onShow: showImports }),
         guard.dialog,
-        /* @__PURE__ */ jsx7(UploadDrawer, { onShow: showUpload, onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }) }),
+        /* @__PURE__ */ jsx7(UploadDrawer, { roots, onShow: showUpload, onSettled: () => void queryClient.invalidateQueries({ queryKey: ["hcfm"] }) }),
         /* @__PURE__ */ jsx7(
           NewFolderDialog,
           {
@@ -2929,7 +2934,7 @@ function Bar({ value, label, style }) {
     }
   );
 }
-function UploadDrawer({ onSettled, onShow }) {
+function UploadDrawer({ roots, onSettled, onShow }) {
   const batch = useValue5($batch);
   const snap = useBatch(batch);
   const profile = useValue5(host8.state.profile);
@@ -2943,11 +2948,26 @@ function UploadDrawer({ onSettled, onShow }) {
   }, [snap.running, onSettled]);
   if (!batch || !snap.items.length) return null;
   const sum = summarize(snap);
+  const completed = snap.items.filter((item) => item.status === "done");
+  const knownRoots = completed.every((item) => roots.roots.find((root) => root.id === item.root)?.path?.startsWith("/"));
+  const references = () => {
+    const entries = /* @__PURE__ */ new Map();
+    for (const item of completed) {
+      const root = roots.roots.find((root2) => root2.id === item.root);
+      const top = item.topLevel ?? item.path;
+      const is_dir = Boolean(item.isDir || top !== item.path);
+      const rel = is_dir ? top : joinPath(parentPath(item.path), item.savedAs ?? baseName(item.path));
+      const abs = `/${joinPath(root.path, rel)}`;
+      entries.set(abs, { abs, is_dir });
+    }
+    return [...entries.values()];
+  };
   const headline = snap.canceled ? S.canceled : snap.paused ? S.paused(snap.profile) : snap.running ? S.uploading(Math.min(sum.total, sum.settled + 1), sum.total, humanSize(sum.sent), humanSize(sum.size)) : S.uploaded(sum.done, sum.total, sum.failed);
   return /* @__PURE__ */ jsxs6("div", { "aria-label": S.uploads, role: "region", style: { borderTop: "1px solid var(--ui-stroke-tertiary)", padding: "8px 20px", display: "grid", gap: 6 }, children: [
     /* @__PURE__ */ jsxs6("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 12 }, children: [
       /* @__PURE__ */ jsx7(Button7, { "aria-label": collapsed ? S.expand : S.collapse, onClick: () => setCollapsed(!collapsed), size: "icon-xs", variant: "ghost", children: /* @__PURE__ */ jsx7(Codicon5, { name: collapsed ? "chevron-up" : "chevron-down", size: "0.875rem" }) }),
       /* @__PURE__ */ jsx7("span", { "aria-live": "polite", role: "status", style: { flex: 1, minWidth: 0 }, children: headline }),
+      here && !snap.running && sum.settled === sum.total && sum.done > 0 && knownRoots && /* @__PURE__ */ jsx7(AddToChat, { entries: references, pin: { connectionId: snap.connectionId, profile: snap.profile } }),
       snap.running ? /* @__PURE__ */ jsx7(Button7, { onClick: () => batch.cancel(), size: "sm", variant: "text", children: S.cancel }) : /* @__PURE__ */ jsx7(Button7, { onClick: () => $batch.set(null), size: "sm", variant: "text", children: S.clear })
     ] }),
     snap.running && /* @__PURE__ */ jsx7(Bar, { label: S.uploadProgress, value: sum.size ? sum.sent / sum.size : sum.total ? sum.settled / sum.total : 0 }),
