@@ -138,7 +138,7 @@ export function parseDelimited(text: string, sep: string, maxRows: number): { ro
     row.push(field)
     field = ''
   }
-  for (let i = text.startsWith('﻿') ? 1 : 0; i < text.length; i++) {
+  for (let i = text.startsWith('\uFEFF') ? 1 : 0; i < text.length; i++) {
     const ch = text[i]
     if (quoted) {
       if (ch !== '"') field += ch

@@ -101,12 +101,12 @@ describe('format: what opens where', () => {
   })
 
   it('parseDelimited skips one leading byte-order mark, as Excel writes, so a quoted first header still parses', () => {
-    expect(parseDelimited('﻿"Last, First",Age\r\n"Smith, Ann",42', ',', 10).rows).toEqual([['Last, First', 'Age'], ['Smith, Ann', '42']])
-    expect(parseDelimited('﻿a,b\n1,2', ',', 10).rows).toEqual([['a', 'b'], ['1', '2']])
+    expect(parseDelimited('\uFEFF"Last, First",Age\r\n"Smith, Ann",42', ',', 10).rows).toEqual([['Last, First', 'Age'], ['Smith, Ann', '42']])
+    expect(parseDelimited('\uFEFFa,b\n1,2', ',', 10).rows).toEqual([['a', 'b'], ['1', '2']])
     // Only the leading mark is skipped: a second one, or one later in the text, stays as data.
-    expect(parseDelimited('﻿﻿a', ',', 10).rows).toEqual([['﻿a']])
-    expect(parseDelimited('a,﻿b', ',', 10).rows).toEqual([['a', '﻿b']])
-    expect(parseDelimited('﻿', ',', 10)).toEqual({ rows: [], more: false })
+    expect(parseDelimited('\uFEFF\uFEFFa', ',', 10).rows).toEqual([['\uFEFFa']])
+    expect(parseDelimited('a,\uFEFFb', ',', 10).rows).toEqual([['a', '\uFEFFb']])
+    expect(parseDelimited('\uFEFF', ',', 10)).toEqual({ rows: [], more: false })
   })
 })
 
