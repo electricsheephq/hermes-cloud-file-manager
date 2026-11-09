@@ -61,6 +61,9 @@ export class ApiError extends Error {
   }
 }
 
+/** The Cloud Files page route. */
+export const PAGE_PATH = '/cloud-files'
+
 let bound: null | PluginContext = null
 
 /** Availability of the selected agent's backend: null until the first probe answers. */

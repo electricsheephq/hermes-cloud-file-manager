@@ -546,7 +546,7 @@ def locate(path: str):
                                                      "is_dir": True, "size": None, "mtime": None, "link_outside": False}
         if entry is None:
             raise GuardError("not_found", "The file isn't shown in Cloud Files.")
-        return {"ok": True, "root": root.id, "root_path": str(root.path), "entry": entry}
+        return {"ok": True, "root": root.id, "root_label": root.label, "root_path": str(root.path), "entry": entry}
     raise GuardError("outside_root", "The file isn't in a folder Cloud Files shows.")
 
 

@@ -19,6 +19,7 @@ import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, t
 
 import { $available, $driveAvailable, $scopeInfo, $unreachable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse, scopeKey } from './api'
 import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, SortControl, useBrowser, useLiveRefresh, useRoots } from './browser'
+import { $reveal, REVEAL_TTL_MS } from './card'
 import { $driveJob, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
@@ -224,6 +225,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
 
 function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsResponse } & DocProps) {
   const b = useBrowser(roots, 'page')
+  const reveal = useValue($reveal)
   useLiveRefresh()
   const pin: AgentPin = { connectionId: useValue(host.state.connectionId), profile }
   const guard = useLeaveGuard(doc)
@@ -286,6 +288,33 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
       if (want) requestFocus(b.focusNext, dest.folder, want)
     })
   }
+  // A chat card asked to show (and maybe preview) a file: take it once, for this agent and this root only.
+  useEffect(() => {
+    if (!reveal) return
+    $reveal.set(null)
+    if (Date.now() - reveal.at > REVEAL_TTL_MS) return
+    const now = currentPin()
+    if (now.connectionId !== reveal.pin.connectionId || now.profile !== reveal.pin.profile) {
+      host.notify({ kind: 'warning', message: S.cardOtherAgent(reveal.pin.profile) })
+      return
+    }
+    const root = roots.roots.find(r => r.id === reveal.root && r.path === reveal.rootPath)
+    if (!root) {
+      host.notify({ kind: 'warning', message: S.cardFolderChanged })
+      return
+    }
+    const { entry } = reveal
+    const folder = entry.is_dir ? entry.rel : parentPath(entry.rel)
+    guard.leave(() => {
+      setDoc(null)
+      setSource('cloud')
+      void queryClient.invalidateQueries({ queryKey: ['hcfm', now.connectionId ?? 'local', now.profile, 'list', root.id, folder] })
+      if (root.id !== rootId) b.switchRoot(root.id)
+      b.navigate(folder)
+      if (!entry.is_dir) requestFocus(b.focusNext, folder, entry.rel)
+      if (reveal.preview && !entry.is_dir) openDoc(entry, root, now, setDoc)
+    })
+  }, [reveal])
   const showImports = () => {
     const snap = $driveJob.get()?.getSnapshot()
     if (snap) showDestination(snap.dest, snap.pin)

@@ -34,6 +34,15 @@ export const S = {
   addOtherAgent: (owner: string, profile: string) =>
     `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   showOtherAgent: (profile: string) => `Switch back to ${agentName(profile)} to show this upload.`,
+  // Chat cards (::cloud-file)
+  cardPreview: 'Preview',
+  cardIn: (folder: string) => `in ${folder}`,
+  cardOtherAgent: (profile: string) => `Switch to ${agentName(profile)} to open this file.`,
+  cardOutside: 'Not in a folder Cloud Files shows',
+  cardGone: 'No longer there',
+  cardUpdate: 'Update Cloud File Manager on the agent’s machine to open this here',
+  cardUnavailable: 'Cloud Files can’t reach this agent right now',
+  cardFolderChanged: 'Cloud Files settings changed. Ask the agent for the file again.',
   copyPath: 'Copy path',
   download: 'Download',
   maxPerFile: (bytes: number) => `Up to ${mb(bytes)} per file`,

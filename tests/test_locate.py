@@ -8,7 +8,7 @@ def test_locates_a_file_in_a_configured_root(client, fs):
     (root / "Inbox").mkdir()
     (root / "Inbox" / "summary.md").write_text("# Summary")
     body = get(client, "locate", path=str(root / "Inbox" / "summary.md"))
-    assert body["ok"] is True and body["root"] == "r0" and body["root_path"] == str(root)
+    assert body["ok"] is True and body["root"] == "r0" and body["root_path"] == str(root) and body["root_label"] == root.name
     assert body["entry"]["rel"] == "Inbox/summary.md" and body["entry"]["is_dir"] is False
     assert body["entry"]["size"] == len("# Summary")
 
