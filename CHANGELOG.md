@@ -2,6 +2,15 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.6.3] - 2026-11-09
+
+Desktop only: the agent's side is unchanged apart from its version number.
+
+### Fixed
+- **Installs from the repository without a security-scan caution.** The CSV reader's byte-order-mark check spelled the
+  invisible U+FEFF character literally in its source, which Hermes's install scan reports as a hidden character
+  (high, so "caution"). It is now written as the escape `\uFEFF`; the behaviour is unchanged.
+
 ## [0.6.2] - 2026-11-08
 
 Desktop only: the agent's side is unchanged apart from its version number.
