@@ -11,7 +11,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   never overwrite — a name clash keeps both files. **Show** on a finished upload opens its folder at the file.
   While the page is open, files the agent writes, moves or deletes show up within about a second, for that
   agent only, also when its chat is in another Desktop window (a file edited in place can show its old size for a
-  few seconds). Each file the agent adds or changes is marked **New** or **Updated** since you opened the folder.
+  few seconds). Files the agent adds or changes are marked **New** or **Updated** since you opened the folder (in a
+  folder too big to load at once, only updates to files already listed).
 - **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
   The file list also works from the keyboard: arrow keys, Home and End, Page Up and Page Down, Enter to open,
   Space to select, and Alt+Up for the parent folder.
@@ -36,16 +37,17 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
 Hermes Desktop's own Files tree shows the current chat's working folder, refreshes when the agent runs a tool, and
 previews files. Cloud File Manager adds what that tree does not do:
 
-- **Puts your files on the agent's machine.** Drop files or whole folders into any folder Cloud Files shows, even when
-  the agent runs on another server. A name clash keeps both files.
+- **Puts your files on the agent's machine.** Open a folder in Cloud Files and drop files or whole folders into it,
+  even when the agent runs on another server. A name clash keeps both files.
 - **Marks what changed in any folder.** New and Updated marks track changes since you opened the folder, inside or
-  outside a git repository. The Files tree colours git changes only.
+  outside a git repository (a folder too big to load at once gets Updated marks only). The Files tree colours git
+  changes only.
 - **Edits with a review.** Open a Markdown or text file, change it, check a line-by-line diff, then Save. Save
   refuses if the file changed on the agent's machine in the meantime.
 - **Shows the folders you choose** in Settings (by default the agent's working folder), whichever chat is open, and
   imports files from the agent's Google Drive.
 
-It never deletes, renames or moves files; use the agent or the Files tree for that.
+It never deletes, renames or moves files; ask the agent to do that.
 
 ## Requirements
 
