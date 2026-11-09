@@ -17,8 +17,9 @@ import {
 } from '@hermes/plugin-sdk'
 import { type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 
-import { $available, $driveAvailable, $scopeInfo, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse, scopeKey } from './api'
+import { $available, $driveAvailable, $scopeInfo, $unreachable, ApiError, call, type Entry, errorText, pluginCtx, rest, type RootsResponse, scopeKey } from './api'
 import { Breadcrumbs, type Browser, BrowserSearch, EntryList, LoadError, NoRoots, requestFocus, RootSelect, SortControl, useBrowser, useLiveRefresh, useRoots } from './browser'
+import { $reveal, REVEAL_TTL_MS } from './card'
 import { $driveJob, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
@@ -70,6 +71,7 @@ export function enqueueUpload(input: UploadInput, dest: Destination, limits: Lim
 
 export function CloudFilesPage() {
   const available = useValue($available)
+  const unreachable = useValue($unreachable)
   const profile = useValue(host.state.profile)
   const connectionId = useValue(host.state.connectionId)
   // The open file lives above the per-agent key: switching agents keeps it on screen behind a banner.
@@ -77,9 +79,18 @@ export function CloudFilesPage() {
   if (available === null) {
     return (
       <Frame profile={profile}>
-        <div aria-busy="true" style={{ display: 'grid', gap: 6, padding: pad }}>
-          {[0, 1, 2].map(i => <Skeleton key={i} style={{ height: 18 }} />)}
-        </div>
+        {unreachable?.probe === 'cloud' ? (
+          <div style={{ display: 'grid', gap: 8, justifyItems: 'center', padding: 32 }}>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--ui-text-secondary)' }}>{S.unreachable(profile, false)}</p>
+            <Button disabled={unreachable.retrying} loading={unreachable.retrying} onClick={unreachable.retry} size="sm" variant="secondary">
+              {S.retry}
+            </Button>
+          </div>
+        ) : (
+          <div aria-busy="true" style={{ display: 'grid', gap: 6, padding: pad }}>
+            {[0, 1, 2].map(i => <Skeleton key={i} style={{ height: 18 }} />)}
+          </div>
+        )}
       </Frame>
     )
   }
@@ -214,6 +225,7 @@ function Frame({ children, profile, controls, onDropInput, dropLabel }: {
 
 function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsResponse } & DocProps) {
   const b = useBrowser(roots, 'page')
+  const reveal = useValue($reveal)
   useLiveRefresh()
   const pin: AgentPin = { connectionId: useValue(host.state.connectionId), profile }
   const guard = useLeaveGuard(doc)
@@ -224,7 +236,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
   const rootId = b.root?.id ?? ''
   const limits: Limits = { max_file_bytes: roots.max_file_bytes, chunk_bytes: roots.chunk_bytes }
   const here = baseName(b.path) || b.root?.label || ''
-  const dest = { root: rootId, folder: b.path }
+  const dest = { root: rootId, rootPath: b.root?.path, folder: b.path }
   // Google Drive is a second source next to the cloud roots, offered only while the agent reports it.
   const driveOn = useValue($driveAvailable) === true
   const [source, setSource] = useState<'cloud' | 'drive'>('cloud')
@@ -276,6 +288,33 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
       if (want) requestFocus(b.focusNext, dest.folder, want)
     })
   }
+  // A chat card asked to show (and maybe preview) a file: take it once, for this agent and this root only.
+  useEffect(() => {
+    if (!reveal) return
+    $reveal.set(null)
+    if (Date.now() - reveal.at > REVEAL_TTL_MS) return
+    const now = currentPin()
+    if (now.connectionId !== reveal.pin.connectionId || now.profile !== reveal.pin.profile) {
+      host.notify({ kind: 'warning', message: S.cardOtherAgent(reveal.pin.profile) })
+      return
+    }
+    const root = roots.roots.find(r => r.id === reveal.root && r.path === reveal.rootPath)
+    if (!root) {
+      host.notify({ kind: 'warning', message: S.cardFolderChanged })
+      return
+    }
+    const { entry } = reveal
+    const folder = entry.is_dir ? entry.rel : parentPath(entry.rel)
+    guard.leave(() => {
+      setDoc(null)
+      setSource('cloud')
+      void queryClient.invalidateQueries({ queryKey: ['hcfm', now.connectionId ?? 'local', now.profile, 'list', root.id, folder] })
+      if (root.id !== rootId) b.switchRoot(root.id)
+      b.navigate(folder)
+      if (!entry.is_dir) requestFocus(b.focusNext, folder, entry.rel)
+      if (reveal.preview && !entry.is_dir) openDoc(entry, root, now, setDoc)
+    })
+  }, [reveal])
   const showImports = () => {
     const snap = $driveJob.get()?.getSnapshot()
     if (snap) showDestination(snap.dest, snap.pin)
@@ -359,7 +398,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
       )}
       <ImportStatus onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} onShow={showImports} />
       {guard.dialog}
-      <UploadDrawer onShow={showUpload} onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} />
+      <UploadDrawer roots={roots} onShow={showUpload} onSettled={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })} />
       <NewFolderDialog
         b={b}
         onCreated={() => void queryClient.invalidateQueries({ queryKey: ['hcfm'] })}
@@ -378,7 +417,7 @@ function DrivePane({ dest, label }: { dest: Destination; label: string }) {
   const job = useImport(useValue($driveJob))
   const start = () => {
     // Pinned now: the requests go to this agent only, even if the user switches while it runs.
-    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host.state }, dest.folder)
+    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host.state }, dest.folder, dest.rootPath)
     $driveJob.set(next)
     d.clear()
     void next.start()
@@ -475,7 +514,7 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }: {
     if (trimmed.includes('/')) return setError(S.nameNoSlash)
     setBusy(true)
     try {
-      await call('/mkdir', { method: 'POST', body: { root: b.root?.id, path: joinPath(b.path, trimmed) } })
+      await call('/mkdir', { method: 'POST', body: { root: b.root?.id, root_path: b.root?.path, path: joinPath(b.path, trimmed) } })
       onOpenChange(false)
       onCreated()
       host.notify({ kind: 'success', message: S.folderCreated(trimmed) })
@@ -545,7 +584,7 @@ function Bar({ value, label, style }: { value: number; label: string; style?: CS
   )
 }
 
-function UploadDrawer({ onSettled, onShow }: { onSettled: () => void; onShow: (item: UploadItem, snap: BatchSnapshot) => void }) {
+function UploadDrawer({ roots, onSettled, onShow }: { roots: RootsResponse; onSettled: () => void; onShow: (item: UploadItem, snap: BatchSnapshot) => void }) {
   const batch = useValue($batch)
   const snap = useBatch(batch)
   const profile = useValue(host.state.profile)
@@ -560,6 +599,22 @@ function UploadDrawer({ onSettled, onShow }: { onSettled: () => void; onShow: (i
 
   if (!batch || !snap.items.length) return null
   const sum = summarize(snap)
+  const completed = snap.items.filter(item => item.status === 'done')
+  // The folder each item was uploaded to, as captured when the batch started (settings may have changed since).
+  const rootPathOf = (item: UploadItem) => item.rootPath ?? roots.roots.find(root => root.id === item.root)?.path
+  const knownRoots = completed.every(item => rootPathOf(item)?.startsWith('/'))
+  const references = () => {
+    const entries = new Map<string, Pick<Entry, 'abs' | 'is_dir'>>()
+    for (const item of completed) {
+      const rootPath = rootPathOf(item)!
+      const top = item.topLevel ?? item.path
+      const is_dir = Boolean(item.isDir || top !== item.path)
+      const rel = is_dir ? top : joinPath(parentPath(item.path), item.savedAs ?? baseName(item.path))
+      const abs = `/${joinPath(rootPath, rel)}`
+      entries.set(abs, { abs, is_dir })
+    }
+    return [...entries.values()]
+  }
   const headline = snap.canceled
     ? S.canceled
     : snap.paused
@@ -577,6 +632,9 @@ function UploadDrawer({ onSettled, onShow }: { onSettled: () => void; onShow: (i
         <span aria-live="polite" role="status" style={{ flex: 1, minWidth: 0 }}>
           {headline}
         </span>
+        {here && !snap.running && sum.settled === sum.total && sum.done > 0 && knownRoots && (
+          <AddToChat entries={references} pin={{ connectionId: snap.connectionId, profile: snap.profile }} />
+        )}
         {snap.running ? (
           <Button onClick={() => batch.cancel()} size="sm" variant="text">
             {S.cancel}

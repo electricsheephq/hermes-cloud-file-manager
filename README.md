@@ -9,8 +9,8 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   or whole folders by drag-and-drop or from the toolbar. Folder structure is kept, large files go up in chunks
   (a brief network drop is retried automatically; a file that still fails gets a **Retry** button), and uploads
   never overwrite — a name clash keeps both files. **Show** on a finished upload opens its folder at the file.
-  While the page is open, files the agent writes, moves or deletes show up within about a second, for that
-  agent only, also when its chat is in another Desktop window (a file edited in place can show its old size for a
+  While the page is open, files the agent writes, moves or deletes show up within about a second of each tool step
+  that changes files, for that agent only, also when its chat is in another Desktop window (a file edited in place can show its old size for a
   few seconds). Files the agent adds or changes are marked **New** or **Updated** since you opened the folder (in a
   folder too big to load at once, only updates to files already listed).
 - **Download** one file to your computer: select it and choose **Download**, or use **Download** while viewing it.
@@ -27,6 +27,10 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   are with its own tools.
 - **Google Drive** (optional): if the agent is signed in to Google through its `google-workspace` skill, browse
   and search its Drive and import files onto the agent's machine, from the page or from **+ → Google Drive**.
+- **Files the agent hands you** show up as cards in its reply: name, folder, size and date, with **Open**,
+  **Preview**, **Download** and **Add to chat**. In Desktop chats the agent knows which folders you see in Cloud Files
+  and how to hand a file over this way. After an upload, **Add to chat** gives the agent what you just dropped, under
+  the names it was saved as.
 
 ![Cloud Files beside the chat: the agent has just sorted the folder and written a summary, marked New and Updated, sorted by date](docs/media/screenshot-live-marks.png)
 
@@ -47,6 +51,7 @@ not do:
   comes before Save, so you approve exactly what gets written.
 - **Shows the folders you choose** in Settings (by default the agent's working folder), whichever chat is open, and
   imports files from the agent's Google Drive.
+- **The agent hands you files as cards** in its reply, which open straight in Cloud Files.
 
 It never deletes, renames or moves files; ask the agent to do that.
 
@@ -78,13 +83,16 @@ Installing from the catalog gets the reviewed release, pinned to its commit.
 
 The **Cloud Files** row appears in the sidebar, and **Cloud** appears in the chat **+** menu.
 
-**From the command line on the gateway machine** (Hermes 0.21.6 or later installs the catalog release by name):
+**From the command line on the gateway machine:**
 
 ```bash
-hermes plugins install hermes-cloud-file-manager --no-enable
-hermes plugins enable hermes-cloud-file-manager
+hermes plugins install electricsheephq/hermes-cloud-file-manager --enable
 # on Hermes 0.21.5, restart the gateway (or your hermes dashboard service) so the API is mounted
 ```
+
+This installs the latest release from this repository; its `main` branch only moves to a tagged release. Installing
+the catalog release by name (`hermes plugins install hermes-cloud-file-manager --enable`, Hermes 0.21.6 or later)
+gets the reviewed catalog pin instead, which can be a release behind.
 
 If the installer asks whether to install Node dependencies, answer **No**. The plugin ships prebuilt, and its
 `package.json` holds only build and test tools, so a yes downloads about 100 MB that the plugin never uses.
@@ -92,10 +100,8 @@ If the installer asks whether to install Node dependencies, answer **No**. The p
 Then add the desktop half on each computer that uses it: in **Capabilities → Plugins**, choose **+ Add to this Agent**
 on the catalog entry, and switch on **Desktop** on the plugin's card.
 
-**Install from Git** (**Capabilities → Plugins → Install from Git** with
-`https://github.com/electricsheephq/hermes-cloud-file-manager`, or `hermes plugins install
-electricsheephq/hermes-cloud-file-manager`) also works. It follows the repository's `main` branch instead of the
-reviewed catalog release.
+**Install from Git** in Desktop (**Capabilities → Plugins → Install from Git** with
+`https://github.com/electricsheephq/hermes-cloud-file-manager`) installs the same release as the command above.
 
 **Updating:** a catalog install offers **Update to …** on the plugin's card in **Capabilities → Plugins** when a new
 release is pinned. After an update, restart the agent's gateway and reopen Hermes.
@@ -105,7 +111,13 @@ installing the desktop half is harmless for your other agents.
 
 ## Using it
 
-- **What changed:** New and Updated marks show changes since you first opened a folder in Cloud Files or the **+ → Cloud** picker, and stay when you open a file or a subfolder and come back; partly loaded folders only mark updates to files already listed.
+- **Files from the agent:** in a Desktop chat, ask for something the agent saves as a file ("summarise the contract
+  into a note") and its reply ends with a card for the file. **Open** shows it in its folder in Cloud Files,
+  **Preview** opens it there, **Download** saves it to this computer, and **Add to chat** puts it in this chat's
+  message box. A card for a file outside the shown folders, or one that's gone, says so instead. The agent learns
+  about cards from a short note the plugin adds to its instructions in Desktop chats only (Telegram, the terminal
+  and other places get nothing, since they can't show the card); the note names the folders shown in Cloud Files.
+- **What changed:** New and Updated marks show changes since you first opened a folder in Cloud Files or the **+ → Cloud** picker, and stay when you open a file or a subfolder and come back; partly loaded folders only mark updates to files already listed. The marks compare modification times, so a change by anyone (the agent, an upload, another program) counts, and a file whose date was set back is missed.
 - **Upload:** drag files or folders anywhere onto the Cloud Files page, or use **Upload files** /
   **Upload folder**. Progress, retries and failures show in the drawer at the bottom; the batch keeps going if
   you leave the page. Switching to another agent mid-upload pauses the batch until you switch back — files never
@@ -229,6 +241,10 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
 - Everyone who can use the agent can see its files — the same access the agent itself has. That includes
   previews: any image, PDF, or code or data file in the shown folders can be previewed, including configuration
   files you keep there. The agent's Hermes home stays protected, as above.
+- **Chat cards** only read: a card's path goes to the same guarded lookup as a listing, and a path outside the shown
+  folders or in the protected Hermes home is refused (the same exception as above applies to a working folder inside
+  it). The agent's instructions note (Desktop chats only) names the shown
+  folders and explains the card; it carries no file names or contents.
 - **Download** goes through Hermes Desktop's own authenticated download, the same one its file tree uses. The
   plugin only offers it for files the list shows: files inside the shown folders, never from the agent's Hermes
   home except a working folder inside it, as above. Hermes's own checks still apply: for example, it refuses
@@ -238,7 +254,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Limits in this version
 
-- No rename, move or delete (coming later; use the agent or a shell for now).
+- No rename or move yet, and it never deletes; ask the agent, or use a shell.
 - Download saves one file at a time. Folders and Google Drive files can't be downloaded. It works in every
   Hermes Desktop this plugin supports (v0.21.5 or newer) and in evaOS Desktop 2026.10.6 or newer; a build without
   it simply doesn't show it.
@@ -258,6 +274,8 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - A name that contains a line break can be browsed but not inserted into a chat; the picker says so.
 - Agents whose tools run in Docker, over SSH or in another sandbox are not supported yet.
 - Google Drive is import-only: pick files, not folders, and nothing is ever written back to Drive.
+- Chat cards and the agent's note about them need Hermes 0.21.6 or newer on both sides; older Desktop builds show the
+  card's text as written. A card opens the file in Cloud Files rather than beside the chat.
 
 ## Compatibility
 

@@ -65,7 +65,7 @@ describe('editor: View and Edit', () => {
   it('opens a .md in the rendered View, with no textarea until Edit is pressed', async () => {
     const { calls } = setup()
     await openFile('readme.md')
-    expect(calls.find(c => c.path === '/file')?.params).toEqual({ root: 'home', path: 'readme.md' })
+    expect(calls.find(c => c.path === '/file')?.params).toEqual({ root: 'home', path: 'readme.md', root_path: '/home/agent' })
     expect(screen.getByTestId('md').textContent).toBe(TEXTS['readme.md'])
     expect(textarea()).toBeNull()
     expect(screen.getByText('/home/agent/readme.md')).toBeTruthy()
@@ -189,7 +189,7 @@ describe('editor: never writes without an explicit Save', () => {
     expect(saves()).toHaveLength(1)
     expect(saves()[0].opts).toEqual({
       method: 'POST',
-      body: { root: 'home', path: 'readme.md', base_sha256: fakeSha(TEXTS['readme.md']), text: '# New\n' }
+      body: { root: 'home', root_path: '/home/agent', path: 'readme.md', base_sha256: fakeSha(TEXTS['readme.md']), text: '# New\n' }
     })
     expect(files.get('readme.md')).toBe('# New\n')
     expect(textarea()).toBeNull()

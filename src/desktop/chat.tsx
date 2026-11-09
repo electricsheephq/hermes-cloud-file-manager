@@ -15,7 +15,7 @@ export function canReference([connectionId, profile]: [string, string], warning 
   return false
 }
 
-export function AddToChat({ entries, pin, disabled }: { entries: () => readonly Pick<Entry, 'abs' | 'is_dir' | 'link_outside'>[]; pin: AgentPin; disabled?: boolean }) {
+export function AddToChat({ entries, pin, disabled, sessionId = null }: { entries: () => readonly Pick<Entry, 'abs' | 'is_dir' | 'link_outside'>[]; pin: AgentPin; disabled?: boolean; sessionId?: null | string }) {
   const composer = (host as any).composer
   if (typeof composer?.insertText !== 'function') return null
   const add = async () => {
@@ -28,7 +28,7 @@ export function AddToChat({ entries, pin, disabled }: { entries: () => readonly 
     })
     if (skipped) host.notify({ kind: 'warning', message: S.refSkipped(skipped) })
     if (!refs.length) return
-    const ok = await Promise.resolve().then(() => composer.insertText(null, refs.join(' '), { mode: 'inline' })).catch(() => false)
+    const ok = await Promise.resolve().then(() => composer.insertText(sessionId, refs.join(' '), { mode: 'inline' })).catch(() => false)
     host.notify(ok ? { kind: 'success', message: S.addedToChat(refs.length) } : { kind: 'info', message: S.openChatFirst })
   }
   return <Button disabled={disabled} onClick={() => void add()} size="sm" variant="ghost">{S.addToChat}</Button>

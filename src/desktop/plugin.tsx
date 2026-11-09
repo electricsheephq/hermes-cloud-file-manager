@@ -9,15 +9,16 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
-import { $available, $driveAvailable, $unreachable, bindContext, isNotFoundError, remember, scopeKey } from './api'
+import { $available, $driveAvailable, $unreachable, bindContext, isNotFoundError, PAGE_PATH, remember, scopeKey } from './api'
 import { startEventRelay } from './browser'
+import { DIRECTIVE_AREA, DIRECTIVE_NAME, type DirectiveProps, FileCard } from './card'
 import { $driveJob } from './drive'
 import { $batch, CloudFilesPage } from './page'
 import { $pickerOpen, $pickerSource, closePicker, cloudProvider, driveProvider, PickerHost, pickerPinnedElsewhere } from './picker'
 import { S } from './strings'
 
 export const PLUGIN_ID = 'hermes-cloud-file-manager'
-export const PAGE_PATH = '/cloud-files'
+export { PAGE_PATH } from './api'
 const PROBE_INTERVAL_MS = 60_000
 
 export { isNotFoundError }
@@ -183,6 +184,13 @@ const plugin: HermesPlugin = {
       area: ROUTES_AREA,
       data: { path: PAGE_PATH } satisfies RouteContribution,
       render: () => <CloudFilesPage />
+    })
+    // `::cloud-file{path="…"}` in an agent reply becomes a file card. Hosts without transcript directives ignore the
+    // area, and the agent is only told about the syntax in Desktop chats.
+    ctx.register({
+      id: 'file-card',
+      area: DIRECTIVE_AREA,
+      data: { name: DIRECTIVE_NAME, render: (props: DirectiveProps) => <FileCard {...props} /> }
     })
     registerAvailabilityGate(ctx, available => $available.set(available))
   }

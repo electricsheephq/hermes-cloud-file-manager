@@ -154,7 +154,7 @@ describe('Drive destination', () => {
     fireEvent.click(screen.getByText('Plan'))
     click('Import 1 to Cloud Files')
     await screen.findByText('Imported 1 file')
-    expect(calls.find(c => c.path === '/drive/import')?.opts.body).toEqual({ id: 'doc1', root: 'work', dest: folder })
+    expect(calls.find(c => c.path === '/drive/import')?.opts.body).toEqual({ id: 'doc1', root: 'work', root_path: '/work', dest: folder })
     expect($driveJob.get()?.getSnapshot().dest).toEqual({ root: 'work', folder })
     choose('Home')
     await waitFor(() => expect(screen.getByRole('navigation').textContent).toBe('Home'))

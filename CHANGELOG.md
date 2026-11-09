@@ -2,6 +2,36 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.7.0] - 2026-11-09
+
+Both halves change: update the agent's side too (and restart its gateway on Hermes 0.21.5).
+
+### Added
+- **Files the agent hands you show up as cards in its reply.** When the agent writes `::cloud-file{path="..."}`,
+  Desktop draws a card with the file's name, folder, size and date and **Open**, **Preview**, **Download** and **Add to
+  chat**. Open and Preview take you to the file in Cloud Files. A path outside the shown folders, or a file that's gone,
+  says so; an older agent side asks for an update. Needs Hermes 0.21.6 or newer.
+- **The agent knows what you see.** In Desktop chats only, the plugin adds a short note to the agent's instructions:
+  which folders Cloud Files shows, that you may have uploaded or edited files there, and how to hand a file over as a
+  card. Telegram, the terminal and other places get nothing.
+- **Add to chat after an upload.** A finished upload offers Add to chat: each file you dropped under the name it was
+  saved as, and each dropped folder once.
+- Agent side: `GET /locate?path=` finds the shown folder and entry for an absolute path, behind the usual guards.
+
+### Fixed
+- **The Cloud Files page no longer sits on loading bars when the agent can't be reached.** If the first check fails it
+  shows the error with **Retry**, like the + menu picker.
+- **A Save can't land in another folder after Settings change.** Folder ids are positions in the settings list, so
+  reordering the list while a file was open could point a Save, an upload, a new folder or a Drive import at another
+  folder. Each write now carries the folder's path and the agent side refuses it if the folder changed. This needs
+  both halves at 0.7.0: an older Desktop half keeps working but sends no path, so it doesn't get this check.
+- The upload summary counts a folder that couldn't be created as a failure.
+
+### Changed
+- The README leads with the command-line install from this repository
+  (`hermes plugins install electricsheephq/hermes-cloud-file-manager --enable`), since a fresh Hermes can't always fetch
+  the newest catalog entry, and says plainly that the plugin never deletes.
+
 ## [0.6.3] - 2026-11-09
 
 Desktop only: the agent's side is unchanged apart from its version number.

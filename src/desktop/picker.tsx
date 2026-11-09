@@ -290,7 +290,7 @@ function DrivePicker({ roots }: { roots: RootsResponse }) {
   const start = () => {
     const insertText = $insertText.get()
     const pin = currentPin()
-    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host.state, hold: ownerHold(pin) })
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host.state, hold: ownerHold(pin) }, undefined, roots.roots[0].path)
     $pickerJob.set(job)
     void job.start().then(done => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return

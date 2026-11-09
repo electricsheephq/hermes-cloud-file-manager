@@ -121,7 +121,7 @@ describe('Cloud Files page', () => {
     expect(screen.getByText('Drop to upload to docs')).toBeTruthy()
     fireEvent.drop(page, { dataTransfer })
     expect(await screen.findByText('Saved as "a (1).txt"')).toBeTruthy()
-    expect(calls.find(c => c.path === '/uploads/start')?.opts.body).toEqual({ root: 'home', path: 'docs/a.txt', size: 5 })
+    expect(calls.find(c => c.path === '/uploads/start')?.opts.body).toEqual({ root: 'home', root_path: '/home/agent', path: 'docs/a.txt', size: 5 })
     expect(calls.find(c => c.path === '/uploads/chunk')?.opts.body).toMatchObject({ offset: 0, data: btoa('hello') })
     expect(await screen.findByText('Uploaded 1 of 1')).toBeTruthy()
     expect(screen.queryAllByRole('progressbar')).toHaveLength(0) // finished rows carry no bar (E3)

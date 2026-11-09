@@ -59,7 +59,7 @@ function load(doc: Doc, setDoc: SetDoc) {
   setDoc({ ...doc, id, status: 'loading', error: undefined, save: null })
   const save = captureFor([doc.pin.connectionId ?? 'local', doc.pin.profile])
   const big = doc.preview?.kind !== 'text'
-  call<PreviewResponse>(query('/file/preview', { root: doc.root, path: doc.path }), big ? { timeoutMs: BIG_TIMEOUT_MS } : undefined).then(
+  call<PreviewResponse>(query('/file/preview', { root: doc.root, path: doc.path, ...(doc.rootPath ? { root_path: doc.rootPath } : {}) }), big ? { timeoutMs: BIG_TIMEOUT_MS } : undefined).then(
     res => {
       const preview =
         res.kind === 'text'

@@ -33,6 +33,8 @@ export interface Doc {
   /** Download, captured with the /file read for `pin`'s agent; null when the host has none. */
   save?: SaveFile | null
   root: string
+  /** The root's absolute path when the file was opened; Save sends it so a reordered settings list can't redirect it. */
+  rootPath?: string
   rootLabel: string
   path: string
   abs: string
@@ -171,7 +173,7 @@ function load(doc: Doc, setDoc: SetDoc) {
   const id = nextId()
   setDoc({ ...doc, id, status: 'loading', error: undefined, mode: 'view', save: null })
   const save = captureFor([doc.pin.connectionId ?? 'local', doc.pin.profile])
-  call<FileResponse>(query('/file', { root: doc.root, path: doc.path })).then(
+  call<FileResponse>(query('/file', { root: doc.root, path: doc.path, ...(doc.rootPath ? { root_path: doc.rootPath } : {}) })).then(
     res => {
       const { text, ...flags } = decodeText(res.text)
       setDoc(d => (d?.id === id ? { ...d, ...flags, status: 'ready', base: text, draft: text, sha: res.sha256, save } : d))
@@ -182,7 +184,7 @@ function load(doc: Doc, setDoc: SetDoc) {
 
 export function openDoc(entry: Entry, root: Root, pin: AgentPin, setDoc: SetDoc) {
   const base = { bom: false, crlf: false, mixed: false, base: '', draft: '', sha: '' }
-  const doc: Doc = { ...base, id: 0, pin, root: root.id, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: 'loading', mode: 'view' }
+  const doc: Doc = { ...base, id: 0, pin, root: root.id, rootPath: root.path, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: 'loading', mode: 'view' }
   const kind = previewKind(entry.name)
   // A preview is read by its viewer (id 0: not read yet), and only while its agent is selected.
   if (kind) setDoc({ ...doc, preview: { kind } })
@@ -278,7 +280,7 @@ export function Editor({ doc, setDoc, onClose, leave }: { doc: Doc; setDoc: SetD
     try {
       const res = await call<{ ok: boolean; sha256: string }>('/file/save', {
         method: 'POST',
-        body: { root: doc.root, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
+        body: { root: doc.root, root_path: doc.rootPath, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
       })
       settleSave(doc, res.sha256, setDoc)
       setPopup(null)

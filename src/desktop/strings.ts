@@ -34,6 +34,16 @@ export const S = {
   addOtherAgent: (owner: string, profile: string) =>
     `The chat you'd add to is ${agentName(owner)}'s; these files are on ${machineOf(profile)}. Switch to ${agentName(owner)}'s files, or open the chat for ${agentName(profile)}.`,
   showOtherAgent: (profile: string) => `Switch back to ${agentName(profile)} to show this upload.`,
+  // Chat cards (::cloud-file)
+  cardPreview: 'Preview',
+  cardIn: (folder: string) => `in ${folder}`,
+  cardOtherAgent: (profile: string) => `Switch to ${agentName(profile)} to open this file.`,
+  cardOutside: 'Not in a folder Cloud Files shows',
+  cardFocusChat: 'Select this chat to open the file',
+  cardGone: 'No longer there',
+  cardUpdate: 'Update Cloud File Manager on the agent’s machine to open this here',
+  cardUnavailable: 'Cloud Files can’t reach this agent right now',
+  cardFolderChanged: 'Cloud Files settings changed. Ask the agent for the file again.',
   copyPath: 'Copy path',
   download: 'Download',
   maxPerFile: (bytes: number) => `Up to ${mb(bytes)} per file`,
@@ -86,7 +96,7 @@ export const S = {
   // Upload drawer
   uploading: (n: number, total: number, sent: string, size: string) => `Uploading ${n} of ${total} · ${sent} of ${size}`,
   uploaded: (done: number, total: number, failed: number) =>
-    `Uploaded ${done} of ${total}${failed ? ` · ${failed} failed` : ''}`,
+    !total && failed ? `${failed} failed` : `Uploaded ${done} of ${total}${failed ? ` · ${failed} failed` : ''}`,
   canceled: 'Upload canceled',
   paused: (profile: string) => `Switch back to ${profile} to continue uploading`,
   busyElsewhere: 'Finish or cancel the current uploads first',
@@ -192,6 +202,7 @@ export const CODE_TEXT: Record<string, string> = {
   size_mismatch: 'The file size changed during upload',
   unsupported_backend: 'This agent’s storage is not supported',
   unknown_root: 'That folder is no longer available',
+  root_changed: 'Cloud Files settings changed while this was open. Reopen the folder.',
   not_a_dir: 'That is not a folder',
   is_link: 'That item is a link outside the agent’s folders',
   bad_query: 'That search is not valid',
