@@ -192,6 +192,7 @@ export const CODE_TEXT: Record<string, string> = {
   size_mismatch: 'The file size changed during upload',
   unsupported_backend: 'This agent’s storage is not supported',
   unknown_root: 'That folder is no longer available',
+  root_changed: 'Cloud Files settings changed while this was open. Reopen the folder.',
   not_a_dir: 'That is not a folder',
   is_link: 'That item is a link outside the agent’s folders',
   bad_query: 'That search is not valid',

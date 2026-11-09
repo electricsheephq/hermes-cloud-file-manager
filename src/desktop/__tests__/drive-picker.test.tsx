@@ -60,8 +60,8 @@ describe('+ → Google Drive picker', () => {
     expect(insertText).toHaveBeenCalledWith(formatInsertText('default', [importedEntry('pdf1'), importedEntry('sheet1')]))
     expect(insertText.mock.calls[0][0]).toContain(`- ${TICK}/home/agent/uploads/drive/report.pdf${TICK}`)
     expect(imports(calls).map(c => c.opts.body)).toEqual([
-      { id: 'pdf1', root: 'home', dest: 'uploads/drive' },
-      { id: 'sheet1', root: 'home', dest: 'uploads/drive' }
+      { id: 'pdf1', root: 'home', root_path: '/home/agent', dest: 'uploads/drive' },
+      { id: 'sheet1', root: 'home', root_path: '/home/agent', dest: 'uploads/drive' }
     ])
     expect(imports(calls).every(c => c.opts.timeoutMs >= 330_000)).toBe(true)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

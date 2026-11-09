@@ -311,8 +311,8 @@ describe('D11 upload drawer paths', () => {
     const input = pick(view.container, [new File(['hello'], 'a.txt'), new File(['hi'], 'b.txt')])
     expect(await screen.findByText('Uploaded 2 of 2')).toBeTruthy()
     expect(calls.filter(c => c.path === '/uploads/start').map(c => c.opts.body)).toEqual([
-      { root: 'home', path: 'a.txt', size: 5 },
-      { root: 'home', path: 'b.txt', size: 2 }
+      { root: 'home', root_path: '/home/agent', path: 'a.txt', size: 5 },
+      { root: 'home', root_path: '/home/agent', path: 'b.txt', size: 2 }
     ])
     expect(input.value).toBe('')
   })
@@ -328,7 +328,7 @@ describe('D11 upload drawer paths', () => {
     Object.defineProperty(file, 'webkitRelativePath', { value: 'pics/x.png' })
     pick(view.container, [file], 1)
     expect(await screen.findByText('Uploaded 1 of 1')).toBeTruthy()
-    expect(calls.find(c => c.path === '/uploads/start')?.opts.body).toEqual({ root: 'home', path: 'pics/x.png', size: 1 })
+    expect(calls.find(c => c.path === '/uploads/start')?.opts.body).toEqual({ root: 'home', root_path: '/home/agent', path: 'pics/x.png', size: 1 })
   })
 
   it('Retry after a failed chunk sends the file again', async () => {
@@ -362,7 +362,7 @@ describe('D11 upload drawer paths', () => {
     await waitFor(() => expect(calls.some(c => c.path === '/uploads/chunk')).toBe(true))
     fireEvent.click(within(drawer).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(within(drawer).getByRole('status').textContent).toBe('Upload canceled'))
-    expect(calls.find(c => c.path === '/uploads/abort')?.opts.body).toEqual({ upload_id: 'u:a.txt', root: 'home', path: 'a.txt' })
+    expect(calls.find(c => c.path === '/uploads/abort')?.opts.body).toEqual({ upload_id: 'u:a.txt', root: 'home', root_path: '/home/agent', path: 'a.txt' })
     expect(within(drawer).getByText('Canceled')).toBeTruthy()
     settle({ ok: true, size: 5 }) // the request in flight settles; nothing more is sent
     await waitFor(() => expect(within(drawer).getByRole('button', { name: 'Clear' })).toBeTruthy())

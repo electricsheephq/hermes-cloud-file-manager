@@ -182,6 +182,7 @@ var CODE_TEXT = {
   size_mismatch: "The file size changed during upload",
   unsupported_backend: "This agent\u2019s storage is not supported",
   unknown_root: "That folder is no longer available",
+  root_changed: "Cloud Files settings changed while this was open. Reopen the folder.",
   not_a_dir: "That is not a folder",
   is_link: "That item is a link outside the agent\u2019s folders",
   bad_query: "That search is not valid",
@@ -519,7 +520,7 @@ var UploadBatch = class {
     if (limits) this.limits = limits;
     const items = [];
     for (const rel of input.dirs ?? []) {
-      items.push({ id: this.nextId++, root: dest.root, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: "queued", isDir: true });
+      items.push({ id: this.nextId++, root: dest.root, rootPath: dest.rootPath, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: "queued", isDir: true });
     }
     for (const { file, rel } of input.files) {
       const id = this.nextId++;
@@ -528,6 +529,7 @@ var UploadBatch = class {
       items.push({
         id,
         root: dest.root,
+        rootPath: dest.rootPath,
         path: joinPath(dest.folder, rel),
         size: file.size,
         sent: 0,
@@ -595,18 +597,18 @@ var UploadBatch = class {
     }
   }
   async mkdir(item) {
-    const res = await this.send("/mkdir", { root: item.root, path: item.path }, false);
+    const res = await this.send("/mkdir", { root: item.root, root_path: item.rootPath, path: item.path }, false);
     if (res.ok) this.patch(item.id, { status: "done" });
     else this.fail(item.id, { error: codeText(res.code, res.message) });
   }
   async uploadFile(item) {
     const blob = this.blobs.get(item.id);
-    const { root, path, size } = item;
+    const { root, rootPath, path, size } = item;
     let chunk = Math.max(MIN_CHUNK, this.limits.chunk_bytes);
     let restarted = false;
     restart: for (; ; ) {
       this.patch(item.id, { sent: 0 });
-      const started = await this.send("/uploads/start", { root, path, size }, false);
+      const started = await this.send("/uploads/start", { root, root_path: rootPath, path, size }, false);
       if (!started.ok || !started.upload_id) return this.fail(item.id, { error: codeText(started.code, started.message) });
       const uploadId = started.upload_id;
       this.inFlight.set(item.id, uploadId);
@@ -614,7 +616,7 @@ var UploadBatch = class {
       let offset = 0;
       for (; ; ) {
         if (offset >= size) {
-          const fin = await this.send("/uploads/finish", { upload_id: uploadId, root, path, size }, false);
+          const fin = await this.send("/uploads/finish", { upload_id: uploadId, root, root_path: rootPath, path, size }, false);
           if (fin.ok) {
             this.inFlight.delete(item.id);
             this.blobs.delete(item.id);
@@ -638,7 +640,7 @@ var UploadBatch = class {
         const data = await this.readChunk(blob.slice(offset, Math.min(size, offset + chunk)));
         let res;
         try {
-          res = await this.send("/uploads/chunk", { upload_id: uploadId, root, path, offset, data }, chunk > MIN_CHUNK);
+          res = await this.send("/uploads/chunk", { upload_id: uploadId, root, root_path: rootPath, path, offset, data }, chunk > MIN_CHUNK);
         } catch (error) {
           if (!(error instanceof Shrink)) throw error;
           chunk = Math.max(MIN_CHUNK, Math.floor(chunk / 2));
@@ -702,7 +704,7 @@ var UploadBatch = class {
     const item = this.snapshot.items.find((it) => it.id === id);
     this.inFlight.delete(id);
     if (!uploadId || !item || !this.matches()) return;
-    void this.deps.rest("/uploads/abort", { method: "POST", body: { upload_id: uploadId, root: item.root, path: item.path } }).catch(() => void 0);
+    void this.deps.rest("/uploads/abort", { method: "POST", body: { upload_id: uploadId, root: item.root, root_path: item.rootPath, path: item.path } }).catch(() => void 0);
   }
   fail(id, { error }) {
     if (this.snapshot.canceled) return;
@@ -1409,17 +1411,19 @@ function driveIcon({ mime, is_folder }) {
   return "file";
 }
 var DriveImport = class {
-  constructor(items, root, pin, deps, folder = DRIVE_DEST) {
+  constructor(items, root, pin, deps, folder = DRIVE_DEST, rootPath) {
     this.items = items;
     this.root = root;
     this.deps = deps;
     this.folder = folder;
+    this.rootPath = rootPath;
     this.snapshot = { pin: { ...pin }, dest: { root, folder }, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false };
   }
   items;
   root;
   deps;
   folder;
+  rootPath;
   snapshot;
   listeners = /* @__PURE__ */ new Set();
   wake = () => void 0;
@@ -1455,7 +1459,7 @@ var DriveImport = class {
         this.set({ paused: false });
         let failure = null;
         try {
-          const body = { id: item.id, root: this.root, dest: this.folder };
+          const body = { id: item.id, root: this.root, root_path: this.rootPath, dest: this.folder };
           const res = await rest2("/drive/import", { method: "POST", body, timeoutMs: IMPORT_TIMEOUT_MS });
           if (res?.ok && res.entry) this.set({ imported: [...this.snapshot.imported, res.entry] });
           else failure = codeText(res?.code, res?.message);
@@ -1888,7 +1892,7 @@ function DrivePicker({ roots }) {
   const start = () => {
     const insertText = $insertText.get();
     const pin = currentPin();
-    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host4.state, hold: ownerHold(pin) });
+    const job = new DriveImport([...d.selected.values()], roots.roots[0].id, pin, { rest, state: host4.state, hold: ownerHold(pin) }, void 0, roots.roots[0].path);
     $pickerJob.set(job);
     void job.start().then((done) => {
       if (done.canceled || $pickerJob.get() !== job || !done.imported.length) return;
@@ -2132,7 +2136,7 @@ function load(doc, setDoc) {
 }
 function openDoc(entry, root, pin, setDoc) {
   const base = { bom: false, crlf: false, mixed: false, base: "", draft: "", sha: "" };
-  const doc = { ...base, id: 0, pin, root: root.id, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: "loading", mode: "view" };
+  const doc = { ...base, id: 0, pin, root: root.id, rootPath: root.path, rootLabel: root.label, path: entry.rel, abs: entry.abs, name: entry.name, status: "loading", mode: "view" };
   const kind = previewKind(entry.name);
   if (kind) setDoc({ ...doc, preview: { kind } });
   else load(doc, setDoc);
@@ -2209,7 +2213,7 @@ function Editor({ doc, setDoc, onClose, leave }) {
     try {
       const res = await call("/file/save", {
         method: "POST",
-        body: { root: doc.root, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
+        body: { root: doc.root, root_path: doc.rootPath, path: doc.path, base_sha256: doc.sha, text: encodeText(sent, doc) }
       });
       settleSave(doc, res.sha256, setDoc);
       setPopup(null);
@@ -2679,7 +2683,7 @@ function Files({ profile, roots, doc, setDoc }) {
   const rootId = b.root?.id ?? "";
   const limits = { max_file_bytes: roots.max_file_bytes, chunk_bytes: roots.chunk_bytes };
   const here = baseName(b.path) || b.root?.label || "";
-  const dest = { root: rootId, folder: b.path };
+  const dest = { root: rootId, rootPath: b.root?.path, folder: b.path };
   const driveOn = useValue5($driveAvailable) === true;
   const [source, setSource] = useState5("cloud");
   const inDrive = driveOn && source === "drive";
@@ -2805,7 +2809,7 @@ function DrivePane({ dest, label }) {
   const d = useDriveBrowser();
   const job = useImport(useValue5($driveJob));
   const start = () => {
-    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host8.state }, dest.folder);
+    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host8.state }, dest.folder, dest.rootPath);
     $driveJob.set(next);
     d.clear();
     void next.start();
@@ -2874,7 +2878,7 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }) {
     if (trimmed.includes("/")) return setError(S.nameNoSlash);
     setBusy(true);
     try {
-      await call("/mkdir", { method: "POST", body: { root: b.root?.id, path: joinPath(b.path, trimmed) } });
+      await call("/mkdir", { method: "POST", body: { root: b.root?.id, root_path: b.root?.path, path: joinPath(b.path, trimmed) } });
       onOpenChange(false);
       onCreated();
       host8.notify({ kind: "success", message: S.folderCreated(trimmed) });

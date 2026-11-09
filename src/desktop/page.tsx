@@ -224,7 +224,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
   const rootId = b.root?.id ?? ''
   const limits: Limits = { max_file_bytes: roots.max_file_bytes, chunk_bytes: roots.chunk_bytes }
   const here = baseName(b.path) || b.root?.label || ''
-  const dest = { root: rootId, folder: b.path }
+  const dest = { root: rootId, rootPath: b.root?.path, folder: b.path }
   // Google Drive is a second source next to the cloud roots, offered only while the agent reports it.
   const driveOn = useValue($driveAvailable) === true
   const [source, setSource] = useState<'cloud' | 'drive'>('cloud')
@@ -378,7 +378,7 @@ function DrivePane({ dest, label }: { dest: Destination; label: string }) {
   const job = useImport(useValue($driveJob))
   const start = () => {
     // Pinned now: the requests go to this agent only, even if the user switches while it runs.
-    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host.state }, dest.folder)
+    const next = new DriveImport([...d.selected.values()], dest.root, currentPin(), { rest, state: host.state }, dest.folder, dest.rootPath)
     $driveJob.set(next)
     d.clear()
     void next.start()
@@ -475,7 +475,7 @@ function NewFolderDialog({ b, open, onOpenChange, onCreated }: {
     if (trimmed.includes('/')) return setError(S.nameNoSlash)
     setBusy(true)
     try {
-      await call('/mkdir', { method: 'POST', body: { root: b.root?.id, path: joinPath(b.path, trimmed) } })
+      await call('/mkdir', { method: 'POST', body: { root: b.root?.id, root_path: b.root?.path, path: joinPath(b.path, trimmed) } })
       onOpenChange(false)
       onCreated()
       host.notify({ kind: 'success', message: S.folderCreated(trimmed) })

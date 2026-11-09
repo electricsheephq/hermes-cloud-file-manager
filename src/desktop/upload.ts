@@ -15,6 +15,8 @@ export type UploadStatus = 'queued' | 'uploading' | 'done' | 'failed' | 'cancele
 export interface UploadItem {
   id: number
   root: string
+  /** The root's absolute path when the batch started; the gateway refuses the write if `root` now names another. */
+  rootPath?: string
   /** Target path relative to the root. */
   path: string
   size: number
@@ -59,6 +61,8 @@ export interface UploadInput {
 
 export interface Destination {
   root: string
+  /** The root's absolute path from /roots, sent with every write so a reordered settings list can't redirect it. */
+  rootPath?: string
   folder: string
 }
 
@@ -155,7 +159,7 @@ export class UploadBatch {
     if (limits) this.limits = limits
     const items: UploadItem[] = []
     for (const rel of input.dirs ?? []) {
-      items.push({ id: this.nextId++, root: dest.root, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: 'queued', isDir: true })
+      items.push({ id: this.nextId++, root: dest.root, rootPath: dest.rootPath, path: joinPath(dest.folder, rel), size: 0, sent: 0, status: 'queued', isDir: true })
     }
     for (const { file, rel } of input.files) {
       const id = this.nextId++
@@ -165,6 +169,7 @@ export class UploadBatch {
       items.push({
         id,
         root: dest.root,
+        rootPath: dest.rootPath,
         path: joinPath(dest.folder, rel),
         size: file.size,
         sent: 0,
@@ -240,20 +245,20 @@ export class UploadBatch {
   }
 
   private async mkdir(item: UploadItem): Promise<void> {
-    const res = await this.send('/mkdir', { root: item.root, path: item.path }, false)
+    const res = await this.send('/mkdir', { root: item.root, root_path: item.rootPath, path: item.path }, false)
     if (res.ok) this.patch(item.id, { status: 'done' })
     else this.fail(item.id, { error: codeText(res.code, res.message) })
   }
 
   private async uploadFile(item: UploadItem): Promise<void> {
     const blob = this.blobs.get(item.id)!
-    const { root, path, size } = item
+    const { root, rootPath, path, size } = item
     let chunk = Math.max(MIN_CHUNK, this.limits.chunk_bytes)
     let restarted = false
 
     restart: for (;;) {
       this.patch(item.id, { sent: 0 })
-      const started = await this.send('/uploads/start', { root, path, size }, false)
+      const started = await this.send('/uploads/start', { root, root_path: rootPath, path, size }, false)
       if (!started.ok || !started.upload_id) return this.fail(item.id, { error: codeText(started.code, started.message) })
       const uploadId = started.upload_id
       this.inFlight.set(item.id, uploadId)
@@ -262,7 +267,7 @@ export class UploadBatch {
 
       for (;;) {
         if (offset >= size) {
-          const fin = await this.send('/uploads/finish', { upload_id: uploadId, root, path, size }, false)
+          const fin = await this.send('/uploads/finish', { upload_id: uploadId, root, root_path: rootPath, path, size }, false)
           if (fin.ok) {
             this.inFlight.delete(item.id)
             this.blobs.delete(item.id)
@@ -287,7 +292,7 @@ export class UploadBatch {
         const data = await this.readChunk(blob.slice(offset, Math.min(size, offset + chunk)))
         let res: Reply
         try {
-          res = await this.send('/uploads/chunk', { upload_id: uploadId, root, path, offset, data }, chunk > MIN_CHUNK)
+          res = await this.send('/uploads/chunk', { upload_id: uploadId, root, root_path: rootPath, path, offset, data }, chunk > MIN_CHUNK)
         } catch (error) {
           if (!(error instanceof Shrink)) throw error
           chunk = Math.max(MIN_CHUNK, Math.floor(chunk / 2))
@@ -360,7 +365,7 @@ export class UploadBatch {
     this.inFlight.delete(id)
     if (!uploadId || !item || !this.matches()) return
     void this.deps
-      .rest('/uploads/abort', { method: 'POST', body: { upload_id: uploadId, root: item.root, path: item.path } })
+      .rest('/uploads/abort', { method: 'POST', body: { upload_id: uploadId, root: item.root, root_path: item.rootPath, path: item.path } })
       .catch(() => undefined)
   }
 

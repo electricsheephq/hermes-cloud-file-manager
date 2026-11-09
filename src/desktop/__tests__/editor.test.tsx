@@ -189,7 +189,7 @@ describe('editor: never writes without an explicit Save', () => {
     expect(saves()).toHaveLength(1)
     expect(saves()[0].opts).toEqual({
       method: 'POST',
-      body: { root: 'home', path: 'readme.md', base_sha256: fakeSha(TEXTS['readme.md']), text: '# New\n' }
+      body: { root: 'home', root_path: '/home/agent', path: 'readme.md', base_sha256: fakeSha(TEXTS['readme.md']), text: '# New\n' }
     })
     expect(files.get('readme.md')).toBe('# New\n')
     expect(textarea()).toBeNull()

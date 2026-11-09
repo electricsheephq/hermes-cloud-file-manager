@@ -83,7 +83,9 @@ export class DriveImport {
     private readonly root: string,
     pin: AgentPin,
     private readonly deps: Pick<UploadDeps, 'rest' | 'state'> & { hold?: ImportHold },
-    private readonly folder: string = DRIVE_DEST
+    private readonly folder: string = DRIVE_DEST,
+    /** The root's absolute path from /roots: the gateway refuses the import if `root` now names another folder. */
+    private readonly rootPath?: string
   ) {
     this.snapshot = { pin: { ...pin }, dest: { root, folder }, total: items.length, settled: 0, imported: [], failures: [], running: false, paused: false, canceled: false }
   }
@@ -123,7 +125,7 @@ export class DriveImport {
         this.set({ paused: false })
         let failure: null | string = null
         try {
-          const body = { id: item.id, root: this.root, dest: this.folder }
+          const body = { id: item.id, root: this.root, root_path: this.rootPath, dest: this.folder }
           const res = await rest<ImportReply>('/drive/import', { method: 'POST', body, timeoutMs: IMPORT_TIMEOUT_MS })
           if (res?.ok && res.entry) this.set({ imported: [...this.snapshot.imported, res.entry] })
           else failure = codeText(res?.code, res?.message)

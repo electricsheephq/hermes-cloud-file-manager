@@ -240,12 +240,16 @@ def _supported(cfg):
     return str(_dict(cfg.get("terminal")).get("backend") or "local").lower() == "local"
 
 
-def _request_root(root_id):
+def _request_root(root_id, root_path=None):
+    """The configured root ``root_id``. A writer also sends the ``root_path`` it saw when it started: root ids are
+    positions in the settings list, so after the list is reordered the same id can name another folder."""
     cfg = _dict(_load_config())
     if not _supported(cfg):
         raise GuardError("unsupported_backend", "Files are available only with the local terminal backend.")
     for root in _roots(cfg):
         if root.id == root_id:
+            if root_path is not None and root_path != str(root.path):
+                raise GuardError("root_changed", "Cloud Files settings changed while this was open. Reopen the folder.")
             return root, cfg
     raise GuardError("unknown_root", "The requested root is unavailable.")
 
@@ -436,6 +440,8 @@ def _mkdir(root, rel):
 class Target(BaseModel):
     root: str
     path: str
+    # Optional for older Desktop halves; when present, a write refuses if the id now names another folder.
+    root_path: str | None = None
 
 
 class SizedTarget(Target):
@@ -575,7 +581,7 @@ def preview_file(root: str, path: str):
 @router.post("/file/save")
 @_protocol
 def save_file(body: FileSave):
-    root, _ = _request_root(body.root)
+    root, _ = _request_root(body.root, body.root_path)
     target = _resolve(root, body.path, for_write=True)
     _edit_suffix(target)
     try:
@@ -661,7 +667,7 @@ def _upload_target(root, rel):
 def _temp(body, *, required=True):
     if not UPLOAD_RE.fullmatch(body.upload_id):
         raise GuardError("bad_upload_id", "The upload identifier is invalid.")
-    root, cfg = _request_root(body.root)
+    root, cfg = _request_root(body.root, body.root_path)
     target = _upload_target(root, body.path)
     temp = target.parent / f".cfm-{body.upload_id}.part"
     try:
@@ -887,7 +893,7 @@ def search(root: str, q: str, limit: int = Query(100, ge=1, le=200), path: str =
 @router.post("/mkdir")
 @_protocol
 def mkdir(body: Target):
-    root, _ = _request_root(body.root)
+    root, _ = _request_root(body.root, body.root_path)
     path, created = _mkdir(root, body.path)
     _clear_list_cache()
     return {"ok": True, "created": created, "entry": _entry(root, path)}
@@ -925,7 +931,7 @@ def _sweep(parent):
 @router.post("/uploads/start")
 @_protocol
 def upload_start(body: SizedTarget):
-    root, cfg = _request_root(body.root)
+    root, cfg = _request_root(body.root, body.root_path)
     cap = _max_bytes(cfg)
     if body.size > cap:
         _too_large(cap)
@@ -1004,7 +1010,7 @@ def upload_finish(body: Finish):
 
 
 def _finish(body):
-    root, _ = _request_root(body.root)
+    root, _ = _request_root(body.root, body.root_path)
     with _FINISHED_LOCK:
         record = _FINISHED.get(body.upload_id)
     if record and (record["root"], record["path"], record["size"]) == (str(root.path), body.path, body.size):
@@ -1223,6 +1229,7 @@ def drive_list(folder: str = "root", q: str = ""):
 class DriveImport(BaseModel):
     id: str
     root: str
+    root_path: str | None = None
     dest: str = "uploads/drive"
 
 
@@ -1230,7 +1237,7 @@ class DriveImport(BaseModel):
 @_protocol
 def drive_import(body: DriveImport):
     _drive_id(body.id)
-    root, cfg = _request_root(body.root)
+    root, cfg = _request_root(body.root, body.root_path)
     dest, _ = _mkdir(root, body.dest)
     _sweep(dest)
     metadata = _drive_command(["get", body.id])
