@@ -2,6 +2,34 @@
 
 ![Cloud File Manager: browse, upload, attach and edit files on the machine your agent runs on, and import from Google Drive](docs/media/banner.png)
 
+Your agent's server files, as easy as local, in Hermes Desktop: drag in folders, preview, review each edit before Save.
+
+[![Latest release](https://img.shields.io/github/v/release/electricsheephq/hermes-cloud-file-manager)](https://github.com/electricsheephq/hermes-cloud-file-manager/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/electricsheephq/hermes-cloud-file-manager)](LICENSE)
+[![Hermes >= 0.21.5](https://img.shields.io/badge/Hermes-%3E%3D%200.21.5-blue)](#requirements)
+[![CI](https://github.com/electricsheephq/hermes-cloud-file-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/electricsheephq/hermes-cloud-file-manager/actions/workflows/ci.yml)
+
+```bash
+hermes plugins install electricsheephq/hermes-cloud-file-manager --enable
+```
+
+Run it on the machine your agent's gateway runs on. It needs no API keys; if it asks to install Node dependencies,
+answer **No**. Then add the desktop half in Hermes Desktop on each computer that uses it: in **Capabilities →
+Plugins**, choose **+ Add to this Agent** on the Cloud File Manager catalog entry, and switch on **Desktop** on the
+plugin's card. On Hermes 0.21.5 and evaOS, restart the agent's gateway once. Other ways to install are under
+[Install](#install).
+
+**Try it**
+
+1. Install it as above. **Cloud Files** appears in Hermes Desktop's sidebar.
+2. Drag a folder with a text file in it from your computer onto the Cloud Files page. Then ask the agent in a Desktop
+   chat: "Summarise notes.txt into a short note and hand it to me."
+3. Files the agent writes are marked **New** or **Updated** as it works, and its reply ends with a card for the file:
+   **Open**, **Preview**, **Download** or **Add to chat** (cards need Hermes 0.21.6 or newer; on 0.21.5, open the
+   note in Cloud Files). Edit a Markdown file and you review your changes before **Save**.
+
+![Cloud Files beside the chat: the agent has just sorted the folder and written a summary, marked New and Updated, sorted by date](docs/media/screenshot-live-marks.png)
+
 When your Hermes agent runs somewhere else — a VPS, a home server, a hosted agent — its files live on that
 machine, not yours. Cloud File Manager puts that machine's files one click away in Hermes Desktop.
 
@@ -32,8 +60,6 @@ machine, not yours. Cloud File Manager puts that machine's files one click away 
   and how to hand a file over this way. After an upload, **Add to chat** gives the agent what you just dropped, under
   the names it was saved as.
 
-![Cloud Files beside the chat: the agent has just sorted the folder and written a summary, marked New and Updated, sorted by date](docs/media/screenshot-live-marks.png)
-
 ![Uploading a folder](docs/media/screenshot-upload.png)
 
 ## How it differs from Hermes Desktop's Files tree
@@ -53,7 +79,7 @@ not do:
   imports files from the agent's Google Drive.
 - **The agent hands you files as cards** in its reply, which open straight in Cloud Files.
 
-It never deletes, renames or moves files; ask the agent to do that.
+It never deletes, renames or moves your files; ask the agent to do that.
 
 ## Requirements
 
@@ -155,6 +181,12 @@ installing the desktop half is harmless for your other agents.
   different agent than the files. **Add to chat** in the toolbar (or while viewing a file) does the same without
   dragging, into the chat beside Cloud Files. The **+ → Cloud** picker still inserts locations only, exactly as before.
 
+  Known issue: in a split layout with two agents' chats side by side, a drag started while one agent's chat has focus
+  can be dropped into the other agent's chat. The reference then names a path on the wrong machine (no file moves
+  between agents). Check that the chat and Cloud Files show the same agent, then use **Add to chat**, or click into
+  the target chat before you drag
+  ([#55](https://github.com/electricsheephq/hermes-cloud-file-manager/issues/55)).
+
 ![The agent's summary open beside the chat, rendered as Markdown](docs/media/screenshot-preview.png)
 
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
@@ -233,7 +265,7 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
     `terminal.cwd`, or the Docker `workspace/` folder); see [SECURITY.md](SECURITY.md).
   - When the shown folder is the gateway user's home, hidden top-level entries (`.ssh`, `.config`, …)
     are hidden and refused.
-- Uploads never overwrite, rename or delete existing files. There is no delete in this version. (Stale temporary
+- Uploads never overwrite, rename or delete existing files. There is no delete action: it never deletes your files. (Stale temporary
   files and folders with the plugin's reserved `.cfm-…part` and `.cfm-…dir` names are cleaned up once they are
   more than 24 hours old, the next time an upload or Drive import starts in that folder; at most once an hour per folder.)
 - Only Save in the editor overwrites, only the file you opened, and only if it has not changed since you opened
@@ -254,7 +286,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Limits in this version
 
-- No rename or move yet, and it never deletes; ask the agent, or use a shell.
+- No rename or move yet, and it never deletes your files; ask the agent, or use a shell.
 - Download saves one file at a time. Folders and Google Drive files can't be downloaded. It works in every
   Hermes Desktop this plugin supports (v0.21.5 or newer) and in evaOS Desktop 2026.10.6 or newer; a build without
   it simply doesn't show it.
@@ -312,6 +344,11 @@ Include the plugin version/source from `hermes plugins list --json`, `hermes --v
 Ask your Hermes agent to "report a problem with Cloud File Manager" to draft a report for your review.
 Use the [bug report form](https://github.com/electricsheephq/hermes-cloud-file-manager/issues/new?template=bug_report.yml) for ordinary bugs.
 Report path escapes, files crossing isolated user/profile boundaries, or exposed secrets through a [private advisory](https://github.com/electricsheephq/hermes-cloud-file-manager/security/advisories/new).
+
+## More
+
+[Releases](https://github.com/electricsheephq/hermes-cloud-file-manager/releases) ·
+[Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [License](LICENSE)
 
 ## License
 

@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.7.1] - 2026-11-10
+
+Documentation only: no change to either half's behaviour.
+
+### Changed
+- **README:** a one-line summary, badges, the install command and a three-step "Try it" now come first, before the
+  feature list.
+- **README:** "never deletes" now reads "never deletes your files", since the plugin does clean up its own temporary
+  upload files.
+- **README:** the drag-into-chat section now names the split-layout known issue (#55) and its workaround (Add to chat,
+  or click into the target chat before dragging).
+
 ## [0.7.0] - 2026-11-09
 
 Both halves change: update the agent's side too (and restart its gateway on Hermes 0.21.5).

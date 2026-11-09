@@ -3,7 +3,7 @@
   "label": "Cloud Files",
   "description": "Browse, search, sort by date, see what changed, upload, preview, download and edit files on the machine your agent runs on, drag them into the chat, and open the files the agent hands you as cards in its replies.",
   "icon": "Cloud",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "tab": { "path": "/cloud-files", "hidden": true },
   "entry": "dist/index.js",
   "api": "plugin_api.py"
