@@ -3055,9 +3055,9 @@ var box = {
   margin: "6px 0",
   padding: "8px 10px",
   maxWidth: 520,
-  border: "1px solid var(--ui-border)",
+  border: "1px solid var(--ui-stroke-tertiary)",
   borderRadius: 8,
-  background: "var(--ui-surface)"
+  background: "var(--ui-surface-background)"
 };
 var muted6 = { fontSize: 12, color: "var(--ui-text-secondary)" };
 function Head({ icon, name, detail, title }) {

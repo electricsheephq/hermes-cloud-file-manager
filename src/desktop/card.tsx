@@ -59,9 +59,9 @@ const box = {
   margin: '6px 0',
   padding: '8px 10px',
   maxWidth: 520,
-  border: '1px solid var(--ui-border)',
+  border: '1px solid var(--ui-stroke-tertiary)',
   borderRadius: 8,
-  background: 'var(--ui-surface)'
+  background: 'var(--ui-surface-background)'
 } as const
 const muted = { fontSize: 12, color: 'var(--ui-text-secondary)' } as const
 
