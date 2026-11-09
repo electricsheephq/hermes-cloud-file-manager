@@ -38,7 +38,8 @@ def _roots(ctx):
             continue
         posix = value.startswith("/")
         drive = len(value) > 2 and value[0].isalpha() and value[1] == ":" and value[2] in "\\/"
-        if (posix or drive) and os.path.isdir(value):
+        # The gateway also refuses a filesystem root ("/", "C:\\"), so don't name one here.
+        if (posix or drive) and os.path.isdir(value) and os.path.dirname(os.path.realpath(value)) != os.path.realpath(value):
             roots.append(value)
         if len(roots) == _MAX_ROOTS:
             break

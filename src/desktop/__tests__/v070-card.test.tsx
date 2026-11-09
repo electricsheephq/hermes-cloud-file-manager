@@ -126,10 +126,35 @@ it('the page ignores a stale reveal, and warns about one for another agent or a 
 
 it('a card in a chat that is not the focused one does not look the file up', async () => {
   const h = setup()
-  host.state.activeSessionId.set('another-session')
+  // The primary chat is the card's chat, but a tile (maybe another agent's) holds focus.
+  host.state.focusedStoredSessionId.set('tile-session')
+  host.state.focusedSessionId.set('tile-runtime')
   render(card('/home/agent/readme.md'))
   expect(screen.getByText(S.cardFocusChat)).toBeTruthy()
   expect(h.locates()).toHaveLength(0)
-  act(() => host.state.activeSessionId.set('session-1'))
+  act(() => {
+    host.state.focusedStoredSessionId.set('session-1')
+    host.state.focusedSessionId.set('runtime-1')
+  })
   expect(await screen.findByRole('button', { name: S.open })).toBeTruthy()
+})
+
+it('matches the focused chat by its stored id or, before it has one, its runtime id', async () => {
+  setup()
+  // Host default: card named by stored id 'session-1', runtime id 'runtime-1' (activeSessionId is a runtime id).
+  const view = render(card('/home/agent/readme.md'))
+  expect(await screen.findByRole('button', { name: S.open })).toBeTruthy()
+  view.unmount()
+  host.state.focusedStoredSessionId.set(null)
+  render(card('/home/agent/readme.md', { sessionId: 'runtime-1' }))
+  expect(await screen.findByRole('button', { name: S.open })).toBeTruthy()
+})
+
+it('a focused draft with no ids does not look up a card from another chat', () => {
+  const h = setup()
+  host.state.focusedStoredSessionId.set(null)
+  host.state.focusedSessionId.set(null)
+  render(card('/home/agent/readme.md'))
+  expect(screen.getByText(S.cardFocusChat)).toBeTruthy()
+  expect(h.locates()).toHaveLength(0)
 })

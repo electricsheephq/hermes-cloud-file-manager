@@ -38,7 +38,9 @@ export const host = {
     connectionId: atom<null | string>('conn-1'),
     profile: atom<string>('default'),
     focusedSessionOwner: atom<null | { connectionId: null | string; profile: string }>({ connectionId: 'conn-1', profile: 'default' }),
-    activeSessionId: atom<null | string>('session-1')
+    activeSessionId: atom<null | string>('runtime-1'),
+    focusedSessionId: atom<null | string>('runtime-1'),
+    focusedStoredSessionId: atom<null | string>('session-1')
   },
   notify: (_note: unknown) => undefined,
   navigate: (_path: string) => undefined
@@ -50,7 +52,9 @@ export function resetHost() {
   host.state.connectionId.set('conn-1')
   host.state.profile.set('default')
   host.state.focusedSessionOwner.set({ connectionId: 'conn-1', profile: 'default' })
-  host.state.activeSessionId.set('session-1')
+  host.state.activeSessionId.set('runtime-1')
+  host.state.focusedSessionId.set('runtime-1')
+  host.state.focusedStoredSessionId.set('session-1')
 }
 
 /** Download: absent by default, like SDKs before it (0.21.5). A live binding, so `import * as sdk` sees changes. */

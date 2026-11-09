@@ -82,3 +82,9 @@ def test_hosts_without_sections_or_refusing_it_still_load():
     assert load_plugin().register(SkillsOnly()) is None
     ctx = Ctx([], refuse=True)
     assert load_plugin().register(ctx) is None and ctx.skills
+
+
+def test_a_filesystem_root_is_not_named(tmp_path):
+    text = render(["/", str(tmp_path)])
+    assert "folders on this machine: " + str(tmp_path) + ". " in text
+    assert "machine: /," not in text

@@ -94,9 +94,14 @@ export function FileCard({ attrs, source, streaming, sessionId }: DirectiveProps
   const pin: AgentPin = { connectionId: connectionId === 'local' ? null : connectionId, profile }
   const otherAgent = Boolean(owner && ownerMismatch(owner, host.state.connectionId.get(), host.state.profile.get()))
   // A card in a chat that isn't the focused one may belong to another agent (tiles): Desktop doesn't say which, so it
-  // only looks the file up for the focused chat. Hosts that don't pass sessionId have one chat at a time.
-  const activeSession = useValue((host.state as unknown as { activeSessionId?: typeof NO_SESSION }).activeSessionId ?? NO_SESSION)
-  const elsewhere = sessionId !== undefined && sessionId !== null && activeSession !== null && sessionId !== activeSession
+  // only looks the file up for the focused chat (the interacted tile, else the primary). The host names a card's chat
+  // by its stored id, or its runtime id before it has one, so match either. Hosts that don't pass sessionId, or don't
+  // expose the focused ids, have one chat at a time.
+  const focus = host.state as unknown as { focusedStoredSessionId?: typeof NO_SESSION; focusedSessionId?: typeof NO_SESSION }
+  const focusedStored = useValue(focus.focusedStoredSessionId ?? NO_SESSION)
+  const focusedRuntime = useValue(focus.focusedSessionId ?? NO_SESSION)
+  const knowsFocus = Boolean(focus.focusedStoredSessionId || focus.focusedSessionId)
+  const elsewhere = Boolean(sessionId) && knowsFocus && sessionId !== focusedStored && sessionId !== focusedRuntime
   const query = useQuery({
     queryKey: ['hcfm', connectionId, profile, 'locate', path],
     queryFn: () => call<Located>(`/locate?path=${encodeURIComponent(path)}`),

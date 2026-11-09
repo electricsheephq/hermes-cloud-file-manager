@@ -3083,8 +3083,11 @@ function FileCard({ attrs, source, streaming, sessionId }) {
   const owner = useValue6(host9.state.focusedSessionOwner ?? NO_OWNER2);
   const pin = { connectionId: connectionId === "local" ? null : connectionId, profile };
   const otherAgent = Boolean(owner && ownerMismatch(owner, host9.state.connectionId.get(), host9.state.profile.get()));
-  const activeSession = useValue6(host9.state.activeSessionId ?? NO_SESSION2);
-  const elsewhere = sessionId !== void 0 && sessionId !== null && activeSession !== null && sessionId !== activeSession;
+  const focus = host9.state;
+  const focusedStored = useValue6(focus.focusedStoredSessionId ?? NO_SESSION2);
+  const focusedRuntime = useValue6(focus.focusedSessionId ?? NO_SESSION2);
+  const knowsFocus = Boolean(focus.focusedStoredSessionId || focus.focusedSessionId);
+  const elsewhere = Boolean(sessionId) && knowsFocus && sessionId !== focusedStored && sessionId !== focusedRuntime;
   const query2 = useQuery3({
     queryKey: ["hcfm", connectionId, profile, "locate", path],
     queryFn: () => call(`/locate?path=${encodeURIComponent(path)}`),
