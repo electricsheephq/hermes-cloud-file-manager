@@ -3081,7 +3081,7 @@ function FileCard({ attrs, source, streaming, sessionId }) {
   const valid = validPath(path);
   const [connectionId, profile] = useScope();
   const owner = useValue6(host9.state.focusedSessionOwner ?? NO_OWNER2);
-  const pin = { connectionId: connectionId === "local" ? null : connectionId, profile };
+  const pin = { connectionId: useValue6(host9.state.connectionId), profile };
   const otherAgent = Boolean(owner && ownerMismatch(owner, host9.state.connectionId.get(), host9.state.profile.get()));
   const focus = host9.state;
   const focusedStored = useValue6(focus.focusedStoredSessionId ?? NO_SESSION2);

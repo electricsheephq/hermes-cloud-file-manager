@@ -91,7 +91,8 @@ export function FileCard({ attrs, source, streaming, sessionId }: DirectiveProps
   const [connectionId, profile] = useScope()
   // Older hosts have no focusedSessionOwner: then the selected agent is the only one there is.
   const owner = useValue((host.state as unknown as { focusedSessionOwner?: typeof NO_OWNER }).focusedSessionOwner ?? NO_OWNER)
-  const pin: AgentPin = { connectionId: connectionId === 'local' ? null : connectionId, profile }
+  // The same pin the page builds (raw host connection id, 'local' included), so its reveal check matches.
+  const pin: AgentPin = { connectionId: useValue(host.state.connectionId), profile }
   const otherAgent = Boolean(owner && ownerMismatch(owner, host.state.connectionId.get(), host.state.profile.get()))
   // A card in a chat that isn't the focused one may belong to another agent (tiles): Desktop doesn't say which, so it
   // only looks the file up for the focused chat (the interacted tile, else the primary). The host names a card's chat

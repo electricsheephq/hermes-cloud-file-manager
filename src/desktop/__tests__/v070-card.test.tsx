@@ -158,3 +158,18 @@ it('a focused draft with no ids does not look up a card from another chat', () =
   expect(screen.getByText(S.cardFocusChat)).toBeTruthy()
   expect(h.locates()).toHaveLength(0)
 })
+
+it('on a local connection the page takes the reveal (the card pins the raw host connection id)', async () => {
+  setup()
+  host.state.connectionId.set('local')
+  host.state.focusedSessionOwner.set({ connectionId: 'local', profile: 'default' })
+  const notify = vi.spyOn(host, 'notify')
+  notify.mockClear()
+  const view = render(card('/home/agent/readme.md'))
+  fireEvent.click(await screen.findByRole('button', { name: S.cardPreview }))
+  expect($reveal.get()).toMatchObject({ pin: { connectionId: 'local', profile: 'default' } })
+  view.unmount()
+  render(<CloudFilesPage />)
+  expect(await screen.findByRole('button', { name: 'Edit' })).toBeTruthy()
+  expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning' }))
+})
