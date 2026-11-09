@@ -173,3 +173,10 @@ it('on a local connection the page takes the reveal (the card pins the raw host 
   expect(await screen.findByRole('button', { name: 'Edit' })).toBeTruthy()
   expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'warning' }))
 })
+
+it('keeps a trailing space in the path (it is part of a POSIX file name)', async () => {
+  const h = setup()
+  render(card('/home/agent/readme.md '))
+  expect(await screen.findByRole('button', { name: S.open })).toBeTruthy()
+  expect(h.locates().map(c => c.params.path)).toEqual(['/home/agent/readme.md '])
+})

@@ -69,9 +69,12 @@ def test_upload_mkdir_and_drive_import_refuse_a_stale_root(client, two_roots):
                offset=0, data="YWJj"), "root_changed")
     error(post(client, "uploads/finish", root="r0", root_path=stale, upload_id="a" * 32, path="new.txt", size=3),
           "root_changed")
+    error(post(client, "uploads/abort", root="r0", root_path=stale, upload_id="a" * 32, path="new.txt"), "root_changed")
     error(post(client, "mkdir", root="r0", root_path=stale, path="made"), "root_changed")
     error(post(client, "drive/import", id="1AbCdEfGhIjKlMnOpQrStUvWxYz0", root="r0", root_path=stale), "root_changed")
-    assert not (second / "made").exists() and not (second / "new.txt").exists()
+    for root in (first, second):
+        assert not (root / "made").exists()
+        assert not (root / "new.txt").exists()
 
 
 def test_reads_refuse_a_stale_root_and_older_desktops_still_read(client, two_roots):

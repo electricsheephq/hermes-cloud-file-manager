@@ -86,7 +86,8 @@ function failureText(error: unknown): string {
 }
 
 export function FileCard({ attrs, source, streaming, sessionId }: DirectiveProps) {
-  const path = typeof attrs.path === 'string' ? attrs.path.trim() : ''
+  // Not trimmed: a trailing space is part of a POSIX file name, and trimming could point the card at another file.
+  const path = typeof attrs.path === 'string' ? attrs.path : ''
   const valid = validPath(path)
   const [connectionId, profile] = useScope()
   // Older hosts have no focusedSessionOwner: then the selected agent is the only one there is.

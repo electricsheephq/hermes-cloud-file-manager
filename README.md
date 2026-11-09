@@ -242,7 +242,8 @@ Without Desktop, set them under `plugins.entries.hermes-cloud-file-manager.setti
   previews: any image, PDF, or code or data file in the shown folders can be previewed, including configuration
   files you keep there. The agent's Hermes home stays protected, as above.
 - **Chat cards** only read: a card's path goes to the same guarded lookup as a listing, and a path outside the shown
-  folders or in the Hermes home is refused. The agent's instructions note (Desktop chats only) names the shown
+  folders or in the protected Hermes home is refused (the same exception as above applies to a working folder inside
+  it). The agent's instructions note (Desktop chats only) names the shown
   folders and explains the card; it carries no file names or contents.
 - **Download** goes through Hermes Desktop's own authenticated download, the same one its file tree uses. The
   plugin only offers it for files the list shows: files inside the shown folders, never from the agent's Hermes

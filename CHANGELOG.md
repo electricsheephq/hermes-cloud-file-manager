@@ -23,8 +23,8 @@ Both halves change: update the agent's side too (and restart its gateway on Herm
   shows the error with **Retry**, like the + menu picker.
 - **A Save can't land in another folder after Settings change.** Folder ids are positions in the settings list, so
   reordering the list while a file was open could point a Save, an upload, a new folder or a Drive import at another
-  folder. Each write now carries the folder's path and the agent side refuses it if the folder changed. An older
-  Desktop half keeps working.
+  folder. Each write now carries the folder's path and the agent side refuses it if the folder changed. This needs
+  both halves at 0.7.0: an older Desktop half keeps working but sends no path, so it doesn't get this check.
 - The upload summary counts a folder that couldn't be created as a failure.
 
 ### Changed

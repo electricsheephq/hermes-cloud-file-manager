@@ -3077,7 +3077,7 @@ function failureText(error) {
   return S.cardUnavailable;
 }
 function FileCard({ attrs, source, streaming, sessionId }) {
-  const path = typeof attrs.path === "string" ? attrs.path.trim() : "";
+  const path = typeof attrs.path === "string" ? attrs.path : "";
   const valid = validPath(path);
   const [connectionId, profile] = useScope();
   const owner = useValue6(host9.state.focusedSessionOwner ?? NO_OWNER2);
