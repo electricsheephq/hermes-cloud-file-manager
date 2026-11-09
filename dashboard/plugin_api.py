@@ -522,6 +522,42 @@ def _edit_read(target, *, size_check=_edit_size, read_limit=None):
         os.close(fd)
 
 
+@router.get("/locate")
+@_protocol
+def locate(path: str):
+    """Which shown folder holds the absolute ``path``, and its entry: what a chat card needs to open a file the
+    agent named. The same guards as a listing apply; a path outside every configured folder is refused."""
+    cfg = _dict(_load_config())
+    if not _supported(cfg):
+        raise GuardError("unsupported_backend", "Files are available only with the local terminal backend.")
+    target = Path(path) if isinstance(path, str) and _encodable(path) and len(path) <= 4096 else None
+    if target is None or not target.is_absolute():
+        raise GuardError("bad_path", "The path must be an absolute path on the agent's machine.")
+    for root in _roots(cfg):
+        rel = _lexical_rel(target, root.path)
+        if rel is None:
+            rel = _lexical_rel(Path(os.path.realpath(target)), Path(os.path.realpath(root.path)))
+        if rel is None:
+            continue
+        resolved = _resolve(root, rel, for_write=False)
+        if not os.path.lexists(resolved):
+            raise GuardError("not_found", "The file no longer exists.")
+        entry = _entry(root, resolved) if rel else {"name": root.label, "rel": "", "abs": str(root.path),
+                                                     "is_dir": True, "size": None, "mtime": None, "link_outside": False}
+        if entry is None:
+            raise GuardError("not_found", "The file isn't shown in Cloud Files.")
+        return {"ok": True, "root": root.id, "root_path": str(root.path), "entry": entry}
+    raise GuardError("outside_root", "The file isn't in a folder Cloud Files shows.")
+
+
+def _lexical_rel(target, base):
+    try:
+        rel = target.relative_to(base).as_posix()
+    except ValueError:
+        return None
+    return "" if rel == "." else rel
+
+
 @router.get("/file")
 @_protocol
 def read_file(root: str, path: str):
