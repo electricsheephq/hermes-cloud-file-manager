@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.7.2] - 2026-11-10
+
+Documentation only: no change to either half's behaviour.
+
+### Changed
+- **README:** a link to the demo film on X, right under the one-line summary.
+
 ## [0.7.1] - 2026-11-10
 
 Documentation only: no change to either half's behaviour.
