@@ -6,6 +6,8 @@ Your agent's server files, as easy as local, in Hermes Desktop: drag in folders,
 
 **[Watch the demo on X](https://x.com/ElectricSheepIO/status/2120150858553774361)**
 
+https://github.com/user-attachments/assets/74c1e72d-5abc-4399-bb18-fdfaa8d0d888
+
 [![Latest release](https://img.shields.io/github/v/release/electricsheephq/hermes-cloud-file-manager)](https://github.com/electricsheephq/hermes-cloud-file-manager/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/electricsheephq/hermes-cloud-file-manager)](LICENSE)
 [![Hermes >= 0.21.5](https://img.shields.io/badge/Hermes-%3E%3D%200.21.5-blue)](#requirements)
