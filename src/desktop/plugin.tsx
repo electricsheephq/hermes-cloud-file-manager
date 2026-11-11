@@ -20,6 +20,7 @@ import { S } from './strings'
 export const PLUGIN_ID = 'hermes-cloud-file-manager'
 export { PAGE_PATH } from './api'
 const PROBE_INTERVAL_MS = 60_000
+const PALETTE_AREA_ID = 'palette'
 
 export { isNotFoundError }
 
@@ -179,6 +180,10 @@ const plugin: HermesPlugin = {
   register(ctx) {
     bindContext(ctx)
     ctx.onDispose(startEventRelay(ctx))
+    ctx.register({
+      id: 'open-cloud-files', area: PALETTE_AREA_ID,
+      data: { id: 'open-cloud-files', label: S.paletteOpen, keywords: ['files', 'cloud', 'upload', 'download', 'server'], run: () => host.navigate(PAGE_PATH) }
+    })
     ctx.register({
       id: 'page',
       area: ROUTES_AREA,

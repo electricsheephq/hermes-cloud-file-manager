@@ -2,6 +2,16 @@
 
 All notable changes to this plugin are recorded here. Versions follow semantic versioning.
 
+## [0.8.0] - 2026-11-11
+
+Desktop half only: the agent's side is unchanged, so there's no gateway update or restart.
+
+### Added
+- **Ask agent…** in the Cloud Files toolbar: with files selected, choose **Rename…**, **Move…** or **Delete…** and
+  Cloud Files writes that request, with the files, into the chat box for you to finish and send. It never sends, and
+  Cloud Files itself still never renames, moves or deletes anything.
+- **Open Cloud Files** in the ⌘K command palette.
+
 ## [0.7.3] - 2026-11-10
 
 Documentation only: no change to either half's behaviour.

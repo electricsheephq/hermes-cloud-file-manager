@@ -143,6 +143,10 @@ declare module '@hermes/plugin-sdk' {
   export const DialogFooter: ComponentType<any>
   export const DialogHeader: ComponentType<any>
   export const DialogTitle: ComponentType<any>
+  export const DropdownMenu: ComponentType<any>
+  export const DropdownMenuContent: ComponentType<any>
+  export const DropdownMenuItem: ComponentType<any>
+  export const DropdownMenuTrigger: ComponentType<any>
   export const EmptyState: ComponentType<any>
   export const ErrorState: ComponentType<any>
   export const Input: ComponentType<any>

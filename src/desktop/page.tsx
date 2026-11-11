@@ -24,7 +24,7 @@ import { $driveJob, DriveImport } from './drive'
 import { DriveCrumbs, DriveList, ImportFailures, importStatus, useDriveBrowser, useImport } from './drive-browser'
 import { Editor, openDoc, type SetDoc, type Doc, useLeaveGuard, useOpenDoc } from './editor'
 import { baseName, humanSize, isOpenable, joinPath, parentPath } from './format'
-import { AddToChat, canReference } from './chat'
+import { AddToChat, AskAgent, canReference } from './chat'
 import { Preview } from './preview'
 import { codeText, S } from './strings'
 import { type AgentPin, type BatchSnapshot, type Destination, type Limits, summarize, UploadBatch, type UploadInput, type UploadItem } from './upload'
@@ -372,6 +372,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
                 <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
                 <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
                 <AddToChat disabled={![...b.selected.values()].some(e => !e.link_outside)} entries={b.picked} pin={pin} />
+                <AskAgent disabled={![...b.selected.values()].some(e => !e.link_outside)} entries={b.picked} pin={pin} />
                 {only && save && <ToolButton icon="cloud-download" label={S.download} onClick={() => void save(only.abs, only.name)} />}
                 {only && isOpenable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
               </>

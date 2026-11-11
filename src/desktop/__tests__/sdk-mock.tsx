@@ -172,6 +172,11 @@ export const DialogContent = (props: any) => createElement('div', { role: 'dialo
 export const DialogHeader = passthrough('div')
 export const DialogFooter = passthrough('div')
 export const DialogTitle = passthrough('h2')
+export const DropdownMenu = passthrough('div')
+export const DropdownMenuContent = passthrough('div')
+export const DropdownMenuTrigger = ({ children }: any) => children
+export const DropdownMenuItem = ({ children, disabled, onSelect }: any) =>
+  createElement('button', { disabled, onClick: onSelect }, children)
 // Select: every item is a clickable option that reports its value to the Select's onValueChange.
 const SelectCtx = createContext<{ value?: string; onValueChange?: (value: string) => void }>({})
 export const Select = ({ value, onValueChange, children }: any) =>
