@@ -83,7 +83,7 @@ not do:
   imports files from the agent's Google Drive.
 - **The agent hands you files as cards** in its reply, which open straight in Cloud Files.
 
-It never deletes, renames or moves your files; ask the agent to do that.
+It never deletes, renames or moves your files itself. **Ask agent…** writes that request into the chat for you to finish and send.
 
 ## Requirements
 
@@ -196,6 +196,9 @@ installing the desktop half is harmless for your other agents.
 ![A report open in the rendered view](docs/media/screenshot-editor-view.png)
 
 ![Reviewing the change before saving](docs/media/screenshot-editor-review.png)
+- **Ask the agent to rename, move or delete:** select files and choose **Ask agent… → Rename…** (one file or folder at a time),
+  **Move…** or **Delete…**. Cloud Files writes the request, with the files, into the chat box; finish it (the new name or folder)
+  and send it yourself. Nothing is sent, and Cloud Files changes nothing; the agent does the work if you ask it to.
 - **Share with the agent:** select files and **Copy path**, or in any chat press **+ → Cloud**, tick files in
   any folders, and **Insert locations**. The message gets a short list of absolute paths the agent can open.
   If you switch chats or agents while the picker is open, it offers **Copy locations** instead of inserting, so

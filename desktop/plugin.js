@@ -34,6 +34,14 @@ var S = {
   uploadFiles: "Upload files",
   uploadFolder: "Upload folder",
   addToChat: "Add to chat",
+  askAgent: "Ask agent\u2026",
+  askRename: "Rename\u2026",
+  askMove: "Move\u2026",
+  askDelete: "Delete\u2026",
+  askRenameText: (refs) => `Please rename ${refs} to `,
+  askMoveText: (refs) => `Please move ${refs} to the folder `,
+  askDeleteText: (refs) => `Please delete ${refs} (list what you'll delete and wait for my OK first)`,
+  askDrafted: "Request drafted in the chat. Check it there, then send it yourself.",
   addedToChat: (n) => n === 1 ? "Added to the chat" : `Added ${n} items to the chat`,
   openChatFirst: "Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar \u2192 Open in split), then try again.",
   refSkipped: (n) => `Skipped ${n} ${n === 1 ? "path" : "paths"} with a line break or all three quote characters.`,
@@ -1411,7 +1419,7 @@ function EntryRow({ b, entry, mark, onOpen, searching, tabStop, onFocus, onNavKe
 import { atom as atom7, Button as Button8, Codicon as Codicon6, host as host9, useQuery as useQuery3, useValue as useValue6 } from "@hermes/plugin-sdk";
 
 // src/desktop/chat.tsx
-import { Button as Button7, host as host8 } from "@hermes/plugin-sdk";
+import { Button as Button7, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, host as host8 } from "@hermes/plugin-sdk";
 
 // src/desktop/picker.tsx
 import {
@@ -2323,7 +2331,7 @@ function filesFromInput(list) {
 import { Fragment as Fragment3, jsx as jsx5, jsxs as jsxs5 } from "react/jsx-runtime";
 var muted5 = { color: "var(--ui-text-tertiary)" };
 var pad = "0 20px";
-var desktopVersion = true ? "0.7.3" : "unknown";
+var desktopVersion = true ? "0.8.0" : "unknown";
 var $batch = atom5(null);
 var currentPin = () => ({ connectionId: host6.state.connectionId.get(), profile: host6.state.profile.get() });
 function dragFromPage(event, [connectionId, profile]) {
@@ -2581,6 +2589,7 @@ function Files({ profile, roots, doc, setDoc }) {
               /* @__PURE__ */ jsx5(ToolButton, { icon: "file-directory-create", label: S.uploadFolder, onClick: () => folderInput.current?.click() }),
               /* @__PURE__ */ jsx5(ToolButton, { disabled: !b.selected.size, icon: "copy", label: S.copyPath, onClick: copyPaths }),
               /* @__PURE__ */ jsx5(AddToChat, { disabled: ![...b.selected.values()].some((e) => !e.link_outside), entries: b.picked, pin }),
+              /* @__PURE__ */ jsx5(AskAgent, { disabled: ![...b.selected.values()].some((e) => !e.link_outside), entries: b.picked, pin, selectionSize: () => b.selected.size }),
               only && save && /* @__PURE__ */ jsx5(ToolButton, { icon: "cloud-download", label: S.download, onClick: () => void save(only.abs, only.name) }),
               only && isOpenable(only) && /* @__PURE__ */ jsx5(ToolButton, { icon: "go-to-file", label: S.open, onClick: () => openFile(only) })
             ] }),
@@ -3007,7 +3016,7 @@ function DrivePicker({ roots }) {
 }
 
 // src/desktop/chat.tsx
-import { jsx as jsx7 } from "react/jsx-runtime";
+import { jsx as jsx7, jsxs as jsxs7 } from "react/jsx-runtime";
 function canReference([connectionId, profile], warning = S.addOtherAgent) {
   const pin = { connectionId: host8.state.connectionId.get(), profile: host8.state.profile.get() };
   const owner = host8.state.focusedSessionOwner?.get() ?? null;
@@ -3015,20 +3024,24 @@ function canReference([connectionId, profile], warning = S.addOtherAgent) {
   host8.notify({ kind: "warning", message: warning(owner?.profile ?? pin.profile, profile) });
   return false;
 }
+function buildRefs(entries) {
+  let skipped = 0;
+  const refs = entries.filter((e) => !e.link_outside).flatMap((entry) => {
+    const value = formatRef(entry.abs);
+    if (value === null) {
+      skipped++;
+      return [];
+    }
+    return [`@${entry.is_dir ? "folder" : "file"}:${value}`];
+  });
+  return { refs, skipped };
+}
 function AddToChat({ entries, pin, disabled, sessionId = null }) {
   const composer = host8.composer;
   if (typeof composer?.insertText !== "function") return null;
   const add = async () => {
     if (!canReference([pin.connectionId ?? "local", pin.profile])) return;
-    let skipped = 0;
-    const refs = entries().filter((e) => !e.link_outside).flatMap((entry) => {
-      const value = formatRef(entry.abs);
-      if (value === null) {
-        skipped++;
-        return [];
-      }
-      return [`@${entry.is_dir ? "folder" : "file"}:${value}`];
-    });
+    const { refs, skipped } = buildRefs(entries());
     if (skipped) host8.notify({ kind: "warning", message: S.refSkipped(skipped) });
     if (!refs.length) return;
     const ok = await Promise.resolve().then(() => composer.insertText(sessionId, refs.join(" "), { mode: "inline" })).catch(() => false);
@@ -3036,9 +3049,31 @@ function AddToChat({ entries, pin, disabled, sessionId = null }) {
   };
   return /* @__PURE__ */ jsx7(Button7, { disabled, onClick: () => void add(), size: "sm", variant: "ghost", children: S.addToChat });
 }
+function AskAgent({ entries, pin, disabled, sessionId = null, selectionSize }) {
+  const composer = host8.composer;
+  if (typeof composer?.insertText !== "function") return null;
+  const canRename = () => (selectionSize ? selectionSize() : entries().length) === 1 && entries().length === 1 && !entries()[0].link_outside;
+  const draft = async (text) => {
+    if (text === S.askRenameText && !canRename()) return;
+    if (!canReference([pin.connectionId ?? "local", pin.profile])) return;
+    const { refs, skipped } = buildRefs(entries());
+    if (skipped) host8.notify({ kind: "warning", message: S.refSkipped(skipped) });
+    if (!refs.length) return;
+    const ok = await Promise.resolve().then(() => composer.insertText(sessionId, text(refs.join(" ")), { mode: "inline" })).catch(() => false);
+    host8.notify(ok ? { kind: "success", message: S.askDrafted } : { kind: "info", message: S.openChatFirst });
+  };
+  return /* @__PURE__ */ jsxs7(DropdownMenu, { children: [
+    /* @__PURE__ */ jsx7(DropdownMenuTrigger, { asChild: true, children: /* @__PURE__ */ jsx7(Button7, { disabled, size: "sm", variant: "ghost", children: S.askAgent }) }),
+    /* @__PURE__ */ jsxs7(DropdownMenuContent, { children: [
+      /* @__PURE__ */ jsx7(DropdownMenuItem, { disabled: !canRename(), onSelect: () => void draft(S.askRenameText), children: S.askRename }),
+      /* @__PURE__ */ jsx7(DropdownMenuItem, { onSelect: () => void draft(S.askMoveText), children: S.askMove }),
+      /* @__PURE__ */ jsx7(DropdownMenuItem, { onSelect: () => void draft(S.askDeleteText), children: S.askDelete })
+    ] })
+  ] });
+}
 
 // src/desktop/card.tsx
-import { jsx as jsx8, jsxs as jsxs7 } from "react/jsx-runtime";
+import { jsx as jsx8, jsxs as jsxs8 } from "react/jsx-runtime";
 var DIRECTIVE_AREA = "transcript.directives";
 var DIRECTIVE_NAME = "cloud-file";
 var MAX_PATH = 4096;
@@ -3061,7 +3096,7 @@ var box = {
 };
 var muted6 = { fontSize: 12, color: "var(--ui-text-secondary)" };
 function Head({ icon, name, detail, title }) {
-  return /* @__PURE__ */ jsxs7("div", { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 }, title, children: [
+  return /* @__PURE__ */ jsxs8("div", { style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 }, title, children: [
     /* @__PURE__ */ jsx8(Codicon6, { name: icon, size: "1rem", style: { color: "var(--ui-text-secondary)", flex: "none" } }),
     /* @__PURE__ */ jsx8("span", { style: { fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: name }),
     detail && /* @__PURE__ */ jsx8("span", { style: { ...muted6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: detail })
@@ -3097,13 +3132,13 @@ function FileCard({ attrs, source, streaming, sessionId }) {
   if (!valid) return /* @__PURE__ */ jsx8("code", { style: muted6, children: source });
   const name = baseName(path.replace(/\\/g, "/")) || path;
   if (otherAgent && owner) {
-    return /* @__PURE__ */ jsxs7("div", { style: box, children: [
+    return /* @__PURE__ */ jsxs8("div", { style: box, children: [
       /* @__PURE__ */ jsx8(Head, { icon: "file", name, title: path }),
       /* @__PURE__ */ jsx8("span", { style: muted6, children: S.cardOtherAgent(owner.profile) })
     ] });
   }
   if (elsewhere) {
-    return /* @__PURE__ */ jsxs7("div", { style: box, children: [
+    return /* @__PURE__ */ jsxs8("div", { style: box, children: [
       /* @__PURE__ */ jsx8(Head, { icon: "file", name, title: path }),
       /* @__PURE__ */ jsx8("span", { style: muted6, children: S.cardFocusChat })
     ] });
@@ -3112,7 +3147,7 @@ function FileCard({ attrs, source, streaming, sessionId }) {
     return /* @__PURE__ */ jsx8("div", { "aria-busy": "true", style: box, children: /* @__PURE__ */ jsx8(Head, { icon: "file", name, title: path }) });
   }
   if (!query2.data) {
-    return /* @__PURE__ */ jsxs7("div", { style: box, children: [
+    return /* @__PURE__ */ jsxs8("div", { style: box, children: [
       /* @__PURE__ */ jsx8(Head, { icon: "file", name, title: path }),
       /* @__PURE__ */ jsx8("span", { style: muted6, children: failureText(query2.error) })
     ] });
@@ -3127,9 +3162,9 @@ function FileCard({ attrs, source, streaming, sessionId }) {
     host9.navigate(PAGE_PATH);
   };
   const save = !entry.is_dir && !entry.link_outside ? captureFor([connectionId, profile]) : null;
-  return /* @__PURE__ */ jsxs7("div", { style: box, children: [
+  return /* @__PURE__ */ jsxs8("div", { style: box, children: [
     /* @__PURE__ */ jsx8(Head, { icon: entryIcon(entry), name: entry.name || name, detail: facts, title: entry.abs }),
-    /* @__PURE__ */ jsxs7("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 }, children: [
+    /* @__PURE__ */ jsxs8("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 }, children: [
       /* @__PURE__ */ jsx8(Button8, { onClick: () => reveal(false), size: "sm", variant: "secondary", children: S.open }),
       !entry.is_dir && isOpenable(entry) && /* @__PURE__ */ jsx8(Button8, { onClick: () => reveal(true), size: "sm", variant: "ghost", children: S.cardPreview }),
       save && /* @__PURE__ */ jsx8(Button8, { onClick: () => void save(entry.abs, entry.name).catch(() => void 0), size: "sm", variant: "ghost", children: S.download }),
