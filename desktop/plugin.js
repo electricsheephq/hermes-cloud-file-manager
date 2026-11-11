@@ -41,7 +41,7 @@ var S = {
   askRenameText: (refs) => `Please rename ${refs} to `,
   askMoveText: (refs) => `Please move ${refs} to the folder `,
   askDeleteText: (refs) => `Please delete ${refs}. List what you'll delete and wait for my OK first.`,
-  askDrafted: "Request drafted in the chat. Finish it there, then send.",
+  askDrafted: "Request drafted in the chat. Check it there, then send it yourself.",
   paletteOpen: "Open Cloud Files",
   addedToChat: (n) => n === 1 ? "Added to the chat" : `Added ${n} items to the chat`,
   openChatFirst: "Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar \u2192 Open in split), then try again.",
@@ -2590,7 +2590,7 @@ function Files({ profile, roots, doc, setDoc }) {
               /* @__PURE__ */ jsx5(ToolButton, { icon: "file-directory-create", label: S.uploadFolder, onClick: () => folderInput.current?.click() }),
               /* @__PURE__ */ jsx5(ToolButton, { disabled: !b.selected.size, icon: "copy", label: S.copyPath, onClick: copyPaths }),
               /* @__PURE__ */ jsx5(AddToChat, { disabled: ![...b.selected.values()].some((e) => !e.link_outside), entries: b.picked, pin }),
-              /* @__PURE__ */ jsx5(AskAgent, { disabled: ![...b.selected.values()].some((e) => !e.link_outside), entries: b.picked, pin }),
+              /* @__PURE__ */ jsx5(AskAgent, { disabled: ![...b.selected.values()].some((e) => !e.link_outside), entries: b.picked, pin, selectionSize: () => b.selected.size }),
               only && save && /* @__PURE__ */ jsx5(ToolButton, { icon: "cloud-download", label: S.download, onClick: () => void save(only.abs, only.name) }),
               only && isOpenable(only) && /* @__PURE__ */ jsx5(ToolButton, { icon: "go-to-file", label: S.open, onClick: () => openFile(only) })
             ] }),
@@ -3050,11 +3050,12 @@ function AddToChat({ entries, pin, disabled, sessionId = null }) {
   };
   return /* @__PURE__ */ jsx7(Button7, { disabled, onClick: () => void add(), size: "sm", variant: "ghost", children: S.addToChat });
 }
-function AskAgent({ entries, pin, disabled, sessionId = null }) {
+function AskAgent({ entries, pin, disabled, sessionId = null, selectionSize }) {
   const composer = host8.composer;
   if (typeof composer?.insertText !== "function") return null;
-  const selected = entries();
+  const canRename = () => (selectionSize ? selectionSize() : entries().length) === 1 && entries().length === 1 && !entries()[0].link_outside;
   const draft = async (text) => {
+    if (text === S.askRenameText && !canRename()) return;
     if (!canReference([pin.connectionId ?? "local", pin.profile])) return;
     const { refs, skipped } = buildRefs(entries());
     if (skipped) host8.notify({ kind: "warning", message: S.refSkipped(skipped) });
@@ -3065,7 +3066,7 @@ function AskAgent({ entries, pin, disabled, sessionId = null }) {
   return /* @__PURE__ */ jsxs7(DropdownMenu, { children: [
     /* @__PURE__ */ jsx7(DropdownMenuTrigger, { asChild: true, children: /* @__PURE__ */ jsx7(Button7, { disabled, size: "sm", variant: "ghost", children: S.askAgent }) }),
     /* @__PURE__ */ jsxs7(DropdownMenuContent, { children: [
-      /* @__PURE__ */ jsx7(DropdownMenuItem, { disabled: selected.length !== 1 || selected[0].link_outside, onSelect: () => void draft(S.askRenameText), children: S.askRename }),
+      /* @__PURE__ */ jsx7(DropdownMenuItem, { disabled: !canRename(), onSelect: () => void draft(S.askRenameText), children: S.askRename }),
       /* @__PURE__ */ jsx7(DropdownMenuItem, { onSelect: () => void draft(S.askMoveText), children: S.askMove }),
       /* @__PURE__ */ jsx7(DropdownMenuItem, { onSelect: () => void draft(S.askDeleteText), children: S.askDelete })
     ] })

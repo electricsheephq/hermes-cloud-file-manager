@@ -372,7 +372,7 @@ function Files({ profile, roots, doc, setDoc }: { profile: string; roots: RootsR
                 <ToolButton icon="file-directory-create" label={S.uploadFolder} onClick={() => folderInput.current?.click()} />
                 <ToolButton disabled={!b.selected.size} icon="copy" label={S.copyPath} onClick={copyPaths} />
                 <AddToChat disabled={![...b.selected.values()].some(e => !e.link_outside)} entries={b.picked} pin={pin} />
-                <AskAgent disabled={![...b.selected.values()].some(e => !e.link_outside)} entries={b.picked} pin={pin} />
+                <AskAgent disabled={![...b.selected.values()].some(e => !e.link_outside)} entries={b.picked} pin={pin} selectionSize={() => b.selected.size} />
                 {only && save && <ToolButton icon="cloud-download" label={S.download} onClick={() => void save(only.abs, only.name)} />}
                 {only && isOpenable(only) && <ToolButton icon="go-to-file" label={S.open} onClick={() => openFile(only)} />}
               </>

@@ -42,11 +42,14 @@ export function AddToChat({ entries, pin, disabled, sessionId = null }: ChatProp
   return <Button disabled={disabled} onClick={() => void add()} size="sm" variant="ghost">{S.addToChat}</Button>
 }
 
-export function AskAgent({ entries, pin, disabled, sessionId = null }: ChatProps) {
+/** `selectionSize` is how many rows are selected, outside links included: Rename needs exactly one, and `entries`
+ *  has already dropped outside links. */
+export function AskAgent({ entries, pin, disabled, sessionId = null, selectionSize }: ChatProps & { selectionSize?: () => number }) {
   const composer = (host as any).composer
   if (typeof composer?.insertText !== 'function') return null
-  const selected = entries()
+  const canRename = () => (selectionSize ? selectionSize() : entries().length) === 1 && entries().length === 1 && !entries()[0].link_outside
   const draft = async (text: (refs: string) => string) => {
+    if (text === S.askRenameText && !canRename()) return
     if (!canReference([pin.connectionId ?? 'local', pin.profile])) return
     const { refs, skipped } = buildRefs(entries())
     if (skipped) host.notify({ kind: 'warning', message: S.refSkipped(skipped) })
@@ -57,7 +60,7 @@ export function AskAgent({ entries, pin, disabled, sessionId = null }: ChatProps
   return <DropdownMenu>
     <DropdownMenuTrigger asChild><Button disabled={disabled} size="sm" variant="ghost">{S.askAgent}</Button></DropdownMenuTrigger>
     <DropdownMenuContent>
-      <DropdownMenuItem disabled={selected.length !== 1 || selected[0].link_outside} onSelect={() => void draft(S.askRenameText)}>{S.askRename}</DropdownMenuItem>
+      <DropdownMenuItem disabled={!canRename()} onSelect={() => void draft(S.askRenameText)}>{S.askRename}</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void draft(S.askMoveText)}>{S.askMove}</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void draft(S.askDeleteText)}>{S.askDelete}</DropdownMenuItem>
     </DropdownMenuContent>

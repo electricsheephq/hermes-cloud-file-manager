@@ -32,6 +32,13 @@ it.each([[[], true], [[file], false], [[file, folder], true], [[outside], true]]
   }
 )
 
+it('keeps Rename disabled when an outside link is also selected (two rows, one reference)', () => {
+  render(<AskAgent entries={() => [file]} pin={pin} selectionSize={() => 2} />)
+  expect(screen.getByRole('button', { name: S.askRename }).hasAttribute('disabled')).toBe(true)
+  render(<AskAgent entries={() => [file]} pin={pin} selectionSize={() => 1} />)
+  expect(screen.getAllByRole('button', { name: S.askRename })[1].hasAttribute('disabled')).toBe(false)
+})
+
 it('disables the Ask agent trigger when requested', () => {
   render(<AskAgent entries={() => []} pin={pin} disabled />)
   expect(screen.getByRole('button', { name: S.askAgent }).hasAttribute('disabled')).toBe(true)

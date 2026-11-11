@@ -34,7 +34,7 @@ export const S = {
   askRenameText: (refs: string) => `Please rename ${refs} to `,
   askMoveText: (refs: string) => `Please move ${refs} to the folder `,
   askDeleteText: (refs: string) => `Please delete ${refs}. List what you'll delete and wait for my OK first.`,
-  askDrafted: 'Request drafted in the chat. Finish it there, then send.',
+  askDrafted: 'Request drafted in the chat. Check it there, then send it yourself.',
   paletteOpen: 'Open Cloud Files',
   addedToChat: (n: number) => (n === 1 ? 'Added to the chat' : `Added ${n} items to the chat`),
   openChatFirst: 'Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar → Open in split), then try again.',
