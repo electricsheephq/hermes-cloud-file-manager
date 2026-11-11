@@ -40,9 +40,8 @@ var S = {
   askDelete: "Delete\u2026",
   askRenameText: (refs) => `Please rename ${refs} to `,
   askMoveText: (refs) => `Please move ${refs} to the folder `,
-  askDeleteText: (refs) => `Please delete ${refs}. List what you'll delete and wait for my OK first.`,
+  askDeleteText: (refs) => `Please delete ${refs} (list what you'll delete and wait for my OK first)`,
   askDrafted: "Request drafted in the chat. Check it there, then send it yourself.",
-  paletteOpen: "Open Cloud Files",
   addedToChat: (n) => n === 1 ? "Added to the chat" : `Added ${n} items to the chat`,
   openChatFirst: "Open a chat beside Cloud Files first (right-click Cloud Files in the sidebar \u2192 Open in split), then try again.",
   refSkipped: (n) => `Skipped ${n} ${n === 1 ? "path" : "paths"} with a line break or all three quote characters.`,
@@ -3178,7 +3177,6 @@ function FileCard({ attrs, source, streaming, sessionId }) {
 import { jsx as jsx9 } from "react/jsx-runtime";
 var PLUGIN_ID = "hermes-cloud-file-manager";
 var PROBE_INTERVAL_MS = 6e4;
-var PALETTE_AREA_ID = "palette";
 function registerAvailabilityGate(ctx, onChange) {
   let removers = null;
   let pickerRemover = null;
@@ -3317,11 +3315,6 @@ var plugin = {
   register(ctx) {
     bindContext(ctx);
     ctx.onDispose(startEventRelay(ctx));
-    ctx.register({
-      id: "open-cloud-files",
-      area: PALETTE_AREA_ID,
-      data: { id: "open-cloud-files", label: S.paletteOpen, keywords: ["files", "cloud", "upload", "download", "server"], run: () => host10.navigate(PAGE_PATH) }
-    });
     ctx.register({
       id: "page",
       area: ROUTES_AREA,

@@ -47,7 +47,7 @@ it('disables the Ask agent trigger when requested', () => {
 it.each([
   [S.askRename, [file], 'Please rename @file:/files/report.txt to '],
   [S.askMove, [file, folder, outside, invalid], 'Please move @file:/files/report.txt @folder:/files/archive to the folder '],
-  [S.askDelete, [file, folder, outside, invalid], "Please delete @file:/files/report.txt @folder:/files/archive. List what you'll delete and wait for my OK first."]
+  [S.askDelete, [file, folder, outside, invalid], "Please delete @file:/files/report.txt @folder:/files/archive (list what you'll delete and wait for my OK first)"]
 ] as const)('drafts exact %s text, omitting outside links and warning on bad paths', async (label, entries, text) => {
   const notify = vi.spyOn(host, 'notify')
   render(<AskAgent entries={() => entries} pin={pin} sessionId="session-7" />)
@@ -96,14 +96,10 @@ it('builds the existing Add to chat refs, preserving quoting, order and skipped 
   })
 })
 
-it('registers Open Cloud Files in the palette and navigates to the page', async () => {
+it('registers no palette row (the host palette did not run it in the real app)', async () => {
   const context = createTestContext()
-  const navigate = vi.spyOn(host, 'navigate')
   try {
     await plugin.register(context.ctx as any)
-    const row = context.live.get('open-cloud-files')
-    expect(row).toMatchObject({ area: 'palette', data: { id: 'open-cloud-files', label: 'Open Cloud Files', keywords: ['files', 'cloud', 'upload', 'download', 'server'] } })
-    row.data.run()
-    expect(navigate).toHaveBeenCalledWith(PAGE_PATH)
+    expect(context.live.get('open-cloud-files')).toBeUndefined()
   } finally { context.dispose() }
 })
