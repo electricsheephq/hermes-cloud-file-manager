@@ -8,6 +8,7 @@ Cloud File Manager is a Hermes Agent plugin that puts the gateway machine's file
 
 ## Layout
 
+- `VISION.md` and `ROADMAP.md` — what the plugin is for, and what is now, next and parked.
 - `plugin.yaml` — plugin identity, compatibility and settings schema.
 - `dashboard/plugin_api.py` — gateway API, path guards and optional Drive integration.
 - `dashboard/manifest.json` and `dashboard/dist/index.js` — API mount metadata and the empty dashboard entry.
@@ -57,10 +58,10 @@ and has sent its receipt:
 
 1. Close every issue the release fully served, with a comment naming the version. Never close an umbrella or parent issue
    whose own acceptance is not met.
-2. Tick the boxes it completed in roadmap or tracking issues, and in closed issues whose checklists shipped. Close a
-   milestone once all its issues are closed.
-3. Update every README line that names the latest release or what ships next.
-4. Send the Plugin Manager one closeout line: issues closed, boxes ticked, docs updated (or "none").
+2. Tick the boxes it completed in ROADMAP.md, roadmap or tracking issues, and closed issues whose checklists shipped. Close
+   a milestone once all its issues are closed.
+3. Update every README and ROADMAP.md line that names the latest release or what ships next.
+4. Post one closeout line as a comment on the release pull request: issues closed, boxes ticked, docs updated (or "none").
 
 ## Filing issues
 
