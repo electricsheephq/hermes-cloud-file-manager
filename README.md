@@ -120,7 +120,7 @@ hermes plugins install electricsheephq/hermes-cloud-file-manager --enable
 # on Hermes 0.21.5, restart the gateway (or your hermes dashboard service) so the API is mounted
 ```
 
-This installs the latest release from this repository; its `main` branch only moves to a tagged release. Installing
+This installs from this repository's `main` branch: the latest release, plus any docs or CI changes made since. Installing
 the catalog release by name (`hermes plugins install hermes-cloud-file-manager --enable`, Hermes 0.21.6 or later)
 gets the reviewed catalog pin instead, which can be a release behind.
 
@@ -293,7 +293,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 ## Limits in this version
 
-- No rename or move yet, and it never deletes your files; ask the agent, or use a shell.
+- No built-in rename or move, and it never deletes your files. **Ask agent…** drafts that request for the agent, or use a shell.
 - Download saves one file at a time. Folders and Google Drive files can't be downloaded. It works in every
   Hermes Desktop this plugin supports (v0.21.5 or newer) and in evaOS Desktop 2026.10.6 or newer; a build without
   it simply doesn't show it.
