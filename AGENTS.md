@@ -50,6 +50,18 @@ install. Leave those to CI.
 - Never commit secrets, tokens, real user data, or machine-specific paths.
 - Tests use a temporary `HERMES_HOME`, never a real one.
 
+## Release closeout (maintainers)
+
+Contributors don't cut releases (see Rules). After a maintainer publishes a release, or promotes a release candidate to stable,
+and has sent its receipt:
+
+1. Close every issue the release fully served, with a comment naming the version. Never close an umbrella or parent issue
+   whose own acceptance is not met.
+2. Tick the boxes it completed in roadmap or tracking issues, and in closed issues whose checklists shipped. Close a
+   milestone once all its issues are closed.
+3. Update every README line that names the latest release or what ships next.
+4. Send the Plugin Manager one closeout line: issues closed, boxes ticked, docs updated (or "none").
+
 ## Filing issues
 
 - Search first: `gh issue list -R electricsheephq/hermes-cloud-file-manager --state all --search "<key words>"`.
