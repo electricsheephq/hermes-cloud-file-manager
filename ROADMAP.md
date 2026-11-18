@@ -3,6 +3,9 @@
 Latest release: **v0.8.0** (2026-11-11), which is also the version in the Hermes plugin catalog. Everything planned
 up to v0.8.0 has shipped; see [CHANGELOG.md](CHANGELOG.md).
 
+**Status: frozen (2026-11-19).** No new features: only bug fixes, security fixes, Desktop CI, and work that keeps
+file access inside the agent's folders. This holds until the owner revises it.
+
 Progress counts only **Now** and **Next**. Items in **Later** are parked on purpose: each has a trigger that brings it
 back.
 
@@ -16,14 +19,17 @@ back.
 ## Next
 
 - Test dependencies: move jsdom to its current major version, as a separately tested change (#96, finding 9).
-- A Desktop command palette entry, "Open Cloud Files". It was tried in v0.8.0 and dropped, because Hermes Desktop
-  0.23.0 listed the row but did not run it. It comes back once the cause is understood.
-- Send the upstream reports collected while building the plugin to Hermes (#16).
+- Send Hermes the two bug and security reports from #16: core file write routes with no denylist (and the
+  undocumented `HERMES_DASHBOARD_FILES_ROOT`), and single-file uploads failing on sign-in gateways.
 
 ## Later (parked, with triggers)
 
-From #66. Each stays parked until its trigger fires:
+None of these starts while the plugin is frozen. Each stays parked until the freeze lifts and its trigger fires.
 
+- **A Desktop command palette entry, "Open Cloud Files".** It was tried in v0.8.0 and dropped, because Hermes Desktop
+  0.23.0 listed the row but did not run it. Trigger: the cause is understood.
+- **The two SDK requests in #16** (the chat box's session for attach-menu plugins, and upload progress on plugin
+  REST calls). Trigger: the freeze lifts, or a fix needs one. The session one would let #55 be fixed.
 - **Localization.** Trigger: a user needs a language other than English.
 - **Download a folder as a zip.** Trigger: someone asks for it, or a support case needs it.
 - **Built-in rename and move, never overwriting.** Since v0.8.0, **Ask agent…** drafts these requests for the agent.
