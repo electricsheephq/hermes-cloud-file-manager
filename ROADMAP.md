@@ -19,7 +19,8 @@ back.
 ## Next
 
 - Test dependencies: move jsdom to its current major version, as a separately tested change (#96, finding 9).
-- Send the upstream reports collected while building the plugin to Hermes (#16).
+- Send Hermes the two bug and security reports from #16: core file write routes with no denylist (and the
+  undocumented `HERMES_DASHBOARD_FILES_ROOT`), and single-file uploads failing on sign-in gateways.
 
 ## Later (parked, with triggers)
 
@@ -27,6 +28,8 @@ None of these starts while the plugin is frozen. Each stays parked until the fre
 
 - **A Desktop command palette entry, "Open Cloud Files".** It was tried in v0.8.0 and dropped, because Hermes Desktop
   0.23.0 listed the row but did not run it. Trigger: the cause is understood.
+- **The two SDK requests in #16** (the chat box's session for attach-menu plugins, and upload progress on plugin
+  REST calls). Trigger: the freeze lifts, or a fix needs one. The session one would let #55 be fixed.
 - **Localization.** Trigger: a user needs a language other than English.
 - **Download a folder as a zip.** Trigger: someone asks for it, or a support case needs it.
 - **Built-in rename and move, never overwriting.** Since v0.8.0, **Ask agent…** drafts these requests for the agent.
