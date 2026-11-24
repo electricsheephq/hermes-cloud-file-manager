@@ -256,6 +256,9 @@ describe('Cloud Files page', () => {
     expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ message: 'Finish or cancel the current uploads first' }))
     expect($batch.get()).not.toBe(first)
     expect($batch.get()!.getSnapshot()).toMatchObject({ profile: 'other', canceled: false })
+    // Let both batches' file reads finish before the test ends: a FileReader still pending when the file's jsdom
+    // environment is torn down throws "Expected an Uint8Array" as an unhandled error, which fails the run.
+    await waitFor(() => expect(backend.calls.filter(c => c.path === '/uploads/chunk')).toHaveLength(2))
     notify.mockRestore()
   })
 })
